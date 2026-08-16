@@ -4,22 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp, SESSION_COOKIE } from "./app.ts";
 import { Store } from "./store.ts";
+import { cookieHeader } from "./test-http.ts";
 
 function tempStore(): { store: Store; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "optimizarr-"));
   return { store: new Store(dir), dir };
-}
-
-function cookieHeader(res: Response): string {
-  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
-  const parts =
-    typeof headers.getSetCookie === "function"
-      ? headers.getSetCookie.call(headers)
-      : [headers.get("set-cookie") ?? ""];
-  return parts
-    .map((c) => c.split(";")[0])
-    .filter(Boolean)
-    .join("; ");
 }
 
 describe("phase 1 app", () => {
@@ -276,25 +265,26 @@ describe("phase 1 app", () => {
   });
 
   it("honors local-address auth bypass only when enabled", async () => {
-    const { app, store } = appWithStore();
-    const cookie = await setup(app);
+    const { store, dir } = tempStore();
+    dirs.push(dir);
+    stores.push(store);
+    const lanApp = createApp(store, { remoteAddress: "192.168.1.50" });
+    const cookie = await setup(lanApp);
 
-    const lan = { "x-forwarded-for": "192.168.1.50" };
-    const bypassOff = await app.request("/api/settings", { headers: lan });
+    const bypassOff = await lanApp.request("/api/settings");
     expect(bypassOff.status).toBe(401);
 
-    await app.request("/api/settings", {
+    await lanApp.request("/api/settings", {
       method: "PUT",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ localAuthBypass: true }),
     });
 
-    const bypassOn = await app.request("/api/settings", { headers: lan });
+    const bypassOn = await lanApp.request("/api/settings");
     expect(bypassOn.status).toBe(200);
 
-    const publicIp = await app.request("/api/settings", {
-      headers: { "x-forwarded-for": "8.8.8.8" },
-    });
+    const publicApp = createApp(store, { remoteAddress: "8.8.8.8" });
+    const publicIp = await publicApp.request("/api/settings");
     expect(publicIp.status).toBe(401);
   });
 
@@ -353,6 +343,41 @@ describe("phase 1 app", () => {
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
       method: "proxy",
+    });
+  });
+
+  it("rejects a review path inside a library folder", async () => {
+    const { app, store } = appWithStore();
+    const cookie = await setup(app);
+    store.createArrInstance({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" });
+    store.upsertLibraryItem({
+      instanceId: 1,
+      externalId: 1,
+      seriesId: null,
+      type: "movie",
+      title: "Up",
+      seriesTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
+      path: "/mnt/nas/Movies/Up/Up.mkv",
+      folderPath: "/mnt/nas/Movies/Up",
+      quality: null,
+      videoCodec: "h264",
+      resolution: "1080",
+      hdr: null,
+      size: 1,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ reviewPath: "/mnt/nas/Movies/review" }),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "Review path must sit outside Arr library folders",
     });
   });
 });

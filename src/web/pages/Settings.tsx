@@ -135,7 +135,7 @@ export function Settings() {
           <span>
             <span className="block text-zinc-200">Allow local addresses without a password</span>
             <span className="text-zinc-500">
-              RFC1918 and loopback clients skip login when this is on, like Radarr and Sonarr. Leave off unless you trust the LAN.
+              Private LAN and loopback clients skip login when this is on, the same way Radarr and Sonarr do. Leave this off unless you trust the LAN.
             </span>
           </span>
         </label>
@@ -184,7 +184,7 @@ export function Settings() {
               })
             }
           >
-            <option value="auto">Auto — copy on the NAS when possible</option>
+            <option value="auto">Auto: copy on the NAS when possible</option>
             <option value="ssh">On the NAS over SSH</option>
             <option value="mount">Kernel / SMB server-side copy</option>
             <option value="proxy">Through this host</option>
@@ -400,7 +400,7 @@ export function Settings() {
       <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 className="text-lg font-medium">Radarr / Sonarr</h2>
         <p className="text-sm text-zinc-500">
-          Add each Arr separately. Optimizarr uses the same file paths they report — mount the NAS at that path in this container.
+          Add each Arr separately. Optimizarr uses the same file paths they report. Mount the NAS at that path in this container.
         </p>
         {instances.length === 0 && <p className="text-sm text-zinc-500">No instances connected yet.</p>}
         {instances.map((inst) => (

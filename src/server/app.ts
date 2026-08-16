@@ -12,18 +12,17 @@ import { Store, publicSettings } from "./store.ts";
 import { Catalog, type ProbeFn } from "./catalog.ts";
 import { detectBackends, type EncodeBackends } from "./hardware.ts";
 import { JobService } from "./jobs.ts";
-import { publicArrInstance } from "./models.ts";
-import type { PlayerKind } from "./models.ts";
+import { publicArrInstance, publicPlayerInstance, type PlayerKind } from "./models.ts";
 import { testPlayer } from "./notify.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
-import { suggestReviewPath } from "./paths.ts";
+import { reviewPathInsideLibrary, suggestReviewPath } from "./paths.ts";
 import {
   createStorage,
   parseNetworkMounts,
   storageConfigFromSettings,
   suggestPathMaps,
 } from "./storage.ts";
-import { LibrarySync, defaultPathReadable, movieListPayload, type PathCheck } from "./sync.ts";
+import { LibrarySync, defaultPathReadable, libraryListPayload, type PathCheck } from "./sync.ts";
 import type { CopyMode, PathMap, Settings } from "./types.ts";
 import type { FetchLike } from "./arr.ts";
 
@@ -269,7 +268,14 @@ export function createApp(store: Store, opts?: AppOpts): App {
     if ("password" in body || "passwordHash" in body || "apiKey" in body || "token" in body) {
       // ignore secrets if a client tries to write them here
     }
-    const saved = store.saveSettings(pickSettings(body, store.getSettings()));
+    const next = pickSettings(body, store.getSettings());
+    if (typeof body.reviewPath === "string") {
+      const libraries = store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]);
+      if (reviewPathInsideLibrary(next.reviewPath, libraries)) {
+        return c.json({ error: "Review path must sit outside Arr library folders" }, 400);
+      }
+    }
+    const saved = store.saveSettings(next);
     return c.json(publicSettings(saved));
   });
 
@@ -420,12 +426,12 @@ export function createApp(store: Store, opts?: AppOpts): App {
 
   app.get("/api/library/movies", requireAuth, (c) => {
     return c.json(
-      movieListPayload(store.listLibraryItems("movie"), sync.lastSyncAt, "Connect Radarr in Settings to sync your library."),
+      libraryListPayload(store.listLibraryItems("movie"), sync.lastSyncAt, "Connect Radarr in Settings to sync your library."),
     );
   });
   app.get("/api/library/series", requireAuth, (c) => {
     return c.json(
-      movieListPayload(
+      libraryListPayload(
         store.listLibraryItems("episode"),
         sync.lastSyncAt,
         "Connect Sonarr in Settings to sync your library.",
@@ -517,14 +523,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
 
   app.get("/api/players", requireAuth, (c) => {
     return c.json({
-      items: store.listPlayers().map((p) => ({
-        id: p.id,
-        kind: p.kind,
-        name: p.name,
-        url: p.url,
-        enabled: p.enabled,
-        hasToken: Boolean(p.token),
-      })),
+      items: store.listPlayers().map(publicPlayerInstance),
     });
   });
   app.post("/api/players", requireAuth, async (c) => {
@@ -538,7 +537,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     const token = String(body.token ?? "").trim();
     if (!name || !url || !token) return c.json({ error: "name, url, and token are required" }, 400);
     const created = store.createPlayer({ kind, name, url, token });
-    return c.json({ id: created.id, kind: created.kind, name: created.name, url: created.url, enabled: created.enabled, hasToken: true }, 201);
+    return c.json(publicPlayerInstance(created), 201);
   });
   app.post("/api/players/:id/test", requireAuth, async (c) => {
     const player = store.listPlayers().find((p) => p.id === Number(c.req.param("id")));
@@ -558,14 +557,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     if (body.kind === "plex" || body.kind === "jellyfin" || body.kind === "other") patch.kind = body.kind;
     const updated = store.updatePlayer(id, patch);
     if (!updated) return c.json({ error: "Player not found" }, 404);
-    return c.json({
-      id: updated.id,
-      kind: updated.kind,
-      name: updated.name,
-      url: updated.url,
-      enabled: updated.enabled,
-      hasToken: Boolean(updated.token),
-    });
+    return c.json(publicPlayerInstance(updated));
   });
   app.delete("/api/players/:id", requireAuth, (c) => {
     store.deletePlayer(Number(c.req.param("id")));

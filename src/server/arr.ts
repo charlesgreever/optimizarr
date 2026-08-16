@@ -2,7 +2,7 @@ import type { ArrInstance } from "./models.ts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-export type ArrMovie = {
+export type RemoteItem = {
   externalId: number;
   seriesId: number | null;
   title: string;
@@ -37,14 +37,14 @@ export class ArrClient {
     return { version };
   }
 
-  async listMovies(instance: ArrInstance): Promise<ArrMovie[]> {
+  async listMovies(instance: ArrInstance): Promise<RemoteItem[]> {
     const rows = await this.getJsonArray(`${instance.url}/api/v3/movie`, instance.apiKey);
     return rows.map(parseMovie);
   }
 
-  async listEpisodes(instance: ArrInstance): Promise<ArrMovie[]> {
+  async listEpisodes(instance: ArrInstance): Promise<RemoteItem[]> {
     const series = await this.getJsonArray(`${instance.url}/api/v3/series`, instance.apiKey);
-    const out: ArrMovie[] = [];
+    const out: RemoteItem[] = [];
     for (const show of series) {
       const seriesId = Number(show.id);
       const title = String(show.title ?? "Series");
@@ -99,7 +99,7 @@ export class ArrClient {
   }
 }
 
-export function parseMovie(raw: Record<string, unknown>): ArrMovie {
+export function parseMovie(raw: Record<string, unknown>): RemoteItem {
   const movieFile = (raw.movieFile ?? {}) as Record<string, unknown>;
   const quality = (movieFile.quality ?? raw.quality) as Record<string, unknown> | undefined;
   const q = (quality?.quality ?? quality) as Record<string, unknown> | undefined;
@@ -153,7 +153,7 @@ export function parseEpisode(
   raw: Record<string, unknown>,
   seriesTitle: string,
   seriesId: number | null = null,
-): ArrMovie | null {
+): RemoteItem | null {
   const episodeFile = (raw.episodeFile ?? {}) as Record<string, unknown>;
   const filePath = typeof episodeFile.path === "string" ? episodeFile.path : "";
   if (!raw.id) return null;

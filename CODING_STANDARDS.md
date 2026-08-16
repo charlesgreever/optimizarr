@@ -2,6 +2,8 @@
 
 # The Elements of Agent Style — Rules
 
+This file is the **prose** standard (README, comments, UI copy). Code structure, tests, auth, and ffmpeg rules live in [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md).
+
 For each rule, this document provides:
 
 - metadata (source citation, agent-instruction evidence, severity, scope, enforcement tier)

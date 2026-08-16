@@ -4,6 +4,7 @@ import { api } from "../api";
 type ReviewRow = {
   id: number;
   title: string;
+  displayTitle?: string;
   sourcePath: string;
   sidecarPath: string;
   compare: { source?: { size?: number; duration?: number; codec?: string }; sidecar?: { size?: number; duration?: number } };
@@ -36,7 +37,7 @@ export function Review() {
         <div className="mt-6 space-y-4">
           {items.map((item) => (
             <article key={item.id} className="rounded-xl border border-zinc-800 p-5">
-              <h2 className="font-medium">{item.title}</h2>
+              <h2 className="font-medium">{item.displayTitle || item.title}</h2>
               <div className="mt-3 grid gap-3 text-sm text-zinc-400 md:grid-cols-2">
                 <div>
                   <div className="text-xs uppercase text-zinc-500">Original</div>

@@ -31,8 +31,9 @@ export async function testPlayer(
 ): Promise<{ ok: boolean; version?: string; error?: string }> {
   try {
     if (player.kind === "plex") {
-      const url = `${player.url}/identity?X-Plex-Token=${encodeURIComponent(player.token)}`;
-      const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+      const res = await fetchImpl(`${player.url}/identity`, {
+        headers: { Accept: "application/json", "X-Plex-Token": player.token },
+      });
       if (res.status === 401 || res.status === 403) return { ok: false, error: "Plex token was rejected" };
       if (!res.ok) return { ok: false, error: `Plex returned HTTP ${res.status}` };
       const text = await res.text();
@@ -54,8 +55,9 @@ export async function testPlayer(
 export async function notifyPlayer(fetchImpl: FetchLike, player: PlayerInstance): Promise<NotifyResult> {
   try {
     if (player.kind === "plex") {
-      const url = `${player.url}/library/sections/all/refresh?X-Plex-Token=${encodeURIComponent(player.token)}`;
-      const res = await fetchImpl(url);
+      const res = await fetchImpl(`${player.url}/library/sections/all/refresh`, {
+        headers: { "X-Plex-Token": player.token },
+      });
       if (!res.ok) return { ok: false, target: player.name, error: `Plex HTTP ${res.status}` };
       return { ok: true, target: player.name };
     }

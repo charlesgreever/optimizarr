@@ -6,18 +6,7 @@ import { ArrClient } from "./arr.ts";
 import { createApp, SESSION_COOKIE } from "./app.ts";
 import { Store } from "./store.ts";
 import { LibrarySync, UNREADABLE, noFileMessage } from "./sync.ts";
-
-function cookieHeader(res: Response): string {
-  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
-  const parts =
-    typeof headers.getSetCookie === "function"
-      ? headers.getSetCookie.call(headers)
-      : [headers.get("set-cookie") ?? ""];
-  return parts
-    .map((c) => c.split(";")[0])
-    .filter(Boolean)
-    .join("; ");
-}
+import { cookieHeader } from "./test-http.ts";
 
 describe("phase 2 radarr sync", () => {
   const dirs: string[] = [];
@@ -60,7 +49,7 @@ describe("phase 2 radarr sync", () => {
   }
 
   it("saves a Radarr instance without echoing the API key and tests the connection", async () => {
-    const { app, cookie } = await setup([]);
+    const { app, store, cookie } = await setup([]);
     const created = await app.request("/api/instances", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
@@ -77,6 +66,12 @@ describe("phase 2 radarr sync", () => {
     expect(body.hasApiKey).toBe(true);
     expect(body.url).toBe("http://radarr.local:7878");
     expect(JSON.stringify(body)).not.toContain("secret-key");
+    const raw = store.db.prepare("SELECT api_key AS apiKey FROM arr_instances WHERE id = 1").get() as {
+      apiKey: string;
+    };
+    expect(raw.apiKey.startsWith("enc:v1:")).toBe(true);
+    expect(raw.apiKey).not.toContain("secret-key");
+    expect(store.getArrInstance(1)?.apiKey).toBe("secret-key");
 
     const listed = await app.request("/api/instances", { headers: { cookie } });
     expect((await listed.json()).items[0].apiKey).toBeUndefined();

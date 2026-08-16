@@ -4,11 +4,13 @@ import type { InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
 import { IntegrityError, reviewPathFor, type Optimizer } from "./optimize.ts";
+import { reviewPathInsideLibrary } from "./paths.ts";
 import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
 import type { Store } from "./store.ts";
 import type { FetchLike } from "./arr.ts";
 import { sizePerHourGb } from "./inspect.ts";
+import { displayTitle } from "./titles.ts";
 import type { Settings } from "./types.ts";
 
 export class JobService {
@@ -40,6 +42,10 @@ export class JobService {
     }
     const settings = this.store.getSettings();
     if (!settings.reviewPath) return { error: "Set a review path in Settings first", status: 400 };
+    const libraries = this.store.listLibraryItems().flatMap((row) => [row.path, row.folderPath ?? ""]);
+    if (reviewPathInsideLibrary(settings.reviewPath, libraries)) {
+      return { error: "Review path must sit outside Arr library folders", status: 400 };
+    }
     try {
       await this.fs.mkdir(settings.reviewPath, { recursive: true });
       const { statfs } = await import("node:fs/promises");
@@ -50,6 +56,8 @@ export class JobService {
       }
     } catch (err) {
       if (err && typeof err === "object" && "status" in err) throw err;
+      const message = err instanceof Error ? err.message : "Could not write to the review path";
+      return { error: message, status: 400 };
     }
     const jobId = this.store.createJob(item.id, suggestion.id, suggestion.plan, this.now().toISOString());
     await this.processQueue();
@@ -96,7 +104,7 @@ export class JobService {
     this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
     const item = this.store.getLibraryItem(job.itemId as number);
     if (item) {
-      this.store.addHistory(item.id, item.title, "cancelled");
+      this.store.addHistory(item.id, displayTitle(item), "cancelled");
       const sidecarPath = reviewPathFor(this.store.getSettings().reviewPath, item.title, item.id);
       await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
       if (!this.store.pendingReviewForItem(item.id)) {
@@ -157,7 +165,7 @@ export class JobService {
         flagged,
       });
       this.store.updateJob(jobId, { status: "succeeded", progress: 1, finishedAt: this.now().toISOString() });
-      this.store.addHistory(item.id, item.title, flagged ? "flagged" : "finished");
+      this.store.addHistory(item.id, displayTitle(item), flagged ? "flagged" : "finished");
     } catch (err) {
       await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
       await this.fs.unlink(sidecarPath).catch(() => undefined);
@@ -171,7 +179,7 @@ export class JobService {
         error: message,
         finishedAt: this.now().toISOString(),
       });
-      this.store.addHistory(item.id, item.title, "failed", message);
+      this.store.addHistory(item.id, displayTitle(item), "failed", message);
     } finally {
       this.aborts.delete(jobId);
     }
@@ -210,7 +218,7 @@ export class JobService {
       }
     }
     this.store.setReviewStatus(reviewId, "kept");
-    this.store.addHistory(item.id, item.title, "kept");
+    this.store.addHistory(item.id, displayTitle(item), "kept");
     const notify = [];
     if (instance) notify.push(await notifyArrRename(this.fetchImpl, instance, item));
     for (const player of this.store.listPlayers().filter((p) => p.enabled)) {
@@ -226,7 +234,7 @@ export class JobService {
     await this.fs.unlink(review.sidecarPath).catch(() => undefined);
     this.store.setReviewStatus(reviewId, "discarded");
     const item = this.store.getLibraryItem(review.itemId);
-    this.store.addHistory(review.itemId, item?.title ?? "item", "discarded");
+    this.store.addHistory(review.itemId, item ? displayTitle(item) : "item", "discarded");
     return { ok: true };
   }
 }

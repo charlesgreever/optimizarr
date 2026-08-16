@@ -8,15 +8,7 @@ import { Catalog } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-
-function cookieHeader(res: Response): string {
-  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
-  const parts =
-    typeof headers.getSetCookie === "function"
-      ? headers.getSetCookie.call(headers)
-      : [headers.get("set-cookie") ?? ""];
-  return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
-}
+import { cookieHeader } from "./test-http.ts";
 
 const probes: Record<string, Record<string, unknown>> = {
   "/ok.mkv": {
@@ -83,6 +75,40 @@ describe("phase 3 catalog", () => {
     expect(body.items.map((i: { title: string }) => i.title)).toEqual(["Giant AVC"]);
     expect(body.items[0].actions).toContain("transcode");
     expect(body.items[0].estimatedSavingsBytes).toBeGreaterThan(0);
+  });
+
+  it("shows show, season, and episode title on a series suggestion", async () => {
+    const { app, store, cookie } = await setup();
+    store.createArrInstance({ kind: "sonarr", name: "Sonarr", url: "http://s", apiKey: "k" });
+    const sonarr = store.listArrInstances().find((i) => i.kind === "sonarr");
+    store.upsertLibraryItem({
+      instanceId: sonarr!.id,
+      externalId: 11,
+      seriesId: 3,
+      type: "episode",
+      title: "(I Don’t Want to Go to) Chelsea",
+      seriesTitle: "Ted Lasso",
+      seasonNumber: 3,
+      episodeNumber: 2,
+      path: "/big.mkv",
+      folderPath: null,
+      quality: "WEBDL-1080p",
+      videoCodec: "h264",
+      resolution: "1080",
+      hdr: null,
+      size: 10,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    const catalog = new Catalog(store, (path) => parseFfprobe(path, probes[path]));
+    const episode = store.listLibraryItems("episode")[0];
+    await catalog.inspectItem(episode.id);
+    const listed = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    const row = listed.items.find((i: { title: string }) => i.title.includes("Chelsea"));
+    expect(row.displayTitle).toBe("Ted Lasso / Season 3 / (I Don’t Want to Go to) Chelsea");
+    const byShow = await app.request("/api/suggestions?q=ted%20lasso", { headers: { cookie } }).then((r) => r.json());
+    expect(byShow.items.some((i: { displayTitle: string }) => i.displayTitle.includes("Chelsea"))).toBe(true);
   });
 
   it("filters by title search", async () => {

@@ -27,6 +27,33 @@ export function mediaShareRoot(path: string): string | null {
   return `/${parts.join("/")}`;
 }
 
+function normalizePath(path: string): string {
+  const cleaned = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return cleaned || "/";
+}
+
+function libraryRoots(libraryPaths: string[]): string[] {
+  const roots = new Set<string>();
+  for (const raw of libraryPaths.filter(Boolean)) {
+    const posix = raw.replace(/\\/g, "/");
+    const parts = posix.split("/").filter(Boolean);
+    const idx = parts.findIndex((seg) => LIBRARY_DIR.test(seg));
+    if (idx >= 0) {
+      roots.add(`/${parts.slice(0, idx + 1).join("/")}`);
+      continue;
+    }
+    const dir = /\.[a-z0-9]{2,4}$/i.test(posix) ? posix.slice(0, posix.lastIndexOf("/")) : posix;
+    if (dir && dir.split("/").filter(Boolean).length >= 3) roots.add(normalizePath(dir));
+  }
+  return [...roots];
+}
+
+export function reviewPathInsideLibrary(reviewPath: string, libraryPaths: string[]): boolean {
+  const review = normalizePath(reviewPath);
+  if (!review || review === "/") return false;
+  return libraryRoots(libraryPaths).some((root) => review === root || review.startsWith(`${root}/`));
+}
+
 export function suggestReviewPath(paths: string[]): string | null {
   const roots = [...new Set(paths.filter(Boolean).map(mediaShareRoot).filter((p): p is string => Boolean(p)))];
   const root = roots.length === 1 ? roots[0] : commonDirectory(roots);

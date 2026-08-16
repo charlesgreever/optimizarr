@@ -2,17 +2,21 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
+import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
 import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
 
 export class Store {
   readonly db: DatabaseSync;
   readonly dataDir: string;
+  private readonly secretKey: Buffer;
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
     mkdirSync(dataDir, { recursive: true });
+    this.secretKey = loadSecretKey(dataDir);
     this.db = new DatabaseSync(join(dataDir, "optimizarr.db"));
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
@@ -264,14 +268,14 @@ export class Store {
         "SELECT id, kind, name, url, api_key AS apiKey, enabled FROM arr_instances ORDER BY id",
       )
       .all() as Array<ArrInstance & { enabled: number | boolean }>;
-    return rows.map(mapInstance);
+    return rows.map((row) => this.revealInstance(row));
   }
 
   getArrInstance(id: number): ArrInstance | undefined {
     const row = this.db
       .prepare("SELECT id, kind, name, url, api_key AS apiKey, enabled FROM arr_instances WHERE id = ?")
       .get(id) as (ArrInstance & { enabled: number | boolean }) | undefined;
-    return row ? mapInstance(row) : undefined;
+    return row ? this.revealInstance(row) : undefined;
   }
 
   createArrInstance(input: {
@@ -283,7 +287,13 @@ export class Store {
   }): ArrInstance {
     const inserted = this.db
       .prepare("INSERT INTO arr_instances (kind, name, url, api_key, enabled) VALUES (?, ?, ?, ?, ?)")
-      .run(input.kind, input.name, normalizeUrl(input.url), input.apiKey, input.enabled === false ? 0 : 1);
+      .run(
+        input.kind,
+        input.name,
+        normalizeUrl(input.url),
+        encryptSecret(input.apiKey, this.secretKey),
+        input.enabled === false ? 0 : 1,
+      );
     const id = Number(inserted.lastInsertRowid);
     const created = this.getArrInstance(id);
     if (!created) throw new Error("failed to create instance");
@@ -304,7 +314,7 @@ export class Store {
     };
     this.db
       .prepare("UPDATE arr_instances SET kind = ?, name = ?, url = ?, api_key = ?, enabled = ? WHERE id = ?")
-      .run(next.kind, next.name, next.url, next.apiKey, next.enabled ? 1 : 0, id);
+      .run(next.kind, next.name, next.url, encryptSecret(next.apiKey, this.secretKey), next.enabled ? 1 : 0, id);
     return this.getArrInstance(id);
   }
 
@@ -506,12 +516,13 @@ export class Store {
                 s.estimated_savings_bytes AS estimatedSavingsBytes, s.dismissed, s.forced,
                 s.over_cap AS overCap, s.extra_tracks AS extraTracks, s.category,
                 s.size_per_hour AS sizePerHourGb, s.plan_json AS planJson,
-                i.title, i.type, i.path, i.video_codec AS videoCodec, i.resolution, i.hdr,
-                i.instance_id AS instanceId, a.name AS instanceName
+                i.title, i.series_title AS seriesTitle, i.season_number AS seasonNumber,
+                i.episode_number AS episodeNumber, i.type, i.path, i.video_codec AS videoCodec,
+                i.resolution, i.hdr, i.instance_id AS instanceId, a.name AS instanceName
          FROM suggestions s
          JOIN library_items i ON i.id = s.item_id
          JOIN arr_instances a ON a.id = i.instance_id
-         ORDER BY i.title COLLATE NOCASE`,
+         ORDER BY i.series_title COLLATE NOCASE, i.season_number, i.episode_number, i.title COLLATE NOCASE`,
       )
       .all() as Array<Record<string, unknown> & { actionsJson: string; planJson: string; dismissed: number; forced: number; overCap: number; extraTracks: number }>;
     return rows
@@ -523,6 +534,12 @@ export class Store {
         forced: Boolean(r.forced),
         overCap: Boolean(r.overCap),
         extraTracks: Boolean(r.extraTracks),
+        displayTitle: displayTitle({
+          title: String(r.title),
+          seriesTitle: (r.seriesTitle as string | null) ?? null,
+          seasonNumber: (r.seasonNumber as number | null) ?? null,
+          episodeNumber: (r.episodeNumber as number | null) ?? null,
+        }),
       }))
       .filter((r) => {
         const actions = r.actions as string[];
@@ -532,7 +549,19 @@ export class Store {
         if (filters?.extraTracks && !r.extraTracks) return false;
         if (filters?.type && r.type !== filters.type) return false;
         if (filters?.codec && String(r.videoCodec ?? "").toLowerCase() !== filters.codec.toLowerCase()) return false;
-        if (filters?.q && !String(r.title).toLowerCase().includes(filters.q.toLowerCase())) return false;
+        if (
+          filters?.q &&
+          !matchesTitleSearch(
+            {
+              title: String(r.title),
+              seriesTitle: (r.seriesTitle as string | null) ?? null,
+              seasonNumber: (r.seasonNumber as number | null) ?? null,
+            },
+            filters.q,
+          )
+        ) {
+          return false;
+        }
         return true;
       });
   }
@@ -593,9 +622,23 @@ export class Store {
     return this.db
       .prepare(
         `SELECT j.id, j.item_id AS itemId, j.status, j.progress, j.error, j.log, j.created_at AS createdAt,
-                i.title FROM jobs j JOIN library_items i ON i.id = j.item_id ORDER BY j.id DESC`,
+                i.title, i.series_title AS seriesTitle, i.season_number AS seasonNumber,
+                i.episode_number AS episodeNumber
+         FROM jobs j JOIN library_items i ON i.id = j.item_id ORDER BY j.id DESC`,
       )
-      .all() as Array<Record<string, unknown>>;
+      .all()
+      .map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          ...r,
+          displayTitle: displayTitle({
+            title: String(r.title),
+            seriesTitle: (r.seriesTitle as string | null) ?? null,
+            seasonNumber: (r.seasonNumber as number | null) ?? null,
+            episodeNumber: (r.episodeNumber as number | null) ?? null,
+          }),
+        };
+      });
   }
 
   createReview(row: {
@@ -657,13 +700,24 @@ export class Store {
     return this.db
       .prepare(
         `SELECT r.id, r.item_id AS itemId, r.source_path AS sourcePath, r.sidecar_path AS sidecarPath,
-                r.compare_json AS compareJson, r.flagged, r.status, i.title, i.instance_id AS instanceId
+                r.compare_json AS compareJson, r.flagged, r.status, i.title, i.instance_id AS instanceId,
+                i.series_title AS seriesTitle, i.season_number AS seasonNumber, i.episode_number AS episodeNumber
          FROM reviews r JOIN library_items i ON i.id = r.item_id WHERE r.status = ? ORDER BY r.id DESC`,
       )
       .all(status)
       .map((r) => {
         const row = r as Record<string, unknown> & { compareJson: string; flagged: number };
-        return { ...row, compare: JSON.parse(row.compareJson ?? "{}"), flagged: Boolean(row.flagged) };
+        return {
+          ...row,
+          compare: JSON.parse(row.compareJson ?? "{}"),
+          flagged: Boolean(row.flagged),
+          displayTitle: displayTitle({
+            title: String(row.title),
+            seriesTitle: (row.seriesTitle as string | null) ?? null,
+            seasonNumber: (row.seasonNumber as number | null) ?? null,
+            episodeNumber: (row.episodeNumber as number | null) ?? null,
+          }),
+        };
       });
   }
 
@@ -676,7 +730,7 @@ export class Store {
       this.db
         .prepare("SELECT id, kind, name, url, token, enabled FROM player_instances ORDER BY id")
         .all() as Array<PlayerInstance & { enabled: number }>
-    ).map((p) => ({ ...p, id: Number(p.id), enabled: Boolean(p.enabled) }));
+    ).map((p) => this.revealPlayer(p));
   }
 
   addHistory(itemId: number | null, title: string, action: string, detail?: string): void {
@@ -717,7 +771,13 @@ export class Store {
   createPlayer(input: { kind: PlayerKind; name: string; url: string; token: string; enabled?: boolean }): PlayerInstance {
     const inserted = this.db
       .prepare("INSERT INTO player_instances (kind, name, url, token, enabled) VALUES (?, ?, ?, ?, ?)")
-      .run(input.kind, input.name, input.url.replace(/\/+$/, ""), input.token, input.enabled === false ? 0 : 1);
+      .run(
+        input.kind,
+        input.name,
+        input.url.replace(/\/+$/, ""),
+        encryptSecret(input.token, this.secretKey),
+        input.enabled === false ? 0 : 1,
+      );
     const id = Number(inserted.lastInsertRowid);
     const created = this.listPlayers().find((p) => p.id === id);
     if (!created) throw new Error("failed to create player");
@@ -735,7 +795,7 @@ export class Store {
     };
     this.db
       .prepare("UPDATE player_instances SET kind = ?, name = ?, url = ?, token = ?, enabled = ? WHERE id = ?")
-      .run(next.kind, next.name, next.url, next.token, next.enabled ? 1 : 0, id);
+      .run(next.kind, next.name, next.url, encryptSecret(next.token, this.secretKey), next.enabled ? 1 : 0, id);
     return this.listPlayers().find((p) => p.id === id);
   }
 
@@ -750,6 +810,23 @@ export class Store {
     return row.n;
   }
 
+  private revealInstance(row: ArrInstance & { enabled: number | boolean }): ArrInstance {
+    return {
+      ...row,
+      enabled: Boolean(row.enabled),
+      apiKey: decryptSecret(row.apiKey, this.secretKey),
+    };
+  }
+
+  private revealPlayer(row: PlayerInstance & { enabled: number | boolean }): PlayerInstance {
+    return {
+      ...row,
+      id: Number(row.id),
+      enabled: Boolean(row.enabled),
+      token: decryptSecret(row.token, this.secretKey),
+    };
+  }
+
   removeMissingLibraryItems(instanceId: number, type: ItemType, keepExternalIds: number[]): void {
     if (keepExternalIds.length === 0) {
       this.db.prepare("DELETE FROM library_items WHERE instance_id = ? AND type = ?").run(instanceId, type);
@@ -762,10 +839,6 @@ export class Store {
       )
       .run(instanceId, type, ...keepExternalIds);
   }
-}
-
-function mapInstance(row: ArrInstance & { enabled: number | boolean }): ArrInstance {
-  return { ...row, enabled: Boolean(row.enabled) };
 }
 
 function normalizeUrl(url: string): string {

@@ -8,15 +8,7 @@ import { Catalog } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-
-function cookieHeader(res: Response): string {
-  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
-  const parts =
-    typeof headers.getSetCookie === "function"
-      ? headers.getSetCookie.call(headers)
-      : [headers.get("set-cookie") ?? ""];
-  return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
-}
+import { cookieHeader } from "./test-http.ts";
 
 describe("phases 5-10", () => {
   const dirs: string[] = [];
@@ -86,11 +78,12 @@ describe("phases 5-10", () => {
     });
     await app2.request("/api/library/refresh", { method: "POST", headers: { cookie } });
     const sid = (await app2.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
-    await app2.request("/api/queue", {
+    const queued = await app2.request("/api/queue", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    expect(queued.status).toBe(201);
     const jobs = await app2.request("/api/jobs", { headers: { cookie } }).then((r) => r.json());
     expect(jobs.items[0].status).toBe("failed");
     expect(jobs.items[0].error).toMatch(/Hardware encode failed/i);

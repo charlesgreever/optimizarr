@@ -139,7 +139,7 @@ export class LibrarySync {
   }
 }
 
-export function movieListPayload(items: LibraryItem[], lastSyncAt: string | null, empty: string) {
+export function libraryListPayload(items: LibraryItem[], lastSyncAt: string | null, empty: string) {
   if (items.length === 0) {
     return { items, lastSyncAt, message: empty };
   }

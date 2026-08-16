@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commonDirectory, suggestReviewPath } from "./paths.ts";
+import { commonDirectory, reviewPathInsideLibrary, suggestReviewPath } from "./paths.ts";
 
 describe("review path suggestion", () => {
   it("uses the shared Arr root plus optimizarr-review", () => {
@@ -18,5 +18,14 @@ describe("review path suggestion", () => {
   it("returns null when there is no shared root", () => {
     expect(suggestReviewPath([])).toBeNull();
     expect(commonDirectory(["/movies/a", "/tv/b"])).toBeNull();
+  });
+
+  it("rejects a review folder inside an Arr library tree", () => {
+    expect(
+      reviewPathInsideLibrary("/mnt/nas/Movies/optimizarr-review", ["/mnt/nas/Movies/Up/Up.mkv"]),
+    ).toBe(true);
+    expect(
+      reviewPathInsideLibrary("/mnt/nas/optimizarr-review", ["/mnt/nas/Movies/Up/Up.mkv"]),
+    ).toBe(false);
   });
 });

@@ -140,10 +140,10 @@ function ffmpegDetail(err: unknown): string {
     if (value && typeof value === "object" && Buffer.isBuffer(value)) return value.toString("utf8");
     return "";
   };
-  return (asText(rec.stderr) || asText(rec.stdout) || (typeof rec.message === "string" ? rec.message : ""))
+  const text = (asText(rec.stderr) || asText(rec.stdout) || (typeof rec.message === "string" ? rec.message : ""))
     .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 800);
+    .replace(/\s+/g, " ");
+  return text.length <= 800 ? text : text.slice(-800);
 }
 
 export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimizer {

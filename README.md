@@ -4,6 +4,7 @@ Optimizarr is a companion container for Radarr and Sonarr. It inspects the same 
 
 **PRD:** [issue #1](https://github.com/charlesgreever/optimizarr/issues/1)
 **Plan:** [plans/optimizarr.md](plans/optimizarr.md)
+**Engineering standard:** [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md)
 **Prose standard:** [CODING_STANDARDS.md](CODING_STANDARDS.md) (The Elements of Agent Style)
 
 ## What it does
@@ -55,3 +56,5 @@ To use the NVIDIA GPU, uncomment `runtime: nvidia` in `compose.yaml`.
 | `TZ` | `America/New_York` | Container timezone |
 | `CONFIG_DIR` | `/config` | Persistent SQLite and settings |
 | `PORT` | `7373` | Listen port |
+| `OPTIMIZARR_SECRET` | generated in `/config/.secret` | AES key for Arr API keys and player tokens at rest |
+| `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy so `X-Forwarded-For` can drive local-address login |

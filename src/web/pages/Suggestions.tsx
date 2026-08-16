@@ -6,6 +6,10 @@ type Row = {
   id: number;
   itemId: number;
   title: string;
+  displayTitle?: string;
+  seriesTitle?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
   actions: string[];
   warning: string | null;
   estimatedSavingsBytes: number | null;
@@ -126,7 +130,7 @@ export function Suggestions() {
       <div className="flex flex-wrap gap-3">
         <input
           className="input max-w-xs"
-          placeholder="Search title"
+          placeholder="Search show or title"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -161,7 +165,7 @@ export function Suggestions() {
                     onChange={(e) => setSelected((s) => ({ ...s, [item.id]: e.target.checked }))}
                   />
                   <span className="min-w-0">
-                    <span className="block font-medium">{item.title}</span>
+                    <span className="block font-medium">{item.displayTitle || item.title}</span>
                     <span className="block text-xs text-zinc-500">
                       {item.instanceName} · {item.videoCodec || "unknown codec"} · {item.category}
                       {item.sizePerHourGb ? ` · ${item.sizePerHourGb.toFixed(2)} GB/hr` : ""}

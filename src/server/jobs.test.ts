@@ -9,15 +9,7 @@ import { parseFfprobe } from "./inspect.ts";
 import { IntegrityError } from "./optimize.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-
-function cookieHeader(res: Response): string {
-  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
-  const parts =
-    typeof headers.getSetCookie === "function"
-      ? headers.getSetCookie.call(headers)
-      : [headers.get("set-cookie") ?? ""];
-  return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
-}
+import { cookieHeader } from "./test-http.ts";
 
 describe("phase 4 remux review keep", () => {
   const dirs: string[] = [];

@@ -14,17 +14,22 @@ export function normalizeIp(raw: string | undefined): string {
   return ip;
 }
 
-export function clientIp(headers: Headers, remoteAddress: string | undefined): string {
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0];
-    const ip = normalizeIp(first);
-    if (ip) return ip;
-  }
-  const real = headers.get("x-real-ip");
-  if (real) {
-    const ip = normalizeIp(real);
-    if (ip) return ip;
+export function clientIp(
+  headers: Headers,
+  remoteAddress: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (env.OPTIMIZARR_TRUST_PROXY === "1") {
+    const forwarded = headers.get("x-forwarded-for");
+    if (forwarded) {
+      const ip = normalizeIp(forwarded.split(",")[0]);
+      if (ip) return ip;
+    }
+    const real = headers.get("x-real-ip");
+    if (real) {
+      const ip = normalizeIp(real);
+      if (ip) return ip;
+    }
   }
   return normalizeIp(remoteAddress);
 }

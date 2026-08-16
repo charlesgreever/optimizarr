@@ -3,9 +3,10 @@ import { notifyArrRename, testPlayer } from "./notify.ts";
 
 describe("player test", () => {
   it("reports a live Plex identity", async () => {
-    const result = await testPlayer(async (url) => {
+    const result = await testPlayer(async (url, init) => {
       expect(url).toContain("/identity");
-      expect(url).toContain("X-Plex-Token=pt");
+      expect(url).not.toContain("X-Plex-Token=");
+      expect(new Headers(init?.headers).get("X-Plex-Token")).toBe("pt");
       return new Response('<MediaContainer version="1.41.2.9200">', { status: 200 });
     }, { id: 1, kind: "plex", name: "Plex", url: "http://plex:32400", token: "pt", enabled: true });
     expect(result).toEqual({ ok: true, version: "1.41.2.9200" });

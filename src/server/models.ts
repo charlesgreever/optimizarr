@@ -58,3 +58,14 @@ export function publicArrInstance(row: ArrInstance): PublicArrInstance {
     hasApiKey: Boolean(row.apiKey),
   };
 }
+
+export function publicPlayerInstance(row: PlayerInstance): PublicPlayerInstance {
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    url: row.url,
+    enabled: row.enabled,
+    hasToken: Boolean(row.token),
+  };
+}

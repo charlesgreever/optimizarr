@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clientIp, isPrivateIp, normalizeIp } from "./net.ts";
 
 describe("net", () => {
-  it("treats loopback and RFC1918 as private", () => {
+  it("treats loopback and private LAN ranges as private", () => {
     expect(isPrivateIp("127.0.0.1")).toBe(true);
     expect(isPrivateIp("::1")).toBe(true);
     expect(isPrivateIp("192.168.1.10")).toBe(true);
@@ -12,9 +12,10 @@ describe("net", () => {
     expect(isPrivateIp("1.1.1.1")).toBe(false);
   });
 
-  it("reads the first forwarded address", () => {
+  it("ignores forwarded headers unless OPTIMIZARR_TRUST_PROXY=1", () => {
     const headers = new Headers({ "x-forwarded-for": "192.168.1.50, 10.0.0.1" });
-    expect(clientIp(headers, "127.0.0.1")).toBe("192.168.1.50");
+    expect(clientIp(headers, "127.0.0.1", {})).toBe("127.0.0.1");
+    expect(clientIp(headers, "127.0.0.1", { OPTIMIZARR_TRUST_PROXY: "1" })).toBe("192.168.1.50");
     expect(normalizeIp("::ffff:10.1.2.3")).toBe("10.1.2.3");
   });
 });

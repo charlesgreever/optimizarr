@@ -171,7 +171,7 @@ Suggest adding AAC stereo when the file has Atmos or more than 5.1, and always o
 
 ## Phase 7: Sonarr and multiple instances
 
-**User stories**: 12, 13, 22, 104, 105
+**User stories**: 12, 13, 22, 104, 105, 128, 129, 130
 
 ### What to build
 
@@ -180,6 +180,7 @@ Multiple Radarr and Sonarr instances, each with URL, API key, and enable flag. S
 ### Acceptance criteria
 
 - [x] Two Radarrs and one Sonarr can be enabled at once; disabling one stops syncing it without affecting others.
+- [x] Series suggestions, queue, review, and history show show title / season / episode title, and search matches the show name.
 - [x] Series page lists shows and episodes with Arr metadata and paths.
 - [x] Episode files use TV size caps; movies use movie caps.
 - [x] Each item shows which instance it came from.

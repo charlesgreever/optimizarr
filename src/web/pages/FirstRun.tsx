@@ -184,7 +184,7 @@ export function FirstRun({ onDone }: { onDone: () => void }) {
   const subtitle = `${stepIndex + 1} of ${STEPS.length}`;
 
   return (
-    <AuthCard title={TITLE[step]} subtitle={`${subtitle} — ${BLURB[step]}`}>
+    <AuthCard title={TITLE[step]} subtitle={`${subtitle}: ${BLURB[step]}`}>
       <ol className="mb-6 flex flex-wrap gap-1 text-[11px] uppercase tracking-wide text-zinc-500">
         {STEPS.map((s, i) => (
           <li key={s} className={s === step ? "text-amber-400" : i < stepIndex ? "text-zinc-300" : ""}>
@@ -324,9 +324,9 @@ const TITLE: Record<Step, string> = {
 };
 const BLURB: Record<Step, string> = {
   account: "Create the admin account and confirm your preferred language.",
-  radarr: "Use the same URL the container can reach, e.g. http://radarr:7878 on arr_net.",
+  radarr: "Use the same URL the container can reach, for example http://radarr:7878 on the Docker network shared with Radarr.",
   sonarr: "Same idea as Radarr. You can skip if you only run movies.",
-  plex: "URL plus an X-Plex-Token. Used to refresh Plex after Keep.",
+  plex: "URL plus a Plex token. Optimizarr uses it to refresh Plex after Keep.",
   jellyfin: "Optional. Used to refresh Jellyfin after Keep.",
   review: "Suggested from the shared root of your Arr file paths.",
 };

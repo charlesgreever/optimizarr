@@ -4,6 +4,7 @@ import { api } from "../api";
 type Job = {
   id: number;
   title?: string;
+  displayTitle?: string;
   status?: string;
   error?: string | null;
   progress?: number;
@@ -57,7 +58,7 @@ export function Queue() {
           {items.map((job) => (
             <li key={String(job.id)} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 px-4 py-3 text-sm">
               <div>
-                <span className="font-medium">{String(job.title ?? "Job")}</span>
+                <span className="font-medium">{String(job.displayTitle || job.title || "Job")}</span>
                 <span className="ml-2 text-zinc-500">{String(job.status)}</span>
                 {job.error ? <div className="mt-1 text-xs text-red-400">{String(job.error)}</div> : null}
               </div>
