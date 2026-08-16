@@ -13,6 +13,7 @@ import { detectBackends, type EncodeBackends } from "./hardware.ts";
 import { JobService } from "./jobs.ts";
 import { publicArrInstance } from "./models.ts";
 import type { PlayerKind } from "./models.ts";
+import { testPlayer } from "./notify.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { LibrarySync, defaultPathReadable, movieListPayload, type PathCheck } from "./sync.ts";
 import type { Settings } from "./types.ts";
@@ -416,6 +417,13 @@ export function createApp(store: Store, opts?: AppOpts): App {
     if (!name || !url || !token) return c.json({ error: "name, url, and token are required" }, 400);
     const created = store.createPlayer({ kind, name, url, token });
     return c.json({ id: created.id, kind: created.kind, name: created.name, url: created.url, enabled: created.enabled, hasToken: true }, 201);
+  });
+  app.post("/api/players/:id/test", requireAuth, async (c) => {
+    const player = store.listPlayers().find((p) => p.id === Number(c.req.param("id")));
+    if (!player) return c.json({ error: "Player not found" }, 404);
+    const result = await testPlayer(opts?.fetchImpl ?? fetch, player);
+    if (!result.ok) return c.json({ ok: false, error: result.error }, 400);
+    return c.json({ ok: true, version: result.version });
   });
   app.put("/api/players/:id", requireAuth, async (c) => {
     const id = Number(c.req.param("id"));

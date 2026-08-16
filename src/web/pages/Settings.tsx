@@ -23,6 +23,7 @@ export function Settings() {
   const [playerUrl, setPlayerUrl] = useState("");
   const [playerToken, setPlayerToken] = useState("");
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [playerTestMsg, setPlayerTestMsg] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
   const loadGen = useRef(0);
 
@@ -352,6 +353,22 @@ export function Settings() {
             <div className="mt-1 text-zinc-500">{player.url}</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <button
+                className="btn !w-auto"
+                type="button"
+                onClick={() => {
+                  void api
+                    .testPlayer(player.id)
+                    .then((r) =>
+                      setPlayerTestMsg(
+                        `${player.name}: ${r.ok ? `connected${r.version ? ` (v${r.version})` : ""}` : r.error || "failed"}`,
+                      ),
+                    )
+                    .catch((e: Error) => setPlayerTestMsg(`${player.name}: ${e.message}`));
+                }}
+              >
+                Test
+              </button>
+              <button
                 className="btn !w-auto !bg-zinc-700 !text-zinc-100"
                 type="button"
                 onClick={() => {
@@ -444,6 +461,7 @@ export function Settings() {
             />
           </label>
           {playerError && <p className="text-sm text-red-400">{playerError}</p>}
+          {playerTestMsg && <p className="text-sm text-zinc-300">{playerTestMsg}</p>}
           <button className="btn" type="submit">
             Add {playerKind === "jellyfin" ? "Jellyfin" : "Plex"}
           </button>

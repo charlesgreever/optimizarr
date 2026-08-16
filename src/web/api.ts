@@ -129,6 +129,8 @@ export const api = {
   updatePlayer: (id: number, body: Partial<{ name: string; url: string; token: string; enabled: boolean }>) =>
     request<Player>(`/api/players/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deletePlayer: (id: number) => request(`/api/players/${id}`, { method: "DELETE" }),
+  testPlayer: (id: number) =>
+    request<{ ok: boolean; version?: string; error?: string }>(`/api/players/${id}/test`, { method: "POST" }),
   history: () => request<EmptyList>("/api/history"),
 };
 

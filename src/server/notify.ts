@@ -26,6 +26,32 @@ export async function notifyArrRename(
   }
 }
 
+export async function testPlayer(
+  fetchImpl: FetchLike,
+  player: PlayerInstance,
+): Promise<{ ok: boolean; version?: string; error?: string }> {
+  try {
+    if (player.kind === "plex") {
+      const url = `${player.url}/identity?X-Plex-Token=${encodeURIComponent(player.token)}`;
+      const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+      if (res.status === 401 || res.status === 403) return { ok: false, error: "Plex token was rejected" };
+      if (!res.ok) return { ok: false, error: `Plex returned HTTP ${res.status}` };
+      const text = await res.text();
+      const version = text.match(/version="([^"]+)"/)?.[1] ?? text.match(/"version"\s*:\s*"([^"]+)"/)?.[1];
+      return { ok: true, version };
+    }
+    const res = await fetchImpl(`${player.url}/System/Info`, {
+      headers: { "X-Emby-Token": player.token },
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, error: "Player token was rejected" };
+    if (!res.ok) return { ok: false, error: `Player returned HTTP ${res.status}` };
+    const data = (await res.json().catch(() => ({}))) as { Version?: string; ServerName?: string };
+    return { ok: true, version: data.Version };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Connection failed" };
+  }
+}
+
 export async function notifyPlayer(fetchImpl: FetchLike, player: PlayerInstance): Promise<NotifyResult> {
   try {
     if (player.kind === "plex") {
