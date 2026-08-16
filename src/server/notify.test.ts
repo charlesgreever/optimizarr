@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { testPlayer } from "./notify.ts";
+import { notifyArrRename, testPlayer } from "./notify.ts";
 
 describe("player test", () => {
   it("reports a live Plex identity", async () => {
@@ -22,5 +22,42 @@ describe("player test", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/token/i);
+  });
+});
+
+describe("arr rename", () => {
+  it("rescans the Sonarr series id, not the episode id", async () => {
+    let body: unknown;
+    await notifyArrRename(
+      async (_url, init) => {
+        body = JSON.parse(String(init?.body));
+        return new Response("{}", { status: 201 });
+      },
+      { id: 1, kind: "sonarr", name: "Sonarr", url: "http://sonarr", apiKey: "k", enabled: true },
+      {
+        id: 9,
+        instanceId: 1,
+        instanceName: "Sonarr",
+        instanceKind: "sonarr",
+        externalId: 11,
+        seriesId: 3,
+        type: "episode",
+        title: "Pilot",
+        seriesTitle: "Show",
+        seasonNumber: 1,
+        episodeNumber: 1,
+        path: "/tv/show.mkv",
+        folderPath: "/tv",
+        quality: null,
+        videoCodec: null,
+        resolution: null,
+        hdr: null,
+        size: 1,
+        readable: true,
+        pathError: null,
+        updatedAt: "",
+      },
+    );
+    expect(body).toEqual({ name: "RescanSeries", seriesId: 3 });
   });
 });

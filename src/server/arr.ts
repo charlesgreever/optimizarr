@@ -4,6 +4,7 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 export type ArrMovie = {
   externalId: number;
+  seriesId: number | null;
   title: string;
   seriesTitle: string | null;
   seasonNumber: number | null;
@@ -47,10 +48,29 @@ export class ArrClient {
     for (const show of series) {
       const seriesId = Number(show.id);
       const title = String(show.title ?? "Series");
-      const episodes = await this.getJsonArray(`${instance.url}/api/v3/episode?seriesId=${seriesId}`, instance.apiKey);
+      const folderPath = typeof show.path === "string" ? show.path : null;
+      const episodes = await this.getJsonArray(
+        `${instance.url}/api/v3/episode?seriesId=${seriesId}&includeEpisodeFile=true`,
+        instance.apiKey,
+      );
+      const needsFiles = episodes.some((ep) => ep.hasFile && !episodeFilePath(ep));
+      const filesById = new Map<number, Record<string, unknown>>();
+      if (needsFiles) {
+        const files = await this.getJsonArray(
+          `${instance.url}/api/v3/episodefile?seriesId=${seriesId}`,
+          instance.apiKey,
+        );
+        for (const file of files) filesById.set(Number(file.id), file);
+      }
       for (const ep of episodes) {
-        const parsed = parseEpisode(ep, title);
-        if (parsed) out.push(parsed);
+        const attached = episodeFilePath(ep)
+          ? ep
+          : { ...ep, episodeFile: filesById.get(Number(ep.episodeFileId)) ?? ep.episodeFile };
+        const parsed = parseEpisode(attached, title, seriesId);
+        if (parsed) {
+          if (!parsed.folderPath) parsed.folderPath = folderPath;
+          out.push(parsed);
+        }
       }
     }
     return out;
@@ -88,6 +108,7 @@ export function parseMovie(raw: Record<string, unknown>): ArrMovie {
   const folderPath = typeof raw.path === "string" ? raw.path : null;
   return {
     externalId: Number(raw.id),
+    seriesId: null,
     title: String(raw.title ?? "Untitled"),
     seriesTitle: null,
     seasonNumber: null,
@@ -121,7 +142,18 @@ function hdrOf(mediaInfo: Record<string, unknown>): string | null {
   return dyn || null;
 }
 
-export function parseEpisode(raw: Record<string, unknown>, seriesTitle: string): ArrMovie | null {
+function episodeFilePath(raw: Record<string, unknown>): string {
+  const episodeFile = raw.episodeFile;
+  if (!episodeFile || typeof episodeFile !== "object") return "";
+  const path = (episodeFile as Record<string, unknown>).path;
+  return typeof path === "string" ? path : "";
+}
+
+export function parseEpisode(
+  raw: Record<string, unknown>,
+  seriesTitle: string,
+  seriesId: number | null = null,
+): ArrMovie | null {
   const episodeFile = (raw.episodeFile ?? {}) as Record<string, unknown>;
   const filePath = typeof episodeFile.path === "string" ? episodeFile.path : "";
   if (!raw.id) return null;
@@ -134,6 +166,7 @@ export function parseEpisode(raw: Record<string, unknown>, seriesTitle: string):
   const episodeNumber = Number(raw.episodeNumber ?? 0);
   return {
     externalId: Number(raw.id),
+    seriesId,
     title: episodeTitle,
     seriesTitle,
     seasonNumber,

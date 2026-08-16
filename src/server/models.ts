@@ -30,6 +30,7 @@ export type LibraryItem = {
   instanceName: string;
   instanceKind: ArrKind;
   externalId: number;
+  seriesId: number | null;
   type: ItemType;
   title: string;
   seriesTitle: string | null;

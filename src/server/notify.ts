@@ -8,16 +8,15 @@ export async function notifyArrRename(
   instance: ArrInstance,
   item: LibraryItem,
 ): Promise<NotifyResult> {
-  const name = instance.kind === "sonarr" ? "RenameFiles" : "Rename";
   const body =
     instance.kind === "sonarr"
-      ? { name: "RescanSeries", seriesId: item.externalId }
+      ? { name: "RescanSeries", seriesId: item.seriesId ?? item.externalId }
       : { name: "RefreshMovie", movieIds: [item.externalId] };
   try {
     const res = await fetchImpl(`${instance.url}/api/v3/command`, {
       method: "POST",
       headers: { "X-Api-Key": instance.apiKey, "content-type": "application/json" },
-      body: JSON.stringify(instance.kind === "sonarr" ? body : { name, movieIds: [item.externalId] }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return { ok: false, target: instance.name, error: `Arr rename HTTP ${res.status}` };
     return { ok: true, target: instance.name };

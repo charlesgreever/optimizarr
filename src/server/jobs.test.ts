@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -68,6 +68,8 @@ describe("phase 4 remux review keep", () => {
       const { dirname } = await import("node:path");
       await mkdir(dirname(req.sidecarPath), { recursive: true });
       await copyFile(req.sourcePath, req.sidecarPath);
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(req.sidecarPath, "SIDECAR-OUTPUT");
       return { sidecarPath: req.sidecarPath, durationSec: req.report.durationSec, sizeBytes: 40 };
     };
     const catalog = new Catalog(store, probe);
@@ -149,7 +151,8 @@ describe("phase 4 remux review keep", () => {
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
     expect(keep.status).toBe(200);
-    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    expect(readFileSync(source, "utf8")).toBe("SIDECAR-OUTPUT");
+    expect(existsSync(review.sidecarPath)).toBe(false);
     expect(keep.json).toBeTypeOf("function");
     const body = await keep.json();
     expect(body.notify.some((n: { target: string }) => n.target === "Plex")).toBe(true);
@@ -188,6 +191,72 @@ describe("phase 4 remux review keep", () => {
       body: JSON.stringify({ suggestionId: sid }),
     });
     expect(second.status).toBe(409);
+  });
+
+  it("cancels a queued job before it starts and leaves the original", async () => {
+    const { store, source } = await setup();
+    let ran = false;
+    const { JobService } = await import("./jobs.ts");
+    const jobs = new JobService(store, async () => {
+      ran = true;
+      return { sidecarPath: "/nope", durationSec: 1, sizeBytes: 1 };
+    });
+    const item = store.listLibraryItems("movie")[0];
+    const suggestion = store.listSuggestions()[0];
+    const jobId = store.createJob(item.id, suggestion.id as number, suggestion.plan, new Date().toISOString());
+    const cancelled = await jobs.cancel(jobId);
+    expect(cancelled).toEqual({ ok: true });
+    await jobs.processQueue();
+    expect(ran).toBe(false);
+    expect(store.getJob(jobId)?.status).toBe("cancelled");
+    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    expect(store.listReviews("pending")).toHaveLength(0);
+  });
+
+  it("cancels a stalled running job without promoting the sidecar", async () => {
+    const { store, source } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const sawStart = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const { JobService } = await import("./jobs.ts");
+    const jobs = new JobService(store, async (req) => {
+      started();
+      await gate;
+      writeFileSync(req.sidecarPath, "SHOULD-NOT-KEEP");
+      return { sidecarPath: req.sidecarPath, durationSec: 3600, sizeBytes: 40 };
+    });
+    const suggestion = store.listSuggestions()[0];
+    const run = jobs.enqueue(suggestion.id as number);
+    await sawStart;
+    const listed = store.listJobs();
+    const jobId = listed[0].id as number;
+    expect(store.getJob(jobId)?.status).toBe("running");
+    await expect(jobs.cancel(jobId)).resolves.toEqual({ ok: true });
+    release();
+    await run;
+    expect(store.getJob(jobId)?.status).toBe("cancelled");
+    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    expect(store.listReviews("pending")).toHaveLength(0);
+  });
+
+  it("does not cancel a finished job", async () => {
+    const { app, cookie } = await setup();
+    const sid = (await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
+    await app.request("/api/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ suggestionId: sid }),
+    });
+    const jobId = (await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json())).items[0].id;
+    const res = await app.request(`/api/queue/${jobId}/cancel`, { method: "POST", headers: { cookie } });
+    expect(res.status).toBe(409);
+    const jobs = await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json());
+    expect(jobs.items[0].status).toBe("succeeded");
   });
 
   it("fails integrity without deleting the original", async () => {

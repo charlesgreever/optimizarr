@@ -143,6 +143,7 @@ export class Store {
     }
     this.ensureColumn("library_items", "season_number", "INTEGER");
     this.ensureColumn("library_items", "episode_number", "INTEGER");
+    this.ensureColumn("library_items", "series_id", "INTEGER");
     this.ensureColumn("inspections", "source_sig", "TEXT");
   }
 
@@ -318,8 +319,8 @@ export class Store {
         `INSERT INTO library_items (
           instance_id, external_id, type, title, series_title, path, folder_path,
           quality, video_codec, resolution, hdr, size, readable, path_error, updated_at,
-          season_number, episode_number
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season_number, episode_number, series_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id, type, external_id) DO UPDATE SET
           title = excluded.title,
           series_title = excluded.series_title,
@@ -334,7 +335,8 @@ export class Store {
           path_error = excluded.path_error,
           updated_at = excluded.updated_at,
           season_number = excluded.season_number,
-          episode_number = excluded.episode_number`,
+          episode_number = excluded.episode_number,
+          series_id = excluded.series_id`,
       )
       .run(
         item.instanceId,
@@ -354,6 +356,7 @@ export class Store {
         item.updatedAt,
         item.seasonNumber,
         item.episodeNumber,
+        item.seriesId,
       );
     const saved = this.getLibraryItemByExternal(item.instanceId, item.type, item.externalId);
     if (!saved) throw new Error("failed to upsert library item");
@@ -365,7 +368,7 @@ export class Store {
       .prepare(
         `SELECT
           i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
           i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
           i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
           i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
@@ -382,7 +385,7 @@ export class Store {
       .prepare(
         `SELECT
           i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
           i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
           i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
           i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
@@ -400,7 +403,7 @@ export class Store {
       .prepare(
         `SELECT
           i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
           i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
           i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
           i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt

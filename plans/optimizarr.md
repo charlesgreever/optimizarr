@@ -190,7 +190,7 @@ Multiple Radarr and Sonarr instances, each with URL, API key, and enable flag. S
 
 ## Phase 8: Queue, schedule, and concurrency
 
-**User stories**: 25, 27, 55, 56, 57, 58, 60, 61, 62, 81, 82, 84, 99, 115
+**User stories**: 25, 27, 55, 56, 57, 58, 60, 61, 62, 81, 82, 84, 99, 115, 121, 122, 123, 124, 125, 126, 127
 
 ### What to build
 
@@ -202,6 +202,7 @@ A real queue: reorder, pause, remove, bulk-approve a movie, series, or filtered 
 - [x] Off-peak holds work until the window; run-now starts immediately.
 - [x] Bulk-approve from a movie, a series, or the current filter adds those plans to the queue.
 - [x] Pause, reorder, and cancel work; cancel never replaces the original.
+- [x] Queue shows Cancel on queued, held, and running jobs; a stalled running job can be cancelled and does not promote a sidecar.
 - [x] Restart does not lose queued work or leave a partial library file.
 - [x] Progress/ETA and per-job logs are visible.
 - [x] Tests use a fake clock for the schedule and fake runners for concurrency/cancel/restart.

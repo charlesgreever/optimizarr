@@ -12,6 +12,8 @@ import { sizePerHourGb } from "./inspect.ts";
 import type { Settings } from "./types.ts";
 
 export class JobService {
+  private aborts = new Map<number, AbortController>();
+
   constructor(
     private store: Store,
     private optimize: Optimizer,
@@ -60,6 +62,7 @@ export class JobService {
     const running = jobs.filter((j) => j.status === "running").length;
     let slots = Math.max(0, settings.concurrency - running);
     const inWindow = !settings.offPeakEnabled || inOffPeak(settings.offPeakStart, settings.offPeakEnd, this.now());
+    const runningJobs: Promise<void>[] = [];
     for (const job of [...jobs].reverse()) {
       if (slots <= 0) break;
       if (job.status !== "queued" && job.status !== "held") continue;
@@ -69,33 +72,57 @@ export class JobService {
         continue;
       }
       slots -= 1;
-      await this.runJob(job.id as number);
+      runningJobs.push(this.runJob(job.id as number));
+    }
+    await Promise.all(runningJobs);
+  }
+
+  recoverInterruptedJobs(): void {
+    for (const job of this.store.listJobs()) {
+      if (job.status === "running") {
+        this.store.updateJob(job.id as number, { status: "queued", error: "Requeued after restart" });
+      }
     }
   }
 
-  cancel(jobId: number): void {
+  async cancel(jobId: number): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
     const job = this.store.getJob(jobId);
-    if (!job || job.status === "succeeded") return;
+    if (!job) return { ok: false, error: "Job not found", status: 404 };
+    const status = String(job.status);
+    if (status === "succeeded" || status === "failed" || status === "cancelled") {
+      return { ok: false, error: "Only queued, held, or running jobs can be cancelled", status: 409 };
+    }
+    this.aborts.get(jobId)?.abort();
     this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
+    const item = this.store.getLibraryItem(job.itemId as number);
+    if (item) {
+      this.store.addHistory(item.id, item.title, "cancelled");
+      const sidecarPath = reviewPathFor(this.store.getSettings().reviewPath, item.title, item.id);
+      await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+      if (!this.store.pendingReviewForItem(item.id)) {
+        await this.fs.unlink(sidecarPath).catch(() => undefined);
+      }
+    }
+    return { ok: true };
   }
 
   async runJob(jobId: number): Promise<void> {
     const job = this.store.getJob(jobId);
-    if (!job) return;
+    if (!job || job.status === "cancelled") return;
     const item = this.store.getLibraryItem(job.itemId as number);
     if (!item) return;
     const settings = this.store.getSettings();
     const report = this.store.getInspection(item.id) as InspectionReport | undefined;
     const livePlan = JSON.parse(String(job.planJson ?? "{}")) as SuggestionPlan;
     const sidecarPath = reviewPathFor(settings.reviewPath, item.title, item.id);
-    this.store.updateJob(jobId, { status: "running", startedAt: new Date().toISOString(), progress: 0.1 });
+    const abort = new AbortController();
+    this.aborts.set(jobId, abort);
+    this.store.updateJob(jobId, { status: "running", startedAt: this.now().toISOString(), progress: 0.1 });
     try {
+      if (this.isCancelled(jobId)) return;
       if (!report) throw new Error("No inspection report");
-      if (livePlan.actions?.includes("transcode") || livePlan.actions?.includes("add_stereo") === false) {
-        /* hardware checked only for transcode */
-      }
+      const codec = settings.targetCodec === "av1" && this.backends.av1 ? "av1" : "hevc";
       if (livePlan.actions?.includes("transcode")) {
-        const codec = settings.targetCodec === "av1" && this.backends.av1 ? "av1" : "hevc";
         assertHardware(this.backends, codec);
       }
       const result = await this.optimize({
@@ -104,7 +131,16 @@ export class JobService {
         plan: livePlan,
         report,
         transfer: this.transferFor(settings),
+        signal: abort.signal,
+        backends: this.backends,
+        sizeCaps: settings.sizeCapsGbPerHour,
+        targetCodec: codec,
       });
+      if (this.isCancelled(jobId)) {
+        await this.fs.unlink(result.sidecarPath).catch(() => undefined);
+        await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+        return;
+      }
       const outHour = sizePerHourGb({ sizeBytes: result.sizeBytes, durationSec: result.durationSec });
       const cap = settings.sizeCapsGbPerHour[livePlan.category] ?? settings.sizeCapsGbPerHour.movie1080p;
       const flagged =
@@ -120,18 +156,29 @@ export class JobService {
         },
         flagged,
       });
-      this.store.updateJob(jobId, { status: "succeeded", progress: 1, finishedAt: new Date().toISOString() });
+      this.store.updateJob(jobId, { status: "succeeded", progress: 1, finishedAt: this.now().toISOString() });
       this.store.addHistory(item.id, item.title, flagged ? "flagged" : "finished");
     } catch (err) {
-      const message = err instanceof IntegrityError || err instanceof Error ? err.message : "Job failed";
       await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+      await this.fs.unlink(sidecarPath).catch(() => undefined);
+      if (this.isCancelled(jobId) || isAbortError(err)) {
+        this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
+        return;
+      }
+      const message = err instanceof IntegrityError || err instanceof Error ? err.message : "Job failed";
       this.store.updateJob(jobId, {
         status: "failed",
         error: message,
-        finishedAt: new Date().toISOString(),
+        finishedAt: this.now().toISOString(),
       });
       this.store.addHistory(item.id, item.title, "failed", message);
+    } finally {
+      this.aborts.delete(jobId);
     }
+  }
+
+  private isCancelled(jobId: number): boolean {
+    return this.store.getJob(jobId)?.status === "cancelled";
   }
 
   async keep(
@@ -162,13 +209,6 @@ export class JobService {
         };
       }
     }
-    try {
-      // original was overwritten by rename when sidecar and source are different devices?
-      // If rename across devices fails we already returned. When sidecar is on another path,
-      // rename moves sidecar onto source path, replacing the original.
-    } catch {
-      /* ignore */
-    }
     this.store.setReviewStatus(reviewId, "kept");
     this.store.addHistory(item.id, item.title, "kept");
     const notify = [];
@@ -189,6 +229,10 @@ export class JobService {
     this.store.addHistory(review.itemId, item?.title ?? "item", "discarded");
     return { ok: true };
   }
+}
+
+function isAbortError(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError");
 }
 
 function isCrossDevice(err: unknown): boolean {

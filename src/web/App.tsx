@@ -22,7 +22,7 @@ export default function App() {
       setStatus(await api.status());
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reach Optimizarr");
+      setError(e instanceof Error ? e.message : "Could not reach the Optimizarr API");
     }
   }
 

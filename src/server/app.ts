@@ -130,6 +130,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
   const backends = opts?.backends ?? detectBackends();
   const jobs = opts?.jobs ?? new JobService(store, opts?.optimize ?? ffmpegOptimizer(), opts?.fetchImpl);
   jobs.backends = backends;
+  jobs.recoverInterruptedJobs();
   sync.catalog = catalog;
   sync.jobs = jobs;
   const app = new Hono<Env>();
@@ -440,7 +441,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     const items = store.listSuggestions({ q, codec, type, overCap: overCap || undefined, extraTracks: extraTracks || undefined });
     return c.json({
       items,
-      message: items.length ? undefined : "After your library syncs, suggested optimizations will show up here.",
+      message: items.length ? undefined : "After the library syncs, this page lists files that need a remux or encode.",
     });
   });
 
@@ -461,12 +462,12 @@ export function createApp(store: Store, opts?: AppOpts): App {
     const items = store.listReviews("pending");
     return c.json({
       items,
-      message: items.length ? undefined : "Finished sidecars wait here for Keep or Discard.",
+      message: items.length ? undefined : "Sidecars wait here until you Keep them into the library or Discard them.",
     });
   });
   app.get("/api/history", requireAuth, (c) => {
     const items = store.listHistory();
-    return c.json({ items, message: items.length ? undefined : "Completed jobs will be listed here." });
+    return c.json({ items, message: items.length ? undefined : "Kept, discarded, flagged, and failed jobs appear here." });
   });
   app.get("/api/exclusions", requireAuth, (c) => c.json({ items: store.listExclusions() }));
   app.post("/api/exclusions", requireAuth, async (c) => {
@@ -475,8 +476,9 @@ export function createApp(store: Store, opts?: AppOpts): App {
     store.addExclusion(body.kind, body.value);
     return c.json({ ok: true }, 201);
   });
-  app.post("/api/queue/:id/cancel", requireReady, (c) => {
-    jobs.cancel(Number(c.req.param("id")));
+  app.post("/api/queue/:id/cancel", requireReady, async (c) => {
+    const result = await jobs.cancel(Number(c.req.param("id")));
+    if (!result.ok) return c.json({ error: result.error }, result.status);
     return c.json({ ok: true });
   });
   app.post("/api/review/:id/requeue", requireReady, async (c) => {
@@ -492,7 +494,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
 
   app.get("/api/queue", requireReady, (c) => {
     const items = store.listJobs();
-    return c.json({ items, message: items.length ? undefined : "Approved work will appear here." });
+    return c.json({ items, message: items.length ? undefined : "Jobs you approve from Suggestions appear here." });
   });
   app.post("/api/queue", requireReady, async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { suggestionId?: number };

@@ -146,7 +146,11 @@ describe("phases 5-10", () => {
       episodeNumber: 1,
       title: "Pilot",
       instanceName: "Sonarr",
+      path: "/tv/show.mkv",
     });
+    expect(series.items[0].pathError).toBeNull();
+    expect(series.items[0].type).toBe("episode");
+    expect(series.items[0].seriesId).toBe(3);
     expect(series.items[1].episodeNumber).toBe(2);
   });
 
@@ -159,6 +163,7 @@ describe("phases 5-10", () => {
     const item = store.upsertLibraryItem({
       instanceId: 1,
       externalId: 1,
+      seriesId: null,
       type: "movie",
       title: "Held",
       seriesTitle: null,

@@ -26,11 +26,17 @@ export function detectBackends(
   };
 }
 
-export function assertHardware(backends: EncodeBackends, codec: "hevc" | "av1"): void {
-  if (!backends.cuda && !backends.vaapi) {
-    throw new Error("Hardware encode failed: no CUDA or VAAPI device is available");
-  }
-  if (codec === "av1" && !backends.av1) {
+export function pickEncoder(backends: EncodeBackends, codec: "hevc" | "av1"): string {
+  if (codec === "av1") {
+    if (backends.av1 && backends.cuda) return "av1_nvenc";
+    if (backends.av1 && backends.vaapi) return "av1_vaapi";
     throw new Error("Hardware encode failed: AV1 encode is not available on this device");
   }
+  if (backends.cuda) return "hevc_nvenc";
+  if (backends.vaapi) return "hevc_vaapi";
+  throw new Error("Hardware encode failed: no CUDA or VAAPI device is available");
+}
+
+export function assertHardware(backends: EncodeBackends, codec: "hevc" | "av1"): void {
+  pickEncoder(backends, codec);
 }

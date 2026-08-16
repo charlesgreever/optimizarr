@@ -155,6 +155,7 @@ export const api = {
   queue: () => request<EmptyList>("/api/queue"),
   enqueue: (suggestionId: number) =>
     request("/api/queue", { method: "POST", body: JSON.stringify({ suggestionId }) }),
+  cancelJob: (id: number) => request(`/api/queue/${id}/cancel`, { method: "POST" }),
   review: () => request<EmptyList>("/api/review"),
   keepReview: (id: number) => request(`/api/review/${id}/keep`, { method: "POST" }),
   discardReview: (id: number) => request(`/api/review/${id}/discard`, { method: "POST" }),

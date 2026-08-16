@@ -11,6 +11,10 @@ export const UNREADABLE =
   "Path is not readable inside the container. Check that Optimizarr has the same network path mounted as this Arr.";
 export const NO_FILE = "Radarr has no file for this title yet.";
 
+export function noFileMessage(kind: ArrInstance["kind"]): string {
+  return kind === "sonarr" ? "Sonarr has no file for this episode yet." : NO_FILE;
+}
+
 export function defaultPathReadable(path: string): boolean {
   if (!path) return false;
   try {
@@ -56,12 +60,13 @@ export class LibrarySync {
     this.running = true;
     const errors: string[] = [];
     let movies = 0;
+    const autoIds = new Set<number>();
     try {
       for (const instance of this.store.listArrInstances()) {
         if (!instance.enabled) continue;
         try {
-          if (instance.kind === "radarr") movies += await this.refreshKind(instance, "movie");
-          else if (instance.kind === "sonarr") movies += await this.refreshKind(instance, "episode");
+          if (instance.kind === "radarr") movies += await this.refreshKind(instance, "movie", autoIds);
+          else if (instance.kind === "sonarr") movies += await this.refreshKind(instance, "episode", autoIds);
         } catch (err) {
           const message = err instanceof ArrError ? err.message : err instanceof Error ? err.message : "sync failed";
           errors.push(`${instance.name}: ${message}`);
@@ -69,13 +74,17 @@ export class LibrarySync {
       }
       const inspect = opts?.inspect ?? "pending";
       if (this.catalog && inspect !== "none") {
-        void this.catalog.inspectPending().catch((err) => {
+        try {
+          await this.catalog.inspectPending();
+        } catch (err) {
           this.lastError = err instanceof Error ? err.message : String(err);
-        });
+        }
       }
       if (this.jobs && this.store.getSettings().autoOptimize) {
         for (const suggestion of this.store.listSuggestions()) {
-          await this.jobs.enqueue(suggestion.id as number);
+          if (autoIds.has(suggestion.itemId as number)) {
+            await this.jobs.enqueue(suggestion.id as number);
+          }
         }
       }
       this.lastSyncAt = this.now().toISOString();
@@ -86,7 +95,7 @@ export class LibrarySync {
     }
   }
 
-  async refreshKind(instance: ArrInstance, type: "movie" | "episode"): Promise<number> {
+  async refreshKind(instance: ArrInstance, type: "movie" | "episode", autoIds?: Set<number>): Promise<number> {
     const remote = type === "movie" ? await this.client.listMovies(instance) : await this.client.listEpisodes(instance);
     if (remote.length === 0 && this.store.countLibraryItems(instance.id, type) > 0) {
       throw new ArrError(`${instance.name} returned no ${type}s; keeping the existing library`);
@@ -99,9 +108,10 @@ export class LibrarySync {
         previous && previous.path === movie.path
           ? previous.readable
           : hasPath && this.pathReadable(movie.path);
-      this.store.upsertLibraryItem({
+      const saved = this.store.upsertLibraryItem({
         instanceId: instance.id,
         externalId: movie.externalId,
+        seriesId: movie.seriesId,
         type,
         title: movie.title,
         seriesTitle: type === "episode" ? movie.seriesTitle : null,
@@ -115,9 +125,10 @@ export class LibrarySync {
         hdr: movie.hdr,
         size: movie.size,
         readable,
-        pathError: hasPath ? (readable ? null : UNREADABLE) : NO_FILE,
+        pathError: hasPath ? (readable ? null : UNREADABLE) : noFileMessage(instance.kind),
         updatedAt,
       });
+      if (!previous || previous.path !== movie.path) autoIds?.add(saved.id);
     }
     this.store.removeMissingLibraryItems(
       instance.id,

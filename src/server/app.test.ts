@@ -87,6 +87,7 @@ describe("phase 1 app", () => {
     store.upsertLibraryItem({
       instanceId: 1,
       externalId: 1,
+      seriesId: null,
       type: "movie",
       title: "Up",
       seriesTitle: null,

@@ -75,6 +75,7 @@ describe("transcode must not silently copy", () => {
           category: "movie4kHdr",
         } as never,
         report: { durationSec: 6728, sizeBytes: 18, videoCodec: "hevc" } as never,
+        backends: { cuda: true, vaapi: false, av1: false },
       }),
     ).rejects.toThrow(/nvenc init failed/i);
     expect(existsSync(sidecar)).toBe(false);

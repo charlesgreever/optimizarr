@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArrClient } from "./arr.ts";
 import { createApp, SESSION_COOKIE } from "./app.ts";
 import { Store } from "./store.ts";
-import { LibrarySync, UNREADABLE } from "./sync.ts";
+import { LibrarySync, UNREADABLE, noFileMessage } from "./sync.ts";
 
 function cookieHeader(res: Response): string {
   const headers = res.headers as Headers & { getSetCookie?: () => string[] };
@@ -219,6 +219,11 @@ describe("phase 2 radarr sync", () => {
     const emptySync = new LibrarySync(store, emptyClient as never, () => true);
     await expect(emptySync.refreshKind(inst, "movie")).rejects.toThrow(/no movies/i);
     expect(store.listLibraryItems("movie")).toHaveLength(1);
+  });
+
+  it("names the Arr that is missing a file", () => {
+    expect(noFileMessage("radarr")).toBe("Radarr has no file for this title yet.");
+    expect(noFileMessage("sonarr")).toBe("Sonarr has no file for this episode yet.");
   });
 
   it("refreshes on an interval", async () => {

@@ -2,9 +2,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { InspectionReport } from "./inspect.ts";
+import { pickEncoder, type EncodeBackends, detectBackends } from "./hardware.ts";
+import { ffprobeFile, type InspectionReport } from "./inspect.ts";
 import { createStorage, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
+import { DEFAULT_SIZE_CAPS } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,6 +22,10 @@ export type RemuxRequest = {
   plan: SuggestionPlan;
   report: InspectionReport;
   transfer?: Transfer;
+  backends?: EncodeBackends;
+  sizeCaps?: typeof DEFAULT_SIZE_CAPS;
+  targetCodec?: "hevc" | "av1";
+  signal?: AbortSignal;
 };
 
 export type Optimizer = (req: RemuxRequest) => Promise<OptimizeResult>;
@@ -79,6 +85,53 @@ export function reviewPathFor(reviewRoot: string, title: string, itemId: number)
   return join(reviewRoot, sidecarName(title, itemId));
 }
 
+function hardwareInputArgs(encoder: string): string[] {
+  if (encoder.endsWith("_vaapi")) return ["-vaapi_device", "/dev/dri/renderD128"];
+  return [];
+}
+
+function encodeQualityArgs(encoder: string, req: RemuxRequest): string[] {
+  const caps = req.sizeCaps ?? DEFAULT_SIZE_CAPS;
+  const cap = caps[req.plan.category] ?? caps.movie1080p;
+  const bitsPerSec = Math.round((cap * 1024 ** 3 * 8) / 3600);
+  const tenBit = (req.report.bitDepth ?? 8) >= 10;
+  if (encoder.includes("nvenc")) {
+    const args = [
+      "-preset",
+      "p5",
+      "-rc",
+      "vbr",
+      "-b:v",
+      String(bitsPerSec),
+      "-maxrate",
+      String(bitsPerSec),
+      "-bufsize",
+      String(bitsPerSec * 2),
+    ];
+    if (tenBit) args.push("-pix_fmt", "p010le");
+    return args;
+  }
+  return [
+    "-vf",
+    tenBit ? "format=p010,hwupload" : "format=nv12,hwupload",
+    "-b:v",
+    String(bitsPerSec),
+    "-maxrate",
+    String(bitsPerSec),
+  ];
+}
+
+async function probedDuration(path: string, fallback: number, requireProbe: boolean): Promise<number> {
+  try {
+    const report = await ffprobeFile(path, process.env.FFPROBE || "ffprobe");
+    if (report.durationSec > 0) return report.durationSec;
+  } catch {
+    /* ffprobe missing or output is not media */
+  }
+  if (requireProbe) throw new IntegrityError("Could not read output duration");
+  return fallback;
+}
+
 function ffmpegDetail(err: unknown): string {
   if (!err || typeof err !== "object") return err instanceof Error ? err.message : "";
   const rec = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
@@ -105,9 +158,12 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     for (const lang of req.plan.keepSubs ?? []) {
       if (lang && lang !== "und") args.push("-map", `0:s:m:language:${lang}`);
     }
-    args.push("-map", "0:t?");
+    args.push("-map", "0:t?", "-map_chapters", "0");
     if (req.plan.actions.includes("transcode")) {
-      args.push("-c:v", "hevc_nvenc", "-preset", "p5", "-rc", "constqp", "-qp", "22");
+      const backends = req.backends ?? detectBackends();
+      const codec = req.targetCodec === "av1" ? "av1" : "hevc";
+      const encoder = pickEncoder(backends, codec);
+      args.push(...hardwareInputArgs(encoder), "-c:v", encoder, ...encodeQualityArgs(encoder, req));
     } else {
       args.push("-c:v", "copy");
     }
@@ -117,15 +173,23 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     }
     args.push(tmp);
     try {
-      await execFileAsync(ffmpeg, args);
+      await execFileAsync(ffmpeg, args, req.signal ? { signal: req.signal } : {});
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
+      if (err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError") {
+        throw err;
+      }
       const detail = ffmpegDetail(err);
       const kind = req.plan.actions.includes("transcode") ? "Hardware encode failed" : "Remux failed";
       throw new Error(detail ? `${kind}: ${detail}` : kind);
     }
     const info = await stat(tmp);
-    const result = { sidecarPath: req.sidecarPath, durationSec: req.report.durationSec, sizeBytes: info.size };
+    const durationSec = await probedDuration(
+      tmp,
+      req.report.durationSec,
+      req.plan.actions.includes("transcode"),
+    );
+    const result = { sidecarPath: req.sidecarPath, durationSec, sizeBytes: info.size };
     assertIntegrity(req.report, result);
     await transferFor(req).copy(tmp, req.sidecarPath);
     await unlink(tmp).catch(() => undefined);
