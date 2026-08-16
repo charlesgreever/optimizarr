@@ -27,6 +27,12 @@ export type Settings = {
   localCopy: boolean;
   autoOptimize: boolean;
   reviewPath: string;
+  copyMode: "auto" | "ssh" | "mount" | "proxy";
+  nasSshHost: string;
+  nasSshUser: string;
+  nasSshPort: number;
+  nasSshIdentityFile: string;
+  nasPathMaps: { localRoot: string; remoteRoot: string }[];
   sizeCapsGbPerHour: {
     movie1080p: number;
     movie4kSdr: number;
@@ -98,6 +104,26 @@ export const api = {
   settings: () => request<Settings>("/api/settings"),
   saveSettings: (body: Partial<Settings>) =>
     request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  storageInfo: () =>
+    request<{
+      copyMode: Settings["copyMode"];
+      detectedMounts: Array<{
+        kind: "cifs" | "nfs";
+        host: string;
+        share: string;
+        localRoot: string;
+        suggestedRemote: string;
+      }>;
+      suggestedMaps: Array<{ localRoot: string; remoteRoot: string }>;
+      suggestedHost: string;
+      sshConfigured: boolean;
+      identityFilePresent: boolean;
+    }>("/api/settings/storage"),
+  testStorage: () =>
+    request<{ ok: boolean; method?: string; bytes?: number; detail?: string; error?: string }>(
+      "/api/settings/storage-test",
+      { method: "POST" },
+    ),
   updateCredentials: (body: { currentPassword: string; username: string; password?: string }) =>
     request("/api/auth/credentials", { method: "PUT", body: JSON.stringify(body) }),
   instances: () => request<{ items: ArrInstance[] }>("/api/instances"),

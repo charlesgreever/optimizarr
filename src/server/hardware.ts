@@ -1,10 +1,15 @@
+import { existsSync } from "node:fs";
+
 export type EncodeBackends = {
   cuda: boolean;
   vaapi: boolean;
   av1: boolean;
 };
 
-export function detectBackends(env: NodeJS.ProcessEnv = process.env): EncodeBackends {
+export function detectBackends(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
+): EncodeBackends {
   const forced = env.OPTIMIZARR_BACKENDS;
   if (forced) {
     const parts = new Set(forced.split(",").map((s) => s.trim().toLowerCase()));
@@ -15,8 +20,8 @@ export function detectBackends(env: NodeJS.ProcessEnv = process.env): EncodeBack
     };
   }
   return {
-    cuda: Boolean(env.NVIDIA_VISIBLE_DEVICES || env.NVIDIA_DRIVER_CAPABILITIES),
-    vaapi: Boolean(env.LIBVA_DRIVER_NAME),
+    cuda: exists("/dev/nvidia0") || exists("/dev/nvidiactl"),
+    vaapi: Boolean(env.LIBVA_DRIVER_NAME) || exists("/dev/dri/renderD128"),
     av1: false,
   };
 }

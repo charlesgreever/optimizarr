@@ -6,6 +6,13 @@ export type SizeCaps = {
   tv4k: number;
 };
 
+export type CopyMode = "auto" | "ssh" | "mount" | "proxy";
+
+export type PathMap = {
+  localRoot: string;
+  remoteRoot: string;
+};
+
 export type Settings = {
   preferredLanguage: string;
   languageConfirmed: boolean;
@@ -20,6 +27,12 @@ export type Settings = {
   localCopy: boolean;
   autoOptimize: boolean;
   reviewPath: string;
+  copyMode: CopyMode;
+  nasSshHost: string;
+  nasSshUser: string;
+  nasSshPort: number;
+  nasSshIdentityFile: string;
+  nasPathMaps: PathMap[];
   sizeCapsGbPerHour: SizeCaps;
 };
 
@@ -61,6 +74,12 @@ export function defaultSettings(): Settings {
     localCopy: false,
     autoOptimize: false,
     reviewPath: "",
+    copyMode: "auto",
+    nasSshHost: "",
+    nasSshUser: "",
+    nasSshPort: 22,
+    nasSshIdentityFile: "",
+    nasPathMaps: [],
     sizeCapsGbPerHour: { ...DEFAULT_SIZE_CAPS },
   };
 }

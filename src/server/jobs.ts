@@ -4,10 +4,12 @@ import type { InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
 import { IntegrityError, reviewPathFor, type Optimizer } from "./optimize.ts";
+import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
 import type { Store } from "./store.ts";
 import type { FetchLike } from "./arr.ts";
 import { sizePerHourGb } from "./inspect.ts";
+import type { Settings } from "./types.ts";
 
 export class JobService {
   constructor(
@@ -22,6 +24,8 @@ export class JobService {
     } = { rename, unlink, mkdir, stat },
     public backends: EncodeBackends = detectBackends(),
     public now: () => Date = () => new Date(),
+    private transferFor: (settings: Settings) => Transfer = (settings) =>
+      createStorage(storageConfigFromSettings(settings)),
   ) {}
 
   async enqueue(suggestionId: number): Promise<{ jobId: number } | { error: string; status: number }> {
@@ -99,6 +103,7 @@ export class JobService {
         sidecarPath,
         plan: livePlan,
         report,
+        transfer: this.transferFor(settings),
       });
       const outHour = sizePerHourGb({ sizeBytes: result.sizeBytes, durationSec: result.durationSec });
       const cap = settings.sizeCapsGbPerHour[livePlan.category] ?? settings.sizeCapsGbPerHour.movie1080p;
@@ -140,11 +145,22 @@ export class JobService {
     try {
       await this.fs.rename(review.sidecarPath, review.sourcePath);
     } catch (err) {
-      return {
-        ok: false,
-        notify: [],
-        error: err instanceof Error ? err.message : "Could not replace the library file",
-      };
+      if (!isCrossDevice(err)) {
+        return {
+          ok: false,
+          notify: [],
+          error: err instanceof Error ? err.message : "Could not replace the library file",
+        };
+      }
+      try {
+        await this.transferFor(this.store.getSettings()).move(review.sidecarPath, review.sourcePath);
+      } catch (moveErr) {
+        return {
+          ok: false,
+          notify: [],
+          error: moveErr instanceof Error ? moveErr.message : "Could not replace the library file",
+        };
+      }
     }
     try {
       // original was overwritten by rename when sidecar and source are different devices?
@@ -173,6 +189,10 @@ export class JobService {
     this.store.addHistory(review.itemId, item?.title ?? "item", "discarded");
     return { ok: true };
   }
+}
+
+function isCrossDevice(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EXDEV");
 }
 
 export function inOffPeak(start: string, end: string, now: Date): boolean {

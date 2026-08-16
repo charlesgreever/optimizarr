@@ -19,10 +19,12 @@ services:
       - /mnt/nas:/mnt/nas
       - /mnt/nas/sabdownloads/complete:/complete
       - /mnt/nas/sabdownloads/incomplete:/incomplete
+      # Optional NAS-native copies: put a Synology SSH key at
+      # /home/cgreever/appdata/arr/optimizarr/config/nas_id_ed25519
+      # then set host/user/maps in Settings. The config volume already exposes it as /config/nas_id_ed25519.
     networks:
       - arr_net
-    # Uncomment if the host has the NVIDIA container toolkit (Frigate-style):
-    # runtime: nvidia
+    runtime: nvidia
     labels:
       icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/radarr.png
 

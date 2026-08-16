@@ -205,6 +205,51 @@ describe("phase 4 remux review keep", () => {
     expect(reviews.items).toHaveLength(0);
   });
 
+  it("replaces across devices with a storage-aware move", async () => {
+    const { store, source, review } = await setup();
+    const item = store.listLibraryItems("movie")[0];
+    const sidecar = join(review, "x.mkv");
+    writeFileSync(sidecar, "NEW");
+    store.createReview({
+      itemId: item.id,
+      jobId: 1,
+      sourcePath: source,
+      sidecarPath: sidecar,
+      compare: {},
+    });
+    const { JobService } = await import("./jobs.ts");
+    const moved: string[] = [];
+    const jobs = new JobService(
+      store,
+      async () => {
+        throw new Error("unused");
+      },
+      fetch,
+      {
+        rename: async () => {
+          throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+        },
+        unlink: async () => undefined,
+        mkdir: async () => undefined,
+        stat: async () => ({ size: 1 }) as never,
+      },
+      undefined,
+      () => new Date(),
+      () => ({
+        copy: async () => ({ method: "ssh" as const, bytes: 3 }),
+        move: async (src, dest) => {
+          moved.push(`${src} -> ${dest}`);
+          writeFileSync(dest, "NEW");
+          return { method: "ssh", bytes: 3 };
+        },
+      }),
+    );
+    const result = await jobs.keep(store.listReviews()[0].id as number);
+    expect(result.ok).toBe(true);
+    expect(moved).toEqual([`${sidecar} -> ${source}`]);
+    expect(readFileSync(source, "utf8")).toBe("NEW");
+  });
+
   it("keeps both files when Keep cannot replace the original", async () => {
     const { store, source, review } = await setup();
     const item = store.listLibraryItems("movie")[0];

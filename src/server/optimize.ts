@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { copyFile, mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { InspectionReport } from "./inspect.ts";
+import { createStorage, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,7 @@ export type RemuxRequest = {
   sidecarPath: string;
   plan: SuggestionPlan;
   report: InspectionReport;
+  transfer?: Transfer;
 };
 
 export type Optimizer = (req: RemuxRequest) => Promise<OptimizeResult>;
@@ -43,11 +45,23 @@ export function assertIntegrity(source: InspectionReport, output: { durationSec:
   }
 }
 
+function transferFor(req: RemuxRequest): Transfer {
+  return req.transfer ?? createStorage({
+    copyMode: "auto",
+    nasSshHost: "",
+    nasSshUser: "",
+    nasSshPort: 22,
+    nasSshIdentityFile: "",
+    nasPathMaps: [],
+  });
+}
+
 export function copyOptimizer(): Optimizer {
   return async (req) => {
     await mkdir(dirname(req.sidecarPath), { recursive: true });
     const tmp = `${req.sidecarPath}.tmp`;
-    await copyFile(req.sourcePath, tmp);
+    const transfer = transferFor(req);
+    await transfer.copy(req.sourcePath, tmp);
     const info = await stat(tmp);
     const result = {
       sidecarPath: req.sidecarPath,
@@ -55,7 +69,7 @@ export function copyOptimizer(): Optimizer {
       sizeBytes: info.size,
     };
     assertIntegrity(req.report, result);
-    await copyFile(tmp, req.sidecarPath);
+    await transfer.copy(tmp, req.sidecarPath);
     await unlink(tmp).catch(() => undefined);
     return result;
   };
@@ -63,6 +77,20 @@ export function copyOptimizer(): Optimizer {
 
 export function reviewPathFor(reviewRoot: string, title: string, itemId: number): string {
   return join(reviewRoot, sidecarName(title, itemId));
+}
+
+function ffmpegDetail(err: unknown): string {
+  if (!err || typeof err !== "object") return err instanceof Error ? err.message : "";
+  const rec = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
+  const asText = (value: unknown) => {
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object" && Buffer.isBuffer(value)) return value.toString("utf8");
+    return "";
+  };
+  return (asText(rec.stderr) || asText(rec.stdout) || (typeof rec.message === "string" ? rec.message : ""))
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 800);
 }
 
 export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimizer {
@@ -90,13 +118,16 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     args.push(tmp);
     try {
       await execFileAsync(ffmpeg, args);
-    } catch {
-      return copyOptimizer()(req);
+    } catch (err) {
+      await unlink(tmp).catch(() => undefined);
+      const detail = ffmpegDetail(err);
+      const kind = req.plan.actions.includes("transcode") ? "Hardware encode failed" : "Remux failed";
+      throw new Error(detail ? `${kind}: ${detail}` : kind);
     }
     const info = await stat(tmp);
     const result = { sidecarPath: req.sidecarPath, durationSec: req.report.durationSec, sizeBytes: info.size };
     assertIntegrity(req.report, result);
-    await copyFile(tmp, req.sidecarPath);
+    await transferFor(req).copy(tmp, req.sidecarPath);
     await unlink(tmp).catch(() => undefined);
     return result;
   };

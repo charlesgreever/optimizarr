@@ -30,7 +30,7 @@ describe("phase 1 app", () => {
     const { store, dir } = tempStore();
     dirs.push(dir);
     stores.push(store);
-    return { app: createApp(store), store };
+    return { app: createApp(store), store, dir };
   }
 
   afterEach(() => {
@@ -305,5 +305,53 @@ describe("phase 1 app", () => {
     const body = await movies.json();
     expect(body.items).toEqual([]);
     expect(body.message).toMatch(/Radarr/i);
+  });
+
+  it("saves NAS copy settings without echoing a key", async () => {
+    const { app, store } = appWithStore();
+    const cookie = await setup(app);
+    const saved = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        copyMode: "ssh",
+        nasSshHost: "192.168.1.5",
+        nasSshUser: "cgreever",
+        nasSshPort: 22,
+        nasSshIdentityFile: "/config/nas_id_ed25519",
+        nasPathMaps: [{ localRoot: "/mnt/nas", remoteRoot: "/volume1/Plex" }],
+      }),
+    });
+    expect(saved.status).toBe(200);
+    await expect(saved.json()).resolves.toMatchObject({
+      copyMode: "ssh",
+      nasSshHost: "192.168.1.5",
+      nasSshUser: "cgreever",
+      nasPathMaps: [{ localRoot: "/mnt/nas", remoteRoot: "/volume1/Plex" }],
+    });
+    expect(store.getSettings().copyMode).toBe("ssh");
+    const info = await app.request("/api/settings/storage", { headers: { cookie } });
+    expect(info.status).toBe(200);
+    await expect(info.json()).resolves.toMatchObject({
+      copyMode: "ssh",
+      sshConfigured: true,
+    });
+  });
+
+  it("reports a copy method when testing storage", async () => {
+    const { app, dir } = appWithStore();
+    const cookie = await setup(app);
+    const review = join(dir, "review");
+    await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ reviewPath: review, copyMode: "proxy" }),
+    });
+    const res = await app.request("/api/settings/storage-test", { method: "POST", headers: { cookie } });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      method: "proxy",
+    });
   });
 });

@@ -25,6 +25,7 @@ export function Settings() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerTestMsg, setPlayerTestMsg] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
+  const [storageMsg, setStorageMsg] = useState<string | null>(null);
   const loadGen = useRef(0);
 
   function upsertById<T extends { id: number }>(list: T[], item: T): T[] {
@@ -67,6 +68,14 @@ export function Settings() {
         concurrency: settings.concurrency,
         offPeakEnabled: settings.offPeakEnabled,
         targetCodec: settings.targetCodec,
+        workOnNas: settings.workOnNas,
+        localCopy: settings.localCopy,
+        copyMode: settings.copyMode,
+        nasSshHost: settings.nasSshHost,
+        nasSshUser: settings.nasSshUser,
+        nasSshPort: settings.nasSshPort,
+        nasSshIdentityFile: settings.nasSshIdentityFile,
+        nasPathMaps: settings.nasPathMaps,
       });
       setSettings(next);
       setSaved(true);
@@ -139,6 +148,189 @@ export function Settings() {
             placeholder="/mnt/nas/optimizarr-review"
           />
         </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={settings.workOnNas}
+            onChange={(e) => setSettings({ ...settings, workOnNas: e.target.checked })}
+          />
+          <span>
+            <span className="block text-zinc-200">Work on the NAS paths</span>
+            <span className="text-zinc-500">Sidecars and copies stay on the review path instead of a local scratch disk.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={settings.localCopy}
+            onChange={(e) => setSettings({ ...settings, localCopy: e.target.checked })}
+          />
+          <span>
+            <span className="block text-zinc-200">Copy locally before encode</span>
+            <span className="text-zinc-500">Pull the source to this host first. Off unless the GPU host needs a local file.</span>
+          </span>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1.5 block text-zinc-300">File copies</span>
+          <select
+            className="input"
+            value={settings.copyMode ?? "auto"}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                copyMode: e.target.value as SettingsModel["copyMode"],
+              })
+            }
+          >
+            <option value="auto">Auto — copy on the NAS when possible</option>
+            <option value="ssh">On the NAS over SSH</option>
+            <option value="mount">Kernel / SMB server-side copy</option>
+            <option value="proxy">Through this host</option>
+          </select>
+          <span className="mt-1 block text-zinc-500">
+            Auto tries an SSH `cp` on the NAS, then a kernel clone or SMB COPYCHUNK, and only then reads the file through this container.
+          </span>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">NAS SSH host</span>
+            <input
+              className="input"
+              value={settings.nasSshHost}
+              onChange={(e) => setSettings({ ...settings, nasSshHost: e.target.value })}
+              placeholder="192.168.1.5"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">NAS SSH user</span>
+            <input
+              className="input"
+              value={settings.nasSshUser}
+              onChange={(e) => setSettings({ ...settings, nasSshUser: e.target.value })}
+              placeholder="cgreever"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">NAS SSH port</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={65535}
+              value={settings.nasSshPort}
+              onChange={(e) => setSettings({ ...settings, nasSshPort: Number(e.target.value) })}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">SSH identity file in the container</span>
+            <input
+              className="input"
+              value={settings.nasSshIdentityFile}
+              onChange={(e) => setSettings({ ...settings, nasSshIdentityFile: e.target.value })}
+              placeholder="/config/nas_id_ed25519"
+            />
+          </label>
+        </div>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-zinc-300">Path maps (container → NAS)</span>
+            <div className="flex gap-2">
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() => {
+                  void api
+                    .storageInfo()
+                    .then((info) => {
+                      setSettings({
+                        ...settings,
+                        nasSshHost: settings.nasSshHost || info.suggestedHost,
+                        nasPathMaps: info.suggestedMaps.length ? info.suggestedMaps : settings.nasPathMaps ?? [],
+                      });
+                      setStorageMsg(
+                        info.suggestedMaps.length
+                          ? `Suggested ${info.suggestedMaps.map((m) => `${m.localRoot} → ${m.remoteRoot}`).join(", ")}`
+                          : "No CIFS/NFS mounts detected in this container.",
+                      );
+                    })
+                    .catch((e: Error) => setStorageMsg(e.message));
+                }}
+              >
+                Suggest from mounts
+              </button>
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() =>
+                  setSettings({
+                    ...settings,
+                    nasPathMaps: [...(settings.nasPathMaps ?? []), { localRoot: "/mnt/nas", remoteRoot: "/volume1/Plex" }],
+                  })
+                }
+              >
+                Add map
+              </button>
+            </div>
+          </div>
+          {(settings.nasPathMaps ?? []).length === 0 && (
+            <p className="text-sm text-zinc-500">
+              Example: `/mnt/nas` → `/volume1/Plex` so a copy stays on GreeverNAS instead of streaming through this host.
+            </p>
+          )}
+          {(settings.nasPathMaps ?? []).map((map, index) => (
+            <div key={`${map.localRoot}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <input
+                className="input"
+                value={map.localRoot}
+                onChange={(e) => {
+                  const nasPathMaps = (settings.nasPathMaps ?? []).map((row, i) =>
+                    i === index ? { ...row, localRoot: e.target.value } : row,
+                  );
+                  setSettings({ ...settings, nasPathMaps });
+                }}
+                placeholder="/mnt/nas"
+              />
+              <input
+                className="input"
+                value={map.remoteRoot}
+                onChange={(e) => {
+                  const nasPathMaps = (settings.nasPathMaps ?? []).map((row, i) =>
+                    i === index ? { ...row, remoteRoot: e.target.value } : row,
+                  );
+                  setSettings({ ...settings, nasPathMaps });
+                }}
+                placeholder="/volume1/Plex"
+              />
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() =>
+                  setSettings({
+                    ...settings,
+                    nasPathMaps: (settings.nasPathMaps ?? []).filter((_, i) => i !== index),
+                  })
+                }
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            className="btn !w-auto"
+            type="button"
+            onClick={() => {
+              void api
+                .testStorage()
+                .then((r) => setStorageMsg(r.ok ? r.detail || `Copy method: ${r.method}` : r.error || "Test failed"))
+                .catch((e: Error) => setStorageMsg(e.message));
+            }}
+          >
+            Test storage copy
+          </button>
+          {storageMsg && <p className="text-sm text-zinc-300">{storageMsg}</p>}
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {(
             [

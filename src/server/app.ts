@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { HttpBindings } from "@hono/node-server";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ArrClient, ArrError } from "./arr.ts";
 import type { ArrKind } from "./models.ts";
@@ -16,8 +17,14 @@ import type { PlayerKind } from "./models.ts";
 import { testPlayer } from "./notify.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { suggestReviewPath } from "./paths.ts";
+import {
+  createStorage,
+  parseNetworkMounts,
+  storageConfigFromSettings,
+  suggestPathMaps,
+} from "./storage.ts";
 import { LibrarySync, defaultPathReadable, movieListPayload, type PathCheck } from "./sync.ts";
-import type { Settings } from "./types.ts";
+import type { CopyMode, PathMap, Settings } from "./types.ts";
 import type { FetchLike } from "./arr.ts";
 
 export const SESSION_COOKIE = "optimizarr_session";
@@ -67,6 +74,27 @@ function pickSettings(body: Record<string, unknown>, current: Settings): Setting
   if (typeof body.localCopy === "boolean") next.localCopy = body.localCopy;
   if (typeof body.autoOptimize === "boolean") next.autoOptimize = body.autoOptimize;
   if (typeof body.reviewPath === "string") next.reviewPath = body.reviewPath;
+  if (body.copyMode === "auto" || body.copyMode === "ssh" || body.copyMode === "mount" || body.copyMode === "proxy") {
+    next.copyMode = body.copyMode as CopyMode;
+  }
+  if (typeof body.nasSshHost === "string") next.nasSshHost = body.nasSshHost.trim();
+  if (typeof body.nasSshUser === "string") next.nasSshUser = body.nasSshUser.trim();
+  if (typeof body.nasSshPort === "number" && Number.isFinite(body.nasSshPort)) {
+    next.nasSshPort = Math.min(65535, Math.max(1, Math.floor(body.nasSshPort)));
+  }
+  if (typeof body.nasSshIdentityFile === "string") next.nasSshIdentityFile = body.nasSshIdentityFile.trim();
+  if (Array.isArray(body.nasPathMaps)) {
+    next.nasPathMaps = (body.nasPathMaps as unknown[])
+      .map((row): PathMap | null => {
+        if (!row || typeof row !== "object") return null;
+        const rec = row as Record<string, unknown>;
+        const localRoot = typeof rec.localRoot === "string" ? rec.localRoot.trim() : "";
+        const remoteRoot = typeof rec.remoteRoot === "string" ? rec.remoteRoot.trim() : "";
+        if (!localRoot || !remoteRoot) return null;
+        return { localRoot, remoteRoot };
+      })
+      .filter((row): row is PathMap => Boolean(row));
+  }
   if (body.sizeCapsGbPerHour && typeof body.sizeCapsGbPerHour === "object") {
     const caps = body.sizeCapsGbPerHour as Record<string, unknown>;
     const merged = { ...current.sizeCapsGbPerHour };
@@ -242,6 +270,66 @@ export function createApp(store: Store, opts?: AppOpts): App {
     }
     const saved = store.saveSettings(pickSettings(body, store.getSettings()));
     return c.json(publicSettings(saved));
+  });
+
+  app.get("/api/settings/storage", requireAuth, (c) => {
+    const settings = store.getSettings();
+    const config = storageConfigFromSettings(settings);
+    let mountsText = "";
+    try {
+      mountsText = readFileSync("/proc/mounts", "utf8");
+    } catch {
+      mountsText = "";
+    }
+    const detectedMounts = parseNetworkMounts(mountsText);
+    const identityFile = config.nasSshIdentityFile;
+    const localPaths = [
+      settings.reviewPath,
+      ...store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]),
+    ];
+    return c.json({
+      copyMode: config.copyMode,
+      detectedMounts,
+      suggestedMaps: suggestPathMaps(detectedMounts, localPaths),
+      suggestedHost: config.nasSshHost || detectedMounts[0]?.host || "",
+      sshConfigured: Boolean(config.nasSshHost && config.nasSshUser),
+      identityFilePresent: Boolean(identityFile && existsSync(identityFile)),
+    });
+  });
+
+  app.post("/api/settings/storage-test", requireAuth, async (c) => {
+    const settings = store.getSettings();
+    const reviewPath = settings.reviewPath.trim();
+    if (!reviewPath) return c.json({ error: "Set a review path first" }, 400);
+    await mkdir(reviewPath, { recursive: true });
+    const src = join(reviewPath, ".optimizarr-storage-probe");
+    const dest = join(reviewPath, ".optimizarr-storage-probe.copy");
+    writeFileSync(src, "optimizarr-storage-probe\n");
+    try {
+      const result = await createStorage(storageConfigFromSettings(settings)).copy(src, dest);
+      return c.json({
+        ok: true,
+        method: result.method,
+        bytes: result.bytes,
+        detail: storageTestDetail(result.method),
+      });
+    } catch (err) {
+      return c.json(
+        { ok: false, error: err instanceof Error ? err.message : "Storage test failed" },
+        400,
+      );
+    } finally {
+      try {
+        unlinkSync(src);
+      } catch {
+        /* ignore */
+      }
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* ignore */
+      }
+    }
   });
 
   app.put("/api/auth/credentials", requireAuth, async (c) => {
@@ -502,6 +590,13 @@ function cookieOpts(expires: Date) {
     sameSite: "Lax" as const,
     expires,
   };
+}
+
+function storageTestDetail(method: string): string {
+  if (method === "ssh") return "Copied on the NAS over SSH (the file never crossed this host).";
+  if (method === "clone") return "Cloned on the same filesystem (no extra bytes written).";
+  if (method === "server") return "Kernel server-side copy (SMB/NFS COPYCHUNK or copy_file_range).";
+  return "Copied through this host. Configure NAS SSH to keep the bytes on the NAS.";
 }
 
 
