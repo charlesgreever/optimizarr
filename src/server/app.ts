@@ -91,7 +91,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     opts?.sync ??
     new LibrarySync(store, client, opts?.pathReadable ?? defaultPathReadable, opts?.now ?? (() => new Date()));
   const backends = opts?.backends ?? detectBackends();
-  const jobs = opts?.jobs ?? new JobService(store, opts?.optimize ?? copyOptimizer(), opts?.fetchImpl);
+  const jobs = opts?.jobs ?? new JobService(store, opts?.optimize ?? ffmpegOptimizer(), opts?.fetchImpl);
   jobs.backends = backends;
   sync.catalog = catalog;
   sync.jobs = jobs;
