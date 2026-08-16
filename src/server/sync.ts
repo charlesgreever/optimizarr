@@ -40,7 +40,7 @@ export class LibrarySync {
   start(intervalMs = 5 * 60 * 1000): void {
     this.stop();
     this.timer = setInterval(() => {
-      void this.refreshAll().catch((err) => {
+      void this.refreshAll({ inspect: "pending" }).catch((err) => {
         this.lastError = err instanceof Error ? err.message : String(err);
       });
     }, intervalMs);
@@ -51,31 +51,36 @@ export class LibrarySync {
     this.timer = undefined;
   }
 
-  async refreshAll(): Promise<{ movies: number; errors: string[] }> {
+  async refreshAll(opts?: { inspect?: "pending" | "none" }): Promise<{ movies: number; errors: string[] }> {
     if (this.running) return { movies: 0, errors: ["sync already running"] };
     this.running = true;
     const errors: string[] = [];
     let movies = 0;
     try {
-    for (const instance of this.store.listArrInstances()) {
-      if (!instance.enabled) continue;
-      try {
-        if (instance.kind === "radarr") movies += await this.refreshKind(instance, "movie");
-        else if (instance.kind === "sonarr") movies += await this.refreshKind(instance, "episode");
-      } catch (err) {
-        const message = err instanceof ArrError ? err.message : err instanceof Error ? err.message : "sync failed";
-        errors.push(`${instance.name}: ${message}`);
+      for (const instance of this.store.listArrInstances()) {
+        if (!instance.enabled) continue;
+        try {
+          if (instance.kind === "radarr") movies += await this.refreshKind(instance, "movie");
+          else if (instance.kind === "sonarr") movies += await this.refreshKind(instance, "episode");
+        } catch (err) {
+          const message = err instanceof ArrError ? err.message : err instanceof Error ? err.message : "sync failed";
+          errors.push(`${instance.name}: ${message}`);
+        }
       }
-    }
-    if (this.catalog) await this.catalog.inspectAll();
-    if (this.jobs && this.store.getSettings().autoOptimize) {
-      for (const suggestion of this.store.listSuggestions()) {
-        await this.jobs.enqueue(suggestion.id as number);
+      const inspect = opts?.inspect ?? "pending";
+      if (this.catalog && inspect !== "none") {
+        void this.catalog.inspectPending().catch((err) => {
+          this.lastError = err instanceof Error ? err.message : String(err);
+        });
       }
-    }
-    this.lastSyncAt = this.now().toISOString();
-    this.lastError = errors[0] ?? null;
-    return { movies, errors };
+      if (this.jobs && this.store.getSettings().autoOptimize) {
+        for (const suggestion of this.store.listSuggestions()) {
+          await this.jobs.enqueue(suggestion.id as number);
+        }
+      }
+      this.lastSyncAt = this.now().toISOString();
+      this.lastError = errors[0] ?? this.lastError;
+      return { movies, errors };
     } finally {
       this.running = false;
     }
@@ -83,10 +88,17 @@ export class LibrarySync {
 
   async refreshKind(instance: ArrInstance, type: "movie" | "episode"): Promise<number> {
     const remote = type === "movie" ? await this.client.listMovies(instance) : await this.client.listEpisodes(instance);
+    if (remote.length === 0 && this.store.countLibraryItems(instance.id, type) > 0) {
+      throw new ArrError(`${instance.name} returned no ${type}s; keeping the existing library`);
+    }
     const updatedAt = this.now().toISOString();
     for (const movie of remote) {
       const hasPath = Boolean(movie.path);
-      const readable = hasPath && this.pathReadable(movie.path);
+      const previous = this.store.getLibraryItemByExternal(instance.id, type, movie.externalId);
+      const readable =
+        previous && previous.path === movie.path
+          ? previous.readable
+          : hasPath && this.pathReadable(movie.path);
       this.store.upsertLibraryItem({
         instanceId: instance.id,
         externalId: movie.externalId,

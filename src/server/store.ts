@@ -361,9 +361,20 @@ export class Store {
   }
 
   getLibraryItemByExternal(instanceId: number, type: ItemType, externalId: number): LibraryItem | undefined {
-    return this.listLibraryItems().find(
-      (i) => i.instanceId === instanceId && i.type === type && i.externalId === externalId,
-    );
+    const row = this.db
+      .prepare(
+        `SELECT
+          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
+          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
+          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
+          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+         FROM library_items i
+         JOIN arr_instances a ON a.id = i.instance_id
+         WHERE i.instance_id = ? AND i.type = ? AND i.external_id = ?`,
+      )
+      .get(instanceId, type, externalId) as (LibraryItem & { readable: number | boolean }) | undefined;
+    return row ? { ...row, readable: Boolean(row.readable) } : undefined;
   }
 
   listLibraryItems(type?: ItemType): LibraryItem[] {
@@ -727,6 +738,13 @@ export class Store {
 
   deletePlayer(id: number): void {
     this.db.prepare("DELETE FROM player_instances WHERE id = ?").run(id);
+  }
+
+  countLibraryItems(instanceId: number, type: ItemType): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM library_items WHERE instance_id = ? AND type = ?")
+      .get(instanceId, type) as { n: number };
+    return row.n;
   }
 
   removeMissingLibraryItems(instanceId: number, type: ItemType, keepExternalIds: number[]): void {

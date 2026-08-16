@@ -196,6 +196,31 @@ describe("phase 2 radarr sync", () => {
     expect(payload.items[0].pathError).toBe(UNREADABLE);
   });
 
+  it("does not wipe movies when Radarr returns an empty list", async () => {
+    const path = "/mnt/nas/Movies/Up (2009)/Up.mkv";
+    const { store, sync } = await setup(
+      [
+        {
+          id: 42,
+          title: "Up",
+          movieFile: { path, size: 10, quality: { quality: { name: "Bluray-1080p" } } },
+        },
+      ],
+      { readable: new Set([path]) },
+    );
+    const inst = store.createArrInstance({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" });
+    await sync.refreshKind(inst, "movie");
+    expect(store.listLibraryItems("movie")).toHaveLength(1);
+
+    const emptyClient = {
+      listMovies: async () => [],
+      listEpisodes: async () => [],
+    };
+    const emptySync = new LibrarySync(store, emptyClient as never, () => true);
+    await expect(emptySync.refreshKind(inst, "movie")).rejects.toThrow(/no movies/i);
+    expect(store.listLibraryItems("movie")).toHaveLength(1);
+  });
+
   it("refreshes on an interval", async () => {
     vi.useFakeTimers();
     const path = "/library/a.mkv";

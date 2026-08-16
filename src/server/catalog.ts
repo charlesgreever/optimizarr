@@ -68,10 +68,17 @@ export class Catalog {
   }
 
   async inspectAll(opts?: { force?: boolean }): Promise<number> {
+    return this.inspectPending(opts);
+  }
+
+  async inspectPending(opts?: { force?: boolean }): Promise<number> {
     let n = 0;
     for (const item of this.store.listLibraryItems()) {
+      const sig = `${item.path}|${item.size ?? 0}`;
+      if (!opts?.force && this.store.getInspectionSig(item.id) === sig) continue;
       await this.inspectItem(item.id, opts);
       n += 1;
+      if (n % 3 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
     }
     return n;
   }

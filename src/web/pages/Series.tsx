@@ -58,8 +58,11 @@ export function Series() {
 
   async function load() {
     const data = await api.series();
-    setItems((data.items as LibraryItem[]) ?? []);
-    setMessage(data.message || "");
+    const next = (data.items as LibraryItem[]) ?? [];
+    if (next.length > 0 || items.length === 0) {
+      setItems(next);
+      setMessage(data.message || "");
+    }
   }
 
   useEffect(() => {

@@ -15,8 +15,11 @@ export function Movies() {
 
   async function load() {
     const data = await api.movies();
-    setItems(data.items);
-    setMessage(data.message || "No movies synced yet.");
+    const next = data.items ?? [];
+    if (next.length > 0 || items.length === 0) {
+      setItems(next);
+      setMessage(data.message || "No movies synced yet.");
+    }
   }
 
   useEffect(() => {
