@@ -143,6 +143,7 @@ export class Store {
     }
     this.ensureColumn("library_items", "season_number", "INTEGER");
     this.ensureColumn("library_items", "episode_number", "INTEGER");
+    this.ensureColumn("inspections", "source_sig", "TEXT");
   }
 
   private ensureColumn(table: string, column: string, spec: string): void {
@@ -384,16 +385,32 @@ export class Store {
   }
 
   getLibraryItem(id: number): LibraryItem | undefined {
-    return this.listLibraryItems().find((i) => i.id === id);
+    const row = this.db
+      .prepare(
+        `SELECT
+          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
+          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
+          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
+          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+         FROM library_items i
+         JOIN arr_instances a ON a.id = i.instance_id
+         WHERE i.id = ?`,
+      )
+      .get(id) as (LibraryItem & { readable: number | boolean }) | undefined;
+    return row ? { ...row, readable: Boolean(row.readable) } : undefined;
   }
 
-  saveInspection(itemId: number, report: unknown, inspectedAt: string): void {
+  saveInspection(itemId: number, report: unknown, inspectedAt: string, sourceSig?: string): void {
     this.db
       .prepare(
-        `INSERT INTO inspections (item_id, report_json, inspected_at) VALUES (?, ?, ?)
-         ON CONFLICT(item_id) DO UPDATE SET report_json = excluded.report_json, inspected_at = excluded.inspected_at`,
+        `INSERT INTO inspections (item_id, report_json, inspected_at, source_sig) VALUES (?, ?, ?, ?)
+         ON CONFLICT(item_id) DO UPDATE SET
+           report_json = excluded.report_json,
+           inspected_at = excluded.inspected_at,
+           source_sig = excluded.source_sig`,
       )
-      .run(itemId, JSON.stringify(report), inspectedAt);
+      .run(itemId, JSON.stringify(report), inspectedAt, sourceSig ?? null);
   }
 
   getInspection(itemId: number): unknown | undefined {
@@ -401,6 +418,13 @@ export class Store {
       | { report_json: string }
       | undefined;
     return row ? JSON.parse(row.report_json) : undefined;
+  }
+
+  getInspectionSig(itemId: number): string | null {
+    const row = this.db.prepare("SELECT source_sig FROM inspections WHERE item_id = ?").get(itemId) as
+      | { source_sig: string | null }
+      | undefined;
+    return row?.source_sig ?? null;
   }
 
   saveSuggestion(row: {

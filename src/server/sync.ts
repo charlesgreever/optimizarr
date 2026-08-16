@@ -23,6 +23,7 @@ export function defaultPathReadable(path: string): boolean {
 
 export class LibrarySync {
   private timer: ReturnType<typeof setInterval> | undefined;
+  private running = false;
   lastSyncAt: string | null = null;
   lastError: string | null = null;
 
@@ -51,8 +52,11 @@ export class LibrarySync {
   }
 
   async refreshAll(): Promise<{ movies: number; errors: string[] }> {
+    if (this.running) return { movies: 0, errors: ["sync already running"] };
+    this.running = true;
     const errors: string[] = [];
     let movies = 0;
+    try {
     for (const instance of this.store.listArrInstances()) {
       if (!instance.enabled) continue;
       try {
@@ -72,6 +76,9 @@ export class LibrarySync {
     this.lastSyncAt = this.now().toISOString();
     this.lastError = errors[0] ?? null;
     return { movies, errors };
+    } finally {
+      this.running = false;
+    }
   }
 
   async refreshKind(instance: ArrInstance, type: "movie" | "episode"): Promise<number> {

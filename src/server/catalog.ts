@@ -18,6 +18,11 @@ export class Catalog {
     const item = this.store.getLibraryItem(itemId);
     if (!item || !item.path) return;
     if (this.store.isExcluded(item) && !opts?.force) return;
+    const sourceSig = `${item.path}|${item.size ?? 0}`;
+    if (!opts?.force && !opts?.addStereo && this.store.getInspectionSig(itemId) === sourceSig) {
+      return;
+    }
+    if (!item.readable && !opts?.force) return;
     let report: InspectionReport;
     try {
       report = await this.probe(item.path);
@@ -26,7 +31,7 @@ export class Catalog {
       if (!existing) return;
       report = existing;
     }
-    this.store.saveInspection(itemId, report, new Date().toISOString());
+    this.store.saveInspection(itemId, report, new Date().toISOString(), sourceSig);
     const plan = buildSuggestion(report, this.store.getSettings(), item.type, {
       force: opts?.force,
       addStereo: opts?.addStereo,
