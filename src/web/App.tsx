@@ -43,7 +43,7 @@ export default function App() {
     );
   }
 
-  if (status.needsFirstRun) {
+  if (status.needsFirstRun || (status.authenticated && status.onboardingComplete === false)) {
     return <FirstRun onDone={refresh} />;
   }
   if (!status.authenticated) {

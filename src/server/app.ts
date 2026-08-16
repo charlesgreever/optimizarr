@@ -15,6 +15,7 @@ import { publicArrInstance } from "./models.ts";
 import type { PlayerKind } from "./models.ts";
 import { testPlayer } from "./notify.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
+import { suggestReviewPath } from "./paths.ts";
 import { LibrarySync, defaultPathReadable, movieListPayload, type PathCheck } from "./sync.ts";
 import type { Settings } from "./types.ts";
 import type { FetchLike } from "./arr.ts";
@@ -38,6 +39,13 @@ const INVALID_LOGIN = "Invalid username or password";
 
 function firstRunComplete(store: Store): boolean {
   return store.hasUser() && store.getSettings().languageConfirmed;
+}
+
+function onboardingComplete(store: Store): boolean {
+  if (!firstRunComplete(store)) return false;
+  const settings = store.getSettings();
+  if (!settings.reviewPath.trim()) return false;
+  return store.listArrInstances().some((i) => i.enabled);
 }
 
 function pickSettings(body: Record<string, unknown>, current: Settings): Settings {
@@ -132,14 +140,27 @@ export function createApp(store: Store, opts?: AppOpts): App {
 
   app.get("/api/setup/status", (c) => {
     const settings = store.getSettings();
+    const instances = store.listArrInstances();
+    const players = store.listPlayers();
     return c.json({
       needsFirstRun: !store.hasUser(),
       languageConfirmed: settings.languageConfirmed,
       setupComplete: firstRunComplete(store),
+      onboardingComplete: onboardingComplete(store),
       authenticated: Boolean(c.get("userId")),
       username: c.get("username") ?? null,
+      reviewPath: settings.reviewPath,
+      suggestedReviewPath: suggestReviewPath(
+        store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]),
+      ),
+      hasRadarr: instances.some((i) => i.kind === "radarr" && i.enabled),
+      hasSonarr: instances.some((i) => i.kind === "sonarr" && i.enabled),
+      hasPlex: players.some((p) => p.kind === "plex" && p.enabled),
+      hasJellyfin: players.some((p) => p.kind === "jellyfin" && p.enabled),
     });
   });
+
+
 
   app.post("/api/setup/first-run", async (c) => {
     if (store.hasUser()) return c.json({ error: "Already set up" }, 409);
@@ -203,6 +224,12 @@ export function createApp(store: Store, opts?: AppOpts): App {
   };
 
   app.get("/api/hardware", requireAuth, (c) => c.json(backends));
+  app.get("/api/setup/review-suggestion", requireAuth, (c) => {
+    const suggested = suggestReviewPath(
+      store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]),
+    );
+    return c.json({ suggestedReviewPath: suggested });
+  });
 
   app.get("/api/settings", requireAuth, (c) => {
     return c.json(publicSettings(store.getSettings()));
@@ -290,10 +317,15 @@ export function createApp(store: Store, opts?: AppOpts): App {
   });
 
   app.post("/api/library/refresh", requireAuth, async (c) => {
-    const result = await sync.refreshAll();
+    const body = (await c.req.json().catch(() => ({}))) as { inspect?: string };
+    const inspect = body.inspect === "none" ? "none" : "pending";
+    const result = await sync.refreshAll({ inspect });
     return c.json({
       ...result,
       lastSyncAt: sync.lastSyncAt,
+      suggestedReviewPath: suggestReviewPath(
+        store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]),
+      ),
     });
   });
 

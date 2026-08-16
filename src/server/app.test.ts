@@ -66,6 +66,56 @@ describe("phase 1 app", () => {
     expect(store.getSettings().languageConfirmed).toBe(true);
     expect(store.getSettings().preferredLanguage).toBe("eng");
     expect(cookieHeader(res)).toContain(SESSION_COOKIE);
+    const status = await app.request("/api/setup/status", { headers: { cookie: cookieHeader(res) } });
+    await expect(status.json()).resolves.toMatchObject({
+      onboardingComplete: false,
+      hasRadarr: false,
+      hasSonarr: false,
+      suggestedReviewPath: null,
+    });
+  });
+
+  it("suggests a review path from Arr library roots after sync", async () => {
+    const { app, store } = appWithStore();
+    const first = await app.request("/api/setup/first-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "correct-horse", preferredLanguage: "eng" }),
+    });
+    const cookie = cookieHeader(first);
+    store.createArrInstance({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" });
+    store.upsertLibraryItem({
+      instanceId: 1,
+      externalId: 1,
+      type: "movie",
+      title: "Up",
+      seriesTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
+      path: "/mnt/nas/Movies/Up/Up.mkv",
+      folderPath: "/mnt/nas/Movies/Up",
+      quality: null,
+      videoCodec: "h264",
+      resolution: "1080",
+      hdr: null,
+      size: 1,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    const suggestion = await app.request("/api/setup/review-suggestion", { headers: { cookie } });
+    expect(await suggestion.json()).toEqual({ suggestedReviewPath: "/mnt/nas/optimizarr-review" });
+    await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ reviewPath: "/mnt/nas/optimizarr-review" }),
+    });
+    const status = await app.request("/api/setup/status", { headers: { cookie } });
+    await expect(status.json()).resolves.toMatchObject({
+      onboardingComplete: true,
+      hasRadarr: true,
+      reviewPath: "/mnt/nas/optimizarr-review",
+    });
   });
 
   it("rejects a second first-run", async () => {

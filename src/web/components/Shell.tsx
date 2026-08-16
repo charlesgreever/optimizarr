@@ -73,7 +73,7 @@ export function Shell({ username, setupComplete, onLogout, children }: Props) {
         </nav>
         <div className="border-t border-zinc-800 p-4 text-xs text-zinc-500">
           <div className="mb-2 truncate text-zinc-300">{username}</div>
-          {!setupComplete && <div className="mb-2 text-amber-400">Confirm language in Settings</div>}
+          {!setupComplete && <div className="mb-2 text-amber-400">Finish setup</div>}
           <button type="button" className="text-zinc-400 hover:text-white" onClick={() => void logout()}>
             Log out
           </button>

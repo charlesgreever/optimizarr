@@ -2,8 +2,15 @@ export type SetupStatus = {
   needsFirstRun: boolean;
   languageConfirmed: boolean;
   setupComplete: boolean;
+  onboardingComplete: boolean;
   authenticated: boolean;
   username: string | null;
+  reviewPath?: string;
+  suggestedReviewPath?: string | null;
+  hasRadarr?: boolean;
+  hasSonarr?: boolean;
+  hasPlex?: boolean;
+  hasJellyfin?: boolean;
 };
 
 export type Settings = {
@@ -106,9 +113,11 @@ export const api = {
   deleteInstance: (id: number) => request(`/api/instances/${id}`, { method: "DELETE" }),
   testInstance: (id: number) =>
     request<{ ok: boolean; version?: string; error?: string }>(`/api/instances/${id}/test`, { method: "POST" }),
-  refreshLibrary: () => request<{ movies: number; errors: string[]; lastSyncAt: string | null }>("/api/library/refresh", {
-    method: "POST",
-  }),
+  refreshLibrary: (opts?: { inspect?: "none" | "pending" }) =>
+    request<{ movies: number; errors: string[]; lastSyncAt: string | null; suggestedReviewPath?: string | null }>(
+      "/api/library/refresh",
+      { method: "POST", body: JSON.stringify(opts ?? {}) },
+    ),
   movies: () => request<EmptyList & { items: LibraryItem[] }>("/api/library/movies"),
   series: () => request<EmptyList>("/api/library/series"),
   suggestions: (params?: URLSearchParams) =>
