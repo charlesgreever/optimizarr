@@ -638,7 +638,7 @@ export class Store {
       this.db
         .prepare("SELECT id, kind, name, url, token, enabled FROM player_instances ORDER BY id")
         .all() as Array<PlayerInstance & { enabled: number }>
-    ).map((p) => ({ ...p, enabled: Boolean(p.enabled) }));
+    ).map((p) => ({ ...p, id: Number(p.id), enabled: Boolean(p.enabled) }));
   }
 
   addHistory(itemId: number | null, title: string, action: string, detail?: string): void {

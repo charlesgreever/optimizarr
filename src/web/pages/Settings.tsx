@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LANGUAGES, api, type ArrInstance, type Player, type Settings as SettingsModel } from "../api";
 
 type Backends = { cuda: boolean; vaapi: boolean; av1: boolean };
@@ -24,15 +24,26 @@ export function Settings() {
   const [playerToken, setPlayerToken] = useState("");
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
+  const loadGen = useRef(0);
+
+  function upsertById<T extends { id: number }>(list: T[], item: T): T[] {
+    const rest = list.filter((row) => Number(row.id) !== Number(item.id));
+    return [...rest, item].sort((a, b) => Number(a.id) - Number(b.id));
+  }
 
   useEffect(() => {
+    const gen = ++loadGen.current;
     api
       .settings()
       .then(setSettings)
       .catch((e: Error) => setError(e.message));
     api.status().then((s) => setUsername(s.username ?? ""));
-    api.instances().then((r) => setInstances(r.items));
-    api.players().then((r) => setPlayers(r.items));
+    api.instances().then((r) => {
+      if (gen === loadGen.current) setInstances(r.items ?? []);
+    });
+    api.players().then((r) => {
+      if (gen === loadGen.current) setPlayers(r.items ?? []);
+    });
     api.hardware().then(setHw).catch(() => undefined);
   }, []);
 
@@ -256,14 +267,14 @@ export function Settings() {
               setInstError(null);
               setTestMsg(null);
               try {
-                await api.createInstance({
+                const created = await api.createInstance({
                   kind: instKind,
                   name: instName.trim() || (instKind === "sonarr" ? "Sonarr" : "Radarr"),
                   url: instUrl,
                   apiKey: instKey,
                 });
-                const latest = await api.instances();
-                setInstances(latest.items);
+                loadGen.current += 1;
+                setInstances((list) => upsertById(list, created));
                 setInstKey("");
                 setInstUrl("");
                 setInstName(instKind === "sonarr" ? "Sonarr" : "Radarr");
@@ -373,14 +384,14 @@ export function Settings() {
             void (async () => {
               setPlayerError(null);
               try {
-                await api.createPlayer({
+                const created = await api.createPlayer({
                   kind: playerKind,
                   name: playerName.trim() || (playerKind === "jellyfin" ? "Jellyfin" : "Plex"),
                   url: playerUrl,
                   token: playerToken,
                 });
-                const latest = await api.players();
-                setPlayers(latest.items);
+                loadGen.current += 1;
+                setPlayers((list) => upsertById(list, created));
                 setPlayerToken("");
                 setPlayerUrl("");
                 setPlayerName(playerKind === "jellyfin" ? "Jellyfin" : "Plex");
