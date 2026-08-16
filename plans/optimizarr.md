@@ -57,13 +57,13 @@ A runnable container with persistent config, Arr-style login (secure password ha
 
 ### Acceptance criteria
 
-- [ ] Container starts with a persistent data volume and writes files as the configured PUID/PGID and timezone.
-- [ ] First visit with no admin walks through first-run (account + preferred language) before the main app is usable.
-- [ ] Login, logout, bad password, and session expiry behave correctly; optional local-address bypass can be enabled or disabled.
-- [ ] Changing username/password works; stored secrets are not returned by the settings API after save.
-- [ ] Empty library / suggestions / queue states explain what to do next.
-- [ ] Sidebar matches the Arr information architecture and the layout works on a small viewport.
-- [ ] Tests cover auth, first-run gating, and “optimize blocked until language confirmed.”
+- [x] Container starts with a persistent data volume and writes files as the configured PUID/PGID and timezone.
+- [x] First visit with no admin walks through first-run (account + preferred language) before the main app is usable.
+- [x] Login, logout, bad password, and session expiry behave correctly; optional local-address bypass can be enabled or disabled.
+- [x] Changing username/password works; stored secrets are not returned by the settings API after save.
+- [x] Empty library / suggestions / queue states explain what to do next.
+- [x] Sidebar matches the Arr information architecture and the layout works on a small viewport.
+- [x] Tests cover auth, first-run gating, and “optimize blocked until language confirmed.”
 
 ---
 

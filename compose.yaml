@@ -1,0 +1,17 @@
+name: optimizarr
+services:
+  optimizarr:
+    build: .
+    image: optimizarr:local
+    container_name: optimizarr
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/New_York
+    ports:
+      - "7373:7373"
+    volumes:
+      - ./config:/config
+      # Same NAS view as Radarr/Sonarr when deployed on ubuntuserver:
+      # - /mnt/nas:/mnt/nas
