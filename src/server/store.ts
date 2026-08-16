@@ -65,6 +65,8 @@ export class Store {
         readable INTEGER NOT NULL DEFAULT 0,
         path_error TEXT,
         updated_at TEXT NOT NULL,
+        season_number INTEGER,
+        episode_number INTEGER,
         UNIQUE(instance_id, type, external_id)
       );
       CREATE TABLE IF NOT EXISTS inspections (
@@ -139,6 +141,14 @@ export class Store {
         .prepare("INSERT INTO settings (key, value) VALUES ('app', ?)")
         .run(JSON.stringify(defaultSettings()));
     }
+    this.ensureColumn("library_items", "season_number", "INTEGER");
+    this.ensureColumn("library_items", "episode_number", "INTEGER");
+  }
+
+  private ensureColumn(table: string, column: string, spec: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (cols.some((c) => c.name === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${spec}`);
   }
 
   getSettings(): Settings {
@@ -306,8 +316,9 @@ export class Store {
       .prepare(
         `INSERT INTO library_items (
           instance_id, external_id, type, title, series_title, path, folder_path,
-          quality, video_codec, resolution, hdr, size, readable, path_error, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          quality, video_codec, resolution, hdr, size, readable, path_error, updated_at,
+          season_number, episode_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id, type, external_id) DO UPDATE SET
           title = excluded.title,
           series_title = excluded.series_title,
@@ -320,7 +331,9 @@ export class Store {
           size = excluded.size,
           readable = excluded.readable,
           path_error = excluded.path_error,
-          updated_at = excluded.updated_at`,
+          updated_at = excluded.updated_at,
+          season_number = excluded.season_number,
+          episode_number = excluded.episode_number`,
       )
       .run(
         item.instanceId,
@@ -338,6 +351,8 @@ export class Store {
         item.readable ? 1 : 0,
         item.pathError,
         item.updatedAt,
+        item.seasonNumber,
+        item.episodeNumber,
       );
     const saved = this.getLibraryItemByExternal(item.instanceId, item.type, item.externalId);
     if (!saved) throw new Error("failed to upsert library item");
@@ -356,12 +371,13 @@ export class Store {
         `SELECT
           i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
           i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
           i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
           i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
          FROM library_items i
          JOIN arr_instances a ON a.id = i.instance_id
          ${type ? "WHERE i.type = ?" : ""}
-         ORDER BY i.title COLLATE NOCASE`,
+         ORDER BY i.series_title COLLATE NOCASE, i.season_number, i.episode_number, i.title COLLATE NOCASE`,
       )
       .all(...(type ? [type] : [])) as Array<LibraryItem & { readable: number | boolean }>;
     return rows.map((r) => ({ ...r, readable: Boolean(r.readable) }));

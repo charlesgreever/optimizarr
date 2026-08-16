@@ -46,6 +46,9 @@ export type LibraryItem = {
   instanceName: string;
   instanceKind: "radarr" | "sonarr";
   title: string;
+  seriesTitle: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
   path: string;
   quality: string | null;
   videoCodec: string | null;

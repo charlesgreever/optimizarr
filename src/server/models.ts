@@ -33,6 +33,8 @@ export type LibraryItem = {
   type: ItemType;
   title: string;
   seriesTitle: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
   path: string;
   folderPath: string | null;
   quality: string | null;

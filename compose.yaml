@@ -9,9 +9,23 @@ services:
       PUID: "1000"
       PGID: "1000"
       TZ: America/New_York
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
     ports:
       - "7373:7373"
     volumes:
-      - ./config:/config
-      # Same NAS view as Radarr/Sonarr when deployed on ubuntuserver:
-      # - /mnt/nas:/mnt/nas
+      # Same layout as the other *arrs on ubuntuserver
+      - /home/cgreever/appdata/arr/optimizarr/config:/config
+      - /mnt/nas:/mnt/nas
+      - /mnt/nas/sabdownloads/complete:/complete
+      - /mnt/nas/sabdownloads/incomplete:/incomplete
+    networks:
+      - arr_net
+    # Uncomment if the host has the NVIDIA container toolkit (Frigate-style):
+    # runtime: nvidia
+    labels:
+      icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/radarr.png
+
+networks:
+  arr_net:
+    external: true

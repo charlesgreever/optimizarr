@@ -5,6 +5,9 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 export type ArrMovie = {
   externalId: number;
   title: string;
+  seriesTitle: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
   path: string;
   folderPath: string | null;
   quality: string | null;
@@ -86,6 +89,9 @@ export function parseMovie(raw: Record<string, unknown>): ArrMovie {
   return {
     externalId: Number(raw.id),
     title: String(raw.title ?? "Untitled"),
+    seriesTitle: null,
+    seasonNumber: null,
+    episodeNumber: null,
     path: filePath,
     folderPath,
     quality: typeof q?.name === "string" ? q.name : null,
@@ -115,17 +121,23 @@ function hdrOf(mediaInfo: Record<string, unknown>): string | null {
   return dyn || null;
 }
 
-function parseEpisode(raw: Record<string, unknown>, seriesTitle: string): ArrMovie | null {
+export function parseEpisode(raw: Record<string, unknown>, seriesTitle: string): ArrMovie | null {
   const episodeFile = (raw.episodeFile ?? {}) as Record<string, unknown>;
   const filePath = typeof episodeFile.path === "string" ? episodeFile.path : "";
   if (!raw.id) return null;
+  if (!filePath && !raw.hasFile) return null;
   const quality = (episodeFile.quality ?? {}) as Record<string, unknown>;
   const q = (quality.quality ?? quality) as Record<string, unknown>;
   const mediaInfo = (episodeFile.mediaInfo ?? {}) as Record<string, unknown>;
-  const epTitle = raw.title ? `${seriesTitle} - ${raw.title}` : seriesTitle;
+  const episodeTitle = String(raw.title ?? "Episode");
+  const seasonNumber = Number(raw.seasonNumber ?? 0);
+  const episodeNumber = Number(raw.episodeNumber ?? 0);
   return {
     externalId: Number(raw.id),
-    title: String(epTitle),
+    title: episodeTitle,
+    seriesTitle,
+    seasonNumber,
+    episodeNumber,
     path: filePath,
     folderPath: typeof raw.path === "string" ? raw.path : null,
     quality: typeof q?.name === "string" ? q.name : null,

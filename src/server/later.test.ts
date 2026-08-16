@@ -107,8 +107,23 @@ describe("phases 5-10", () => {
           {
             id: 11,
             title: "Pilot",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            hasFile: true,
             episodeFile: {
               path: "/tv/show.mkv",
+              size: 1,
+              quality: { quality: { name: "HDTV-1080p", resolution: 1080 } },
+            },
+          },
+          {
+            id: 12,
+            title: "Next",
+            seasonNumber: 1,
+            episodeNumber: 2,
+            hasFile: true,
+            episodeFile: {
+              path: "/tv/show2.mkv",
               size: 1,
               quality: { quality: { name: "HDTV-1080p", resolution: 1080 } },
             },
@@ -125,8 +140,14 @@ describe("phases 5-10", () => {
     });
     await app.request("/api/library/refresh", { method: "POST", headers: { cookie } });
     const series = await app.request("/api/library/series", { headers: { cookie } }).then((r) => r.json());
-    expect(series.items[0].title).toMatch(/Pilot/);
-    expect(series.items[0].instanceName).toBe("Sonarr");
+    expect(series.items[0]).toMatchObject({
+      seriesTitle: "Show",
+      seasonNumber: 1,
+      episodeNumber: 1,
+      title: "Pilot",
+      instanceName: "Sonarr",
+    });
+    expect(series.items[1].episodeNumber).toBe(2);
   });
 
   it("holds jobs outside the off-peak window", async () => {
@@ -141,6 +162,8 @@ describe("phases 5-10", () => {
       type: "movie",
       title: "Held",
       seriesTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
       path: "/x.mkv",
       folderPath: null,
       quality: null,
