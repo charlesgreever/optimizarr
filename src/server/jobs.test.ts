@@ -103,6 +103,24 @@ describe("phase 4 remux review keep", () => {
     return { app, store, cookie, source, review, library, calls, dir };
   }
 
+  it("keeps both a Plex and a Jellyfin player in the list", async () => {
+    const { app, cookie } = await setup();
+    const listed = await app.request("/api/players", { headers: { cookie } }).then((r) => r.json());
+    expect(listed.items).toHaveLength(2);
+    expect(listed.items.map((p: { kind: string }) => p.kind).sort()).toEqual(["jellyfin", "plex"]);
+    expect(listed.items.every((p: { token?: string }) => p.token === undefined)).toBe(true);
+    const extra = await app.request("/api/players", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "plex", name: "Plex 2", url: "http://plex2", token: "t2" }),
+    });
+    expect(extra.status).toBe(201);
+    const again = await app.request("/api/players", { headers: { cookie } }).then((r) => r.json());
+    expect(again.items).toHaveLength(3);
+    const ids = again.items.map((p: { id: number }) => p.id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
   it("writes a sidecar to the review path and leaves the original until Keep", async () => {
     const { app, cookie, source, review } = await setup();
     const suggestions = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());

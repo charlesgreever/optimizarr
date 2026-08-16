@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { LANGUAGES, api, type ArrInstance, type Settings as SettingsModel } from "../api";
+import { LANGUAGES, api, type ArrInstance, type Player, type Settings as SettingsModel } from "../api";
 
 type Backends = { cuda: boolean; vaapi: boolean; av1: boolean };
 
@@ -17,6 +17,12 @@ export function Settings() {
   const [instKey, setInstKey] = useState("");
   const [instError, setInstError] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playerKind, setPlayerKind] = useState<"plex" | "jellyfin">("plex");
+  const [playerName, setPlayerName] = useState("Plex");
+  const [playerUrl, setPlayerUrl] = useState("");
+  const [playerToken, setPlayerToken] = useState("");
+  const [playerError, setPlayerError] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
 
   useEffect(() => {
@@ -26,6 +32,7 @@ export function Settings() {
       .catch((e: Error) => setError(e.message));
     api.status().then((s) => setUsername(s.username ?? ""));
     api.instances().then((r) => setInstances(r.items));
+    api.players().then((r) => setPlayers(r.items));
     api.hardware().then(setHw).catch(() => undefined);
   }, []);
 
@@ -316,46 +323,121 @@ export function Settings() {
         </form>
       </div>
 
-      <form
-        className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const form = e.currentTarget;
-          const data = new FormData(form);
-          void api
-            .createPlayer({
-              kind: data.get("kind") as "plex" | "jellyfin",
-              name: String(data.get("name") ?? ""),
-              url: String(data.get("url") ?? ""),
-              token: String(data.get("token") ?? ""),
-            })
-            .then(() => setSaved(true));
-        }}
-      >
+      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 className="text-lg font-medium">Media players</h2>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">Kind</span>
-          <select className="input" name="kind" defaultValue="plex">
-            <option value="plex">Plex</option>
-            <option value="jellyfin">Jellyfin</option>
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">Name</span>
-          <input className="input" name="name" required />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">URL</span>
-          <input className="input" name="url" placeholder="http://192.168.1.10:32400" required />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">Token</span>
-          <input className="input" type="password" name="token" required />
-        </label>
-        <button className="btn" type="submit">
-          Add player
-        </button>
-      </form>
+        <p className="text-sm text-zinc-500">
+          Add Plex and Jellyfin separately. Tokens are saved and never shown again.
+        </p>
+        {players.length === 0 && <p className="text-sm text-zinc-500">No media players connected yet.</p>}
+        {players.map((player) => (
+          <div key={`${player.kind}-${player.id}`} className="rounded-lg border border-zinc-800 p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-300">
+                {player.kind}
+              </span>
+              <span className="font-medium">{player.name}</span>
+              {!player.enabled && <span className="text-xs text-zinc-500">disabled</span>}
+            </div>
+            <div className="mt-1 text-zinc-500">{player.url}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() => {
+                  void api.updatePlayer(player.id, { enabled: !player.enabled }).then((next) => {
+                    setPlayers((list) => list.map((p) => (p.id === next.id ? next : p)));
+                  });
+                }}
+              >
+                {player.enabled ? "Disable" : "Enable"}
+              </button>
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() => {
+                  void api.deletePlayer(player.id).then(async () => {
+                    const latest = await api.players();
+                    setPlayers(latest.items);
+                  });
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+        <form
+          className="space-y-4 border-t border-zinc-800 pt-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              setPlayerError(null);
+              try {
+                await api.createPlayer({
+                  kind: playerKind,
+                  name: playerName.trim() || (playerKind === "jellyfin" ? "Jellyfin" : "Plex"),
+                  url: playerUrl,
+                  token: playerToken,
+                });
+                const latest = await api.players();
+                setPlayers(latest.items);
+                setPlayerToken("");
+                setPlayerUrl("");
+                setPlayerName(playerKind === "jellyfin" ? "Jellyfin" : "Plex");
+                setSaved(true);
+              } catch (err) {
+                setPlayerError(err instanceof Error ? err.message : "Could not add player");
+              }
+            })();
+          }}
+        >
+          <h3 className="text-sm font-medium text-zinc-200">Add a player</h3>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">Kind</span>
+            <select
+              className="input"
+              value={playerKind}
+              onChange={(e) => {
+                const next = e.target.value === "jellyfin" ? "jellyfin" : "plex";
+                setPlayerKind(next);
+                if (playerName === "Plex" || playerName === "Jellyfin" || playerName === "") {
+                  setPlayerName(next === "jellyfin" ? "Jellyfin" : "Plex");
+                }
+              }}
+            >
+              <option value="plex">Plex</option>
+              <option value="jellyfin">Jellyfin</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">Name</span>
+            <input className="input" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">URL</span>
+            <input
+              className="input"
+              value={playerUrl}
+              onChange={(e) => setPlayerUrl(e.target.value)}
+              placeholder={playerKind === "jellyfin" ? "http://192.168.1.10:8096" : "http://192.168.1.10:32400"}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">Token</span>
+            <input
+              className="input"
+              type="password"
+              value={playerToken}
+              onChange={(e) => setPlayerToken(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          {playerError && <p className="text-sm text-red-400">{playerError}</p>}
+          <button className="btn" type="submit">
+            Add {playerKind === "jellyfin" ? "Jellyfin" : "Plex"}
+          </button>
+        </form>
+      </div>
 
       <form className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6" onSubmit={(e) => void saveAccount(e)}>
         <h2 className="text-lg font-medium">Account</h2>

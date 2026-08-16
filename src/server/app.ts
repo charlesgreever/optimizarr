@@ -417,6 +417,30 @@ export function createApp(store: Store, opts?: AppOpts): App {
     const created = store.createPlayer({ kind, name, url, token });
     return c.json({ id: created.id, kind: created.kind, name: created.name, url: created.url, enabled: created.enabled, hasToken: true }, 201);
   });
+  app.put("/api/players/:id", requireAuth, async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const patch: Parameters<Store["updatePlayer"]>[1] = {};
+    if (typeof body.name === "string") patch.name = body.name.trim();
+    if (typeof body.url === "string") patch.url = body.url.trim();
+    if (typeof body.token === "string") patch.token = body.token;
+    if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+    if (body.kind === "plex" || body.kind === "jellyfin" || body.kind === "other") patch.kind = body.kind;
+    const updated = store.updatePlayer(id, patch);
+    if (!updated) return c.json({ error: "Player not found" }, 404);
+    return c.json({
+      id: updated.id,
+      kind: updated.kind,
+      name: updated.name,
+      url: updated.url,
+      enabled: updated.enabled,
+      hasToken: Boolean(updated.token),
+    });
+  });
+  app.delete("/api/players/:id", requireAuth, (c) => {
+    store.deletePlayer(Number(c.req.param("id")));
+    return c.json({ ok: true });
+  });
 
   const webRoot = opts?.webRoot;
   if (webRoot && existsSync(webRoot)) {

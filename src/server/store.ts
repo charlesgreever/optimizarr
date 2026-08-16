@@ -677,11 +677,32 @@ export class Store {
   }
 
   createPlayer(input: { kind: PlayerKind; name: string; url: string; token: string; enabled?: boolean }): PlayerInstance {
-    this.db
+    const inserted = this.db
       .prepare("INSERT INTO player_instances (kind, name, url, token, enabled) VALUES (?, ?, ?, ?, ?)")
       .run(input.kind, input.name, input.url.replace(/\/+$/, ""), input.token, input.enabled === false ? 0 : 1);
-    const id = (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
-    return this.listPlayers().find((p) => p.id === id)!;
+    const id = Number(inserted.lastInsertRowid);
+    const created = this.listPlayers().find((p) => p.id === id);
+    if (!created) throw new Error("failed to create player");
+    return created;
+  }
+
+  updatePlayer(id: number, patch: Partial<Pick<PlayerInstance, "name" | "url" | "token" | "enabled" | "kind">>): PlayerInstance | undefined {
+    const current = this.listPlayers().find((p) => p.id === id);
+    if (!current) return undefined;
+    const next = {
+      ...current,
+      ...patch,
+      url: patch.url ? patch.url.replace(/\/+$/, "") : current.url,
+      token: patch.token && patch.token.length > 0 ? patch.token : current.token,
+    };
+    this.db
+      .prepare("UPDATE player_instances SET kind = ?, name = ?, url = ?, token = ?, enabled = ? WHERE id = ?")
+      .run(next.kind, next.name, next.url, next.token, next.enabled ? 1 : 0, id);
+    return this.listPlayers().find((p) => p.id === id);
+  }
+
+  deletePlayer(id: number): void {
+    this.db.prepare("DELETE FROM player_instances WHERE id = ?").run(id);
   }
 
   removeMissingLibraryItems(instanceId: number, type: ItemType, keepExternalIds: number[]): void {

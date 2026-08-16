@@ -31,6 +31,15 @@ export type Settings = {
 
 export type EmptyList = { items: unknown[]; message?: string; lastSyncAt?: string | null };
 
+export type Player = {
+  id: number;
+  kind: "plex" | "jellyfin" | "other";
+  name: string;
+  url: string;
+  enabled: boolean;
+  hasToken: boolean;
+};
+
 export type ArrInstance = {
   id: number;
   kind: "radarr" | "sonarr";
@@ -114,9 +123,12 @@ export const api = {
   review: () => request<EmptyList>("/api/review"),
   keepReview: (id: number) => request(`/api/review/${id}/keep`, { method: "POST" }),
   discardReview: (id: number) => request(`/api/review/${id}/discard`, { method: "POST" }),
-  players: () => request<{ items: { id: number; kind: string; name: string; url: string; enabled: boolean }[] }>("/api/players"),
+  players: () => request<{ items: Player[] }>("/api/players"),
   createPlayer: (body: { kind: "plex" | "jellyfin" | "other"; name: string; url: string; token: string }) =>
-    request("/api/players", { method: "POST", body: JSON.stringify(body) }),
+    request<Player>("/api/players", { method: "POST", body: JSON.stringify(body) }),
+  updatePlayer: (id: number, body: Partial<{ name: string; url: string; token: string; enabled: boolean }>) =>
+    request<Player>(`/api/players/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deletePlayer: (id: number) => request(`/api/players/${id}`, { method: "DELETE" }),
   history: () => request<EmptyList>("/api/history"),
 };
 
