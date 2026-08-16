@@ -269,10 +269,10 @@ export class Store {
     apiKey: string;
     enabled?: boolean;
   }): ArrInstance {
-    this.db
+    const inserted = this.db
       .prepare("INSERT INTO arr_instances (kind, name, url, api_key, enabled) VALUES (?, ?, ?, ?, ?)")
       .run(input.kind, input.name, normalizeUrl(input.url), input.apiKey, input.enabled === false ? 0 : 1);
-    const id = (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    const id = Number(inserted.lastInsertRowid);
     const created = this.getArrInstance(id);
     if (!created) throw new Error("failed to create instance");
     return created;

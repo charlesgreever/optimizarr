@@ -11,9 +11,11 @@ export function Settings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [instances, setInstances] = useState<ArrInstance[]>([]);
+  const [instKind, setInstKind] = useState<"radarr" | "sonarr">("radarr");
   const [instName, setInstName] = useState("Radarr");
   const [instUrl, setInstUrl] = useState("");
   const [instKey, setInstKey] = useState("");
+  const [instError, setInstError] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
 
@@ -184,45 +186,30 @@ export function Settings() {
         </button>
       </form>
 
-      <form
-        className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void (async () => {
-            setError(null);
-            setTestMsg(null);
-            try {
-              const created = await api.createInstance({
-                kind: (document.getElementById("arr-kind") as HTMLSelectElement)?.value === "sonarr" ? "sonarr" : "radarr",
-                name: instName,
-                url: instUrl,
-                apiKey: instKey,
-              });
-              setInstances((list) => [...list, created]);
-              setInstKey("");
-              setSaved(true);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Could not add instance");
-            }
-          })();
-        }}
-      >
+      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 className="text-lg font-medium">Radarr / Sonarr</h2>
         <p className="text-sm text-zinc-500">
-          Optimizarr uses the same file paths Radarr reports. Mount the NAS at that path in this container.
+          Add each Arr separately. Optimizarr uses the same file paths they report — mount the NAS at that path in this container.
         </p>
+        {instances.length === 0 && <p className="text-sm text-zinc-500">No instances connected yet.</p>}
         {instances.map((inst) => (
-          <div key={inst.id} className="rounded-lg border border-zinc-800 p-3 text-sm">
-            <div className="font-medium">{inst.name}</div>
-            <div className="text-zinc-500">{inst.url}</div>
-            <div className="mt-2 flex gap-2">
+          <div key={`${inst.kind}-${inst.id}`} className="rounded-lg border border-zinc-800 p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-300">
+                {inst.kind}
+              </span>
+              <span className="font-medium">{inst.name}</span>
+              {!inst.enabled && <span className="text-xs text-zinc-500">disabled</span>}
+            </div>
+            <div className="mt-1 text-zinc-500">{inst.url}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
               <button
                 className="btn !w-auto"
                 type="button"
                 onClick={() => {
                   void api
                     .testInstance(inst.id)
-                    .then((r) => setTestMsg(r.ok ? `Connected (v${r.version})` : r.error || "Failed"))
+                    .then((r) => setTestMsg(`${inst.name}: ${r.ok ? `connected (v${r.version})` : r.error || "failed"}`))
                     .catch((e: Error) => setTestMsg(e.message));
                 }}
               >
@@ -239,33 +226,95 @@ export function Settings() {
               >
                 {inst.enabled ? "Disable" : "Enable"}
               </button>
+              <button
+                className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                type="button"
+                onClick={() => {
+                  void api.deleteInstance(inst.id).then(async () => {
+                    const latest = await api.instances();
+                    setInstances(latest.items);
+                  });
+                }}
+              >
+                Remove
+              </button>
             </div>
           </div>
         ))}
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">Kind</span>
-          <select className="input" id="arr-kind" defaultValue="radarr">
-            <option value="radarr">Radarr</option>
-            <option value="sonarr">Sonarr</option>
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">Name</span>
-          <input className="input" value={instName} onChange={(e) => setInstName(e.target.value)} />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">URL</span>
-          <input className="input" value={instUrl} onChange={(e) => setInstUrl(e.target.value)} placeholder="http://192.168.1.10:7878" />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block text-zinc-300">API key</span>
-          <input className="input" type="password" value={instKey} onChange={(e) => setInstKey(e.target.value)} autoComplete="off" />
-        </label>
-        {testMsg && <p className="text-sm text-zinc-300">{testMsg}</p>}
-        <button className="btn" type="submit">
-          Add Radarr
-        </button>
-      </form>
+        <form
+          className="space-y-4 border-t border-zinc-800 pt-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              setInstError(null);
+              setTestMsg(null);
+              try {
+                await api.createInstance({
+                  kind: instKind,
+                  name: instName.trim() || (instKind === "sonarr" ? "Sonarr" : "Radarr"),
+                  url: instUrl,
+                  apiKey: instKey,
+                });
+                const latest = await api.instances();
+                setInstances(latest.items);
+                setInstKey("");
+                setInstUrl("");
+                setInstName(instKind === "sonarr" ? "Sonarr" : "Radarr");
+                setSaved(true);
+              } catch (err) {
+                setInstError(err instanceof Error ? err.message : "Could not add instance");
+              }
+            })();
+          }}
+        >
+          <h3 className="text-sm font-medium text-zinc-200">Add an instance</h3>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">Kind</span>
+            <select
+              className="input"
+              value={instKind}
+              onChange={(e) => {
+                const next = e.target.value === "sonarr" ? "sonarr" : "radarr";
+                setInstKind(next);
+                if (instName === "Radarr" || instName === "Sonarr" || instName === "") {
+                  setInstName(next === "sonarr" ? "Sonarr" : "Radarr");
+                }
+              }}
+            >
+              <option value="radarr">Radarr</option>
+              <option value="sonarr">Sonarr</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">Name</span>
+            <input className="input" value={instName} onChange={(e) => setInstName(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">URL</span>
+            <input
+              className="input"
+              value={instUrl}
+              onChange={(e) => setInstUrl(e.target.value)}
+              placeholder={instKind === "sonarr" ? "http://192.168.1.10:8989" : "http://192.168.1.10:7878"}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-zinc-300">API key</span>
+            <input
+              className="input"
+              type="password"
+              value={instKey}
+              onChange={(e) => setInstKey(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          {instError && <p className="text-sm text-red-400">{instError}</p>}
+          {testMsg && <p className="text-sm text-zinc-300">{testMsg}</p>}
+          <button className="btn" type="submit">
+            Add {instKind === "sonarr" ? "Sonarr" : "Radarr"}
+          </button>
+        </form>
+      </div>
 
       <form
         className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6"

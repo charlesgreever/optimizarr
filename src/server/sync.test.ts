@@ -86,6 +86,30 @@ describe("phase 2 radarr sync", () => {
     expect(await ok.json()).toEqual({ ok: true, version: "5.14.0" });
   });
 
+  it("keeps both a Sonarr and a Radarr instance in the list", async () => {
+    const { app, cookie } = await setup([]);
+    const sonarr = await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "sonarr", name: "Sonarr", url: "http://sonarr.local:8989", apiKey: "s-key" }),
+    });
+    const radarr = await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr.local:7878", apiKey: "r-key" }),
+    });
+    expect(sonarr.status).toBe(201);
+    expect(radarr.status).toBe(201);
+    const a = await sonarr.json();
+    const b = await radarr.json();
+    expect(a.id).not.toBe(b.id);
+    expect(a.kind).toBe("sonarr");
+    expect(b.kind).toBe("radarr");
+    const listed = await app.request("/api/instances", { headers: { cookie } }).then((r) => r.json());
+    expect(listed.items).toHaveLength(2);
+    expect(listed.items.map((i: { kind: string }) => i.kind).sort()).toEqual(["radarr", "sonarr"]);
+  });
+
   it("surfaces a rejected API key on test", async () => {
     const { app, cookie } = await setup([], { status: 401 });
     await app.request("/api/instances", {

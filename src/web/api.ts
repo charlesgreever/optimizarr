@@ -91,6 +91,7 @@ export const api = {
   }) => request<ArrInstance>("/api/instances", { method: "POST", body: JSON.stringify(body) }),
   updateInstance: (id: number, body: Partial<{ name: string; url: string; apiKey: string; enabled: boolean }>) =>
     request<ArrInstance>(`/api/instances/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteInstance: (id: number) => request(`/api/instances/${id}`, { method: "DELETE" }),
   testInstance: (id: number) =>
     request<{ ok: boolean; version?: string; error?: string }>(`/api/instances/${id}/test`, { method: "POST" }),
   refreshLibrary: () => request<{ movies: number; errors: string[]; lastSyncAt: string | null }>("/api/library/refresh", {
