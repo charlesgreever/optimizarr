@@ -29,7 +29,32 @@ export type Settings = {
   };
 };
 
-export type EmptyList = { items: unknown[]; message?: string };
+export type EmptyList = { items: unknown[]; message?: string; lastSyncAt?: string | null };
+
+export type ArrInstance = {
+  id: number;
+  kind: "radarr" | "sonarr";
+  name: string;
+  url: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+};
+
+export type LibraryItem = {
+  id: number;
+  instanceId: number;
+  instanceName: string;
+  instanceKind: "radarr" | "sonarr";
+  title: string;
+  path: string;
+  quality: string | null;
+  videoCodec: string | null;
+  resolution: string | null;
+  hdr: string | null;
+  size: number | null;
+  readable: boolean;
+  pathError: string | null;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -56,11 +81,38 @@ export const api = {
     request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   updateCredentials: (body: { currentPassword: string; username: string; password?: string }) =>
     request("/api/auth/credentials", { method: "PUT", body: JSON.stringify(body) }),
-  movies: () => request<EmptyList>("/api/library/movies"),
+  instances: () => request<{ items: ArrInstance[] }>("/api/instances"),
+  createInstance: (body: {
+    kind: "radarr" | "sonarr";
+    name: string;
+    url: string;
+    apiKey: string;
+    enabled?: boolean;
+  }) => request<ArrInstance>("/api/instances", { method: "POST", body: JSON.stringify(body) }),
+  updateInstance: (id: number, body: Partial<{ name: string; url: string; apiKey: string; enabled: boolean }>) =>
+    request<ArrInstance>(`/api/instances/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  testInstance: (id: number) =>
+    request<{ ok: boolean; version?: string; error?: string }>(`/api/instances/${id}/test`, { method: "POST" }),
+  refreshLibrary: () => request<{ movies: number; errors: string[]; lastSyncAt: string | null }>("/api/library/refresh", {
+    method: "POST",
+  }),
+  movies: () => request<EmptyList & { items: LibraryItem[] }>("/api/library/movies"),
   series: () => request<EmptyList>("/api/library/series"),
-  suggestions: () => request<EmptyList>("/api/suggestions"),
+  suggestions: (params?: URLSearchParams) =>
+    request<EmptyList>(`/api/suggestions${params && [...params].length ? `?${params}` : ""}`),
+  dismissSuggestion: (id: number) => request(`/api/suggestions/${id}/dismiss`, { method: "POST" }),
+  forceItem: (id: number) => request(`/api/library/items/${id}/force`, { method: "POST" }),
+  addStereo: (id: number) => request(`/api/library/items/${id}/stereo`, { method: "POST" }),
+  hardware: () => request<{ cuda: boolean; vaapi: boolean; av1: boolean }>("/api/hardware"),
   queue: () => request<EmptyList>("/api/queue"),
+  enqueue: (suggestionId: number) =>
+    request("/api/queue", { method: "POST", body: JSON.stringify({ suggestionId }) }),
   review: () => request<EmptyList>("/api/review"),
+  keepReview: (id: number) => request(`/api/review/${id}/keep`, { method: "POST" }),
+  discardReview: (id: number) => request(`/api/review/${id}/discard`, { method: "POST" }),
+  players: () => request<{ items: { id: number; kind: string; name: string; url: string; enabled: boolean }[] }>("/api/players"),
+  createPlayer: (body: { kind: "plex" | "jellyfin" | "other"; name: string; url: string; token: string }) =>
+    request("/api/players", { method: "POST", body: JSON.stringify(body) }),
   history: () => request<EmptyList>("/api/history"),
 };
 

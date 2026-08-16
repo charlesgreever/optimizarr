@@ -1,0 +1,108 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { ArrClient } from "./arr.ts";
+import { createApp } from "./app.ts";
+import { Catalog } from "./catalog.ts";
+import { parseFfprobe } from "./inspect.ts";
+import { Store } from "./store.ts";
+import { LibrarySync } from "./sync.ts";
+
+function cookieHeader(res: Response): string {
+  const headers = res.headers as Headers & { getSetCookie?: () => string[] };
+  const parts =
+    typeof headers.getSetCookie === "function"
+      ? headers.getSetCookie.call(headers)
+      : [headers.get("set-cookie") ?? ""];
+  return parts.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+}
+
+const probes: Record<string, Record<string, unknown>> = {
+  "/ok.mkv": {
+    format: { duration: "3600", size: String(1 * 1024 ** 3) },
+    streams: [
+      { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+      { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" } },
+    ],
+  },
+  "/big.mkv": {
+    format: { duration: "3600", size: String(10 * 1024 ** 3) },
+    streams: [
+      { codec_type: "video", codec_name: "h264", width: 1920, height: 1080 },
+      { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" } },
+      { codec_type: "subtitle", codec_name: "subrip", tags: { language: "spa" } },
+    ],
+  },
+};
+
+describe("phase 3 catalog", () => {
+  const dirs: string[] = [];
+  const stores: Store[] = [];
+
+  afterEach(() => {
+    for (const s of stores.splice(0)) s.close();
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  async function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "optimizarr-"));
+    dirs.push(dir);
+    const store = new Store(dir);
+    stores.push(store);
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith("/status")) return Response.json({ version: "1" });
+      return Response.json([
+        { id: 1, title: "Healthy", movieFile: { path: "/ok.mkv", size: 1 } },
+        { id: 2, title: "Giant AVC", movieFile: { path: "/big.mkv", size: 10 } },
+      ]);
+    };
+    const probe = (path: string) => parseFfprobe(path, probes[path]);
+    const catalog = new Catalog(store, probe);
+    const sync = new LibrarySync(store, new ArrClient(fetchImpl), () => true);
+    sync.catalog = catalog;
+    const app = createApp(store, { fetchImpl, pathReadable: () => true, sync, catalog, probe });
+    const first = await app.request("/api/setup/first-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "correct-horse", preferredLanguage: "eng" }),
+    });
+    await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeader(first) },
+      body: JSON.stringify({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" }),
+    });
+    await app.request("/api/library/refresh", { method: "POST", headers: { cookie: cookieHeader(first) } });
+    return { app, store, cookie: cookieHeader(first) };
+  }
+
+  it("lists only items with work and hides healthy files", async () => {
+    const { app, cookie } = await setup();
+    const res = await app.request("/api/suggestions", { headers: { cookie } });
+    const body = await res.json();
+    expect(body.items.map((i: { title: string }) => i.title)).toEqual(["Giant AVC"]);
+    expect(body.items[0].actions).toContain("transcode");
+    expect(body.items[0].estimatedSavingsBytes).toBeGreaterThan(0);
+  });
+
+  it("filters by title search", async () => {
+    const { app, cookie } = await setup();
+    const miss = await app.request("/api/suggestions?q=nope", { headers: { cookie } });
+    expect((await miss.json()).items).toHaveLength(0);
+    const hit = await app.request("/api/suggestions?q=giant", { headers: { cookie } });
+    expect((await hit.json()).items).toHaveLength(1);
+  });
+
+  it("dismisses a suggestion and can force a healthy file", async () => {
+    const { app, cookie, store } = await setup();
+    const listed = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    await app.request(`/api/suggestions/${listed.items[0].id}/dismiss`, { method: "POST", headers: { cookie } });
+    const after = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    expect(after.items).toHaveLength(0);
+
+    const healthy = store.listLibraryItems("movie").find((i) => i.title === "Healthy");
+    await app.request(`/api/library/items/${healthy!.id}/force`, { method: "POST", headers: { cookie } });
+    const forced = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    expect(forced.items.some((i: { title: string }) => i.title === "Healthy")).toBe(true);
+  });
+});

@@ -2,10 +2,15 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { api, type SetupStatus } from "./api";
 import { Shell } from "./components/Shell";
-import { EmptyPage } from "./pages/EmptyPage";
 import { FirstRun } from "./pages/FirstRun";
+import { History } from "./pages/History";
 import { Login } from "./pages/Login";
+import { Movies } from "./pages/Movies";
+import { Queue } from "./pages/Queue";
+import { Review } from "./pages/Review";
+import { Series } from "./pages/Series";
 import { Settings } from "./pages/Settings";
+import { Suggestions } from "./pages/Suggestions";
 
 export default function App() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -49,66 +54,12 @@ export default function App() {
     <Shell username={status.username ?? "admin"} onLogout={refresh} setupComplete={status.setupComplete}>
       <Routes>
         <Route path="/" element={<Navigate to="/movies" replace />} />
-        <Route
-          path="/movies"
-          element={
-            <EmptyPage
-              title="Movies"
-              load={api.movies}
-              fallback="Connect Radarr in Settings to sync your library."
-            />
-          }
-        />
-        <Route
-          path="/series"
-          element={
-            <EmptyPage
-              title="Series"
-              load={api.series}
-              fallback="Connect Sonarr in Settings to sync your library."
-            />
-          }
-        />
-        <Route
-          path="/suggestions"
-          element={
-            <EmptyPage
-              title="Suggestions"
-              load={api.suggestions}
-              fallback="After your library syncs, suggested optimizations will show up here."
-            />
-          }
-        />
-        <Route
-          path="/queue"
-          element={
-            <EmptyPage
-              title="Queue"
-              load={api.queue}
-              fallback="Approved work will appear here."
-            />
-          }
-        />
-        <Route
-          path="/review"
-          element={
-            <EmptyPage
-              title="Review"
-              load={api.review}
-              fallback="Finished sidecars wait here for Keep or Discard."
-            />
-          }
-        />
-        <Route
-          path="/history"
-          element={
-            <EmptyPage
-              title="History"
-              load={api.history}
-              fallback="Completed jobs will be listed here."
-            />
-          }
-        />
+        <Route path="/movies" element={<Movies />} />
+        <Route path="/series" element={<Series />} />
+        <Route path="/suggestions" element={<Suggestions />} />
+        <Route path="/queue" element={<Queue />} />
+        <Route path="/review" element={<Review />} />
+        <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/movies" replace />} />
       </Routes>

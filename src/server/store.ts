@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
+import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -38,6 +39,96 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS arr_instances (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS library_items (
+        id INTEGER PRIMARY KEY,
+        instance_id INTEGER NOT NULL REFERENCES arr_instances(id) ON DELETE CASCADE,
+        external_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        series_title TEXT,
+        path TEXT NOT NULL,
+        folder_path TEXT,
+        quality TEXT,
+        video_codec TEXT,
+        resolution TEXT,
+        hdr TEXT,
+        size INTEGER,
+        readable INTEGER NOT NULL DEFAULT 0,
+        path_error TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE(instance_id, type, external_id)
+      );
+      CREATE TABLE IF NOT EXISTS inspections (
+        item_id INTEGER PRIMARY KEY REFERENCES library_items(id) ON DELETE CASCADE,
+        report_json TEXT NOT NULL,
+        inspected_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS suggestions (
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL UNIQUE REFERENCES library_items(id) ON DELETE CASCADE,
+        actions_json TEXT NOT NULL,
+        warning TEXT,
+        estimated_savings_bytes INTEGER,
+        dismissed INTEGER NOT NULL DEFAULT 0,
+        forced INTEGER NOT NULL DEFAULT 0,
+        over_cap INTEGER NOT NULL DEFAULT 0,
+        extra_tracks INTEGER NOT NULL DEFAULT 0,
+        category TEXT,
+        size_per_hour REAL,
+        plan_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS player_instances (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        token TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL,
+        suggestion_id INTEGER,
+        status TEXT NOT NULL,
+        plan_json TEXT NOT NULL,
+        progress REAL NOT NULL DEFAULT 0,
+        error TEXT,
+        log TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS exclusions (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER,
+        title TEXT,
+        action TEXT NOT NULL,
+        detail TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL UNIQUE,
+        job_id INTEGER,
+        source_path TEXT NOT NULL,
+        sidecar_path TEXT NOT NULL,
+        compare_json TEXT,
+        flagged INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL
       );
     `);
     const row = this.db.prepare("SELECT value FROM settings WHERE key = 'app'").get() as
@@ -154,6 +245,449 @@ export class Store {
       .prepare("UPDATE sessions SET expires_at = ? WHERE id = ?")
       .run(new Date(0).toISOString(), id);
   }
+
+  listArrInstances(): ArrInstance[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id, kind, name, url, api_key AS apiKey, enabled FROM arr_instances ORDER BY id",
+      )
+      .all() as Array<ArrInstance & { enabled: number | boolean }>;
+    return rows.map(mapInstance);
+  }
+
+  getArrInstance(id: number): ArrInstance | undefined {
+    const row = this.db
+      .prepare("SELECT id, kind, name, url, api_key AS apiKey, enabled FROM arr_instances WHERE id = ?")
+      .get(id) as (ArrInstance & { enabled: number | boolean }) | undefined;
+    return row ? mapInstance(row) : undefined;
+  }
+
+  createArrInstance(input: {
+    kind: ArrKind;
+    name: string;
+    url: string;
+    apiKey: string;
+    enabled?: boolean;
+  }): ArrInstance {
+    this.db
+      .prepare("INSERT INTO arr_instances (kind, name, url, api_key, enabled) VALUES (?, ?, ?, ?, ?)")
+      .run(input.kind, input.name, normalizeUrl(input.url), input.apiKey, input.enabled === false ? 0 : 1);
+    const id = (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    const created = this.getArrInstance(id);
+    if (!created) throw new Error("failed to create instance");
+    return created;
+  }
+
+  updateArrInstance(
+    id: number,
+    patch: Partial<Pick<ArrInstance, "name" | "url" | "apiKey" | "enabled" | "kind">>,
+  ): ArrInstance | undefined {
+    const current = this.getArrInstance(id);
+    if (!current) return undefined;
+    const next = {
+      ...current,
+      ...patch,
+      url: patch.url ? normalizeUrl(patch.url) : current.url,
+      apiKey: patch.apiKey && patch.apiKey.length > 0 ? patch.apiKey : current.apiKey,
+    };
+    this.db
+      .prepare("UPDATE arr_instances SET kind = ?, name = ?, url = ?, api_key = ?, enabled = ? WHERE id = ?")
+      .run(next.kind, next.name, next.url, next.apiKey, next.enabled ? 1 : 0, id);
+    return this.getArrInstance(id);
+  }
+
+  deleteArrInstance(id: number): void {
+    this.db.prepare("DELETE FROM library_items WHERE instance_id = ?").run(id);
+    this.db.prepare("DELETE FROM arr_instances WHERE id = ?").run(id);
+  }
+
+  upsertLibraryItem(item: Omit<LibraryItem, "id" | "instanceName" | "instanceKind">): LibraryItem {
+    this.db
+      .prepare(
+        `INSERT INTO library_items (
+          instance_id, external_id, type, title, series_title, path, folder_path,
+          quality, video_codec, resolution, hdr, size, readable, path_error, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(instance_id, type, external_id) DO UPDATE SET
+          title = excluded.title,
+          series_title = excluded.series_title,
+          path = excluded.path,
+          folder_path = excluded.folder_path,
+          quality = excluded.quality,
+          video_codec = excluded.video_codec,
+          resolution = excluded.resolution,
+          hdr = excluded.hdr,
+          size = excluded.size,
+          readable = excluded.readable,
+          path_error = excluded.path_error,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        item.instanceId,
+        item.externalId,
+        item.type,
+        item.title,
+        item.seriesTitle,
+        item.path,
+        item.folderPath,
+        item.quality,
+        item.videoCodec,
+        item.resolution,
+        item.hdr,
+        item.size,
+        item.readable ? 1 : 0,
+        item.pathError,
+        item.updatedAt,
+      );
+    const saved = this.getLibraryItemByExternal(item.instanceId, item.type, item.externalId);
+    if (!saved) throw new Error("failed to upsert library item");
+    return saved;
+  }
+
+  getLibraryItemByExternal(instanceId: number, type: ItemType, externalId: number): LibraryItem | undefined {
+    return this.listLibraryItems().find(
+      (i) => i.instanceId === instanceId && i.type === type && i.externalId === externalId,
+    );
+  }
+
+  listLibraryItems(type?: ItemType): LibraryItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT
+          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
+          i.external_id AS externalId, i.type, i.title, i.series_title AS seriesTitle,
+          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
+          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+         FROM library_items i
+         JOIN arr_instances a ON a.id = i.instance_id
+         ${type ? "WHERE i.type = ?" : ""}
+         ORDER BY i.title COLLATE NOCASE`,
+      )
+      .all(...(type ? [type] : [])) as Array<LibraryItem & { readable: number | boolean }>;
+    return rows.map((r) => ({ ...r, readable: Boolean(r.readable) }));
+  }
+
+  getLibraryItem(id: number): LibraryItem | undefined {
+    return this.listLibraryItems().find((i) => i.id === id);
+  }
+
+  saveInspection(itemId: number, report: unknown, inspectedAt: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO inspections (item_id, report_json, inspected_at) VALUES (?, ?, ?)
+         ON CONFLICT(item_id) DO UPDATE SET report_json = excluded.report_json, inspected_at = excluded.inspected_at`,
+      )
+      .run(itemId, JSON.stringify(report), inspectedAt);
+  }
+
+  getInspection(itemId: number): unknown | undefined {
+    const row = this.db.prepare("SELECT report_json FROM inspections WHERE item_id = ?").get(itemId) as
+      | { report_json: string }
+      | undefined;
+    return row ? JSON.parse(row.report_json) : undefined;
+  }
+
+  saveSuggestion(row: {
+    itemId: number;
+    actions: string[];
+    warning: string | null;
+    estimatedSavingsBytes: number | null;
+    dismissed?: boolean;
+    forced?: boolean;
+    overCap: boolean;
+    extraTracks: boolean;
+    category: string;
+    sizePerHourGb: number | null;
+    plan: unknown;
+  }): number {
+    this.db
+      .prepare(
+        `INSERT INTO suggestions (
+          item_id, actions_json, warning, estimated_savings_bytes, dismissed, forced,
+          over_cap, extra_tracks, category, size_per_hour, plan_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(item_id) DO UPDATE SET
+          actions_json = excluded.actions_json,
+          warning = excluded.warning,
+          estimated_savings_bytes = excluded.estimated_savings_bytes,
+          forced = excluded.forced,
+          over_cap = excluded.over_cap,
+          extra_tracks = excluded.extra_tracks,
+          category = excluded.category,
+          size_per_hour = excluded.size_per_hour,
+          plan_json = excluded.plan_json`,
+      )
+      .run(
+        row.itemId,
+        JSON.stringify(row.actions),
+        row.warning,
+        row.estimatedSavingsBytes,
+        row.dismissed ? 1 : 0,
+        row.forced ? 1 : 0,
+        row.overCap ? 1 : 0,
+        row.extraTracks ? 1 : 0,
+        row.category,
+        row.sizePerHourGb,
+        JSON.stringify(row.plan),
+      );
+    const saved = this.db.prepare("SELECT id FROM suggestions WHERE item_id = ?").get(row.itemId) as { id: number };
+    return saved.id;
+  }
+
+  dismissSuggestion(id: number): void {
+    this.db.prepare("UPDATE suggestions SET dismissed = 1 WHERE id = ?").run(id);
+  }
+
+  listSuggestions(filters?: {
+    q?: string;
+    includeDismissed?: boolean;
+    overCap?: boolean;
+    extraTracks?: boolean;
+    codec?: string;
+    type?: ItemType;
+  }): Array<Record<string, unknown>> {
+    const rows = this.db
+      .prepare(
+        `SELECT s.id, s.item_id AS itemId, s.actions_json AS actionsJson, s.warning,
+                s.estimated_savings_bytes AS estimatedSavingsBytes, s.dismissed, s.forced,
+                s.over_cap AS overCap, s.extra_tracks AS extraTracks, s.category,
+                s.size_per_hour AS sizePerHourGb, s.plan_json AS planJson,
+                i.title, i.type, i.path, i.video_codec AS videoCodec, i.resolution, i.hdr,
+                i.instance_id AS instanceId, a.name AS instanceName
+         FROM suggestions s
+         JOIN library_items i ON i.id = s.item_id
+         JOIN arr_instances a ON a.id = i.instance_id
+         ORDER BY i.title COLLATE NOCASE`,
+      )
+      .all() as Array<Record<string, unknown> & { actionsJson: string; planJson: string; dismissed: number; forced: number; overCap: number; extraTracks: number }>;
+    return rows
+      .map((r) => ({
+        ...r,
+        actions: JSON.parse(r.actionsJson) as string[],
+        plan: JSON.parse(r.planJson),
+        dismissed: Boolean(r.dismissed),
+        forced: Boolean(r.forced),
+        overCap: Boolean(r.overCap),
+        extraTracks: Boolean(r.extraTracks),
+      }))
+      .filter((r) => {
+        const actions = r.actions as string[];
+        if (!r.forced && actions.length === 0) return false;
+        if (!filters?.includeDismissed && r.dismissed) return false;
+        if (filters?.overCap && !r.overCap) return false;
+        if (filters?.extraTracks && !r.extraTracks) return false;
+        if (filters?.type && r.type !== filters.type) return false;
+        if (filters?.codec && String(r.videoCodec ?? "").toLowerCase() !== filters.codec.toLowerCase()) return false;
+        if (filters?.q && !String(r.title).toLowerCase().includes(filters.q.toLowerCase())) return false;
+        return true;
+      });
+  }
+
+  getSuggestion(id: number): { id: number; itemId: number; plan: unknown; actions: string[] } | undefined {
+    const row = this.db
+      .prepare("SELECT id, item_id AS itemId, plan_json AS planJson, actions_json AS actionsJson FROM suggestions WHERE id = ?")
+      .get(id) as { id: number; itemId: number; planJson: string; actionsJson: string } | undefined;
+    if (!row) return undefined;
+    return { id: row.id, itemId: row.itemId, plan: JSON.parse(row.planJson), actions: JSON.parse(row.actionsJson) };
+  }
+
+  pendingReviewForItem(itemId: number): { id: number; sidecarPath: string; sourcePath: string } | undefined {
+    const row = this.db
+      .prepare("SELECT id, sidecar_path AS sidecarPath, source_path AS sourcePath FROM reviews WHERE item_id = ? AND status = 'pending'")
+      .get(itemId) as { id: number; sidecarPath: string; sourcePath: string } | undefined;
+    return row;
+  }
+
+  createJob(itemId: number, suggestionId: number | null, plan: unknown, createdAt: string): number {
+    this.db
+      .prepare("INSERT INTO jobs (item_id, suggestion_id, status, plan_json, created_at) VALUES (?, ?, 'queued', ?, ?)")
+      .run(itemId, suggestionId, JSON.stringify(plan), createdAt);
+    return (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+  }
+
+  updateJob(
+    id: number,
+    patch: { status?: string; progress?: number; error?: string | null; log?: string; startedAt?: string; finishedAt?: string },
+  ): void {
+    const current = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!current) return;
+    this.db
+      .prepare(
+        "UPDATE jobs SET status = ?, progress = ?, error = ?, log = ?, started_at = ?, finished_at = ? WHERE id = ?",
+      )
+      .run(
+        patch.status ?? current.status,
+        patch.progress ?? current.progress,
+        patch.error === undefined ? current.error : patch.error,
+        patch.log ?? current.log,
+        patch.startedAt ?? current.started_at,
+        patch.finishedAt ?? current.finished_at,
+        id,
+      );
+  }
+
+  getJob(id: number): Record<string, unknown> | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, item_id AS itemId, suggestion_id AS suggestionId, status, plan_json AS planJson,
+                progress, error, log FROM jobs WHERE id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+  }
+
+  listJobs(): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT j.id, j.item_id AS itemId, j.status, j.progress, j.error, j.log, j.created_at AS createdAt,
+                i.title FROM jobs j JOIN library_items i ON i.id = j.item_id ORDER BY j.id DESC`,
+      )
+      .all() as Array<Record<string, unknown>>;
+  }
+
+  createReview(row: {
+    itemId: number;
+    jobId: number;
+    sourcePath: string;
+    sidecarPath: string;
+    compare: unknown;
+    flagged?: boolean;
+  }): number {
+    this.db
+      .prepare(
+        `INSERT INTO reviews (item_id, job_id, source_path, sidecar_path, compare_json, flagged, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending')
+         ON CONFLICT(item_id) DO UPDATE SET
+           job_id = excluded.job_id,
+           source_path = excluded.source_path,
+           sidecar_path = excluded.sidecar_path,
+           compare_json = excluded.compare_json,
+           flagged = excluded.flagged,
+           status = 'pending'`,
+      )
+      .run(row.itemId, row.jobId, row.sourcePath, row.sidecarPath, JSON.stringify(row.compare), row.flagged ? 1 : 0);
+    return (this.db.prepare("SELECT id FROM reviews WHERE item_id = ?").get(row.itemId) as { id: number }).id;
+  }
+
+  getReview(id: number): {
+    id: number;
+    itemId: number;
+    jobId: number;
+    sourcePath: string;
+    sidecarPath: string;
+    compare: unknown;
+    flagged: boolean;
+    status: string;
+  } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, item_id AS itemId, job_id AS jobId, source_path AS sourcePath, sidecar_path AS sidecarPath,
+                compare_json AS compareJson, flagged, status FROM reviews WHERE id = ?`,
+      )
+      .get(id) as
+      | {
+          id: number;
+          itemId: number;
+          jobId: number;
+          sourcePath: string;
+          sidecarPath: string;
+          compareJson: string;
+          flagged: number;
+          status: string;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return { ...row, compare: JSON.parse(row.compareJson ?? "{}"), flagged: Boolean(row.flagged) };
+  }
+
+  listReviews(status = "pending"): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT r.id, r.item_id AS itemId, r.source_path AS sourcePath, r.sidecar_path AS sidecarPath,
+                r.compare_json AS compareJson, r.flagged, r.status, i.title, i.instance_id AS instanceId
+         FROM reviews r JOIN library_items i ON i.id = r.item_id WHERE r.status = ? ORDER BY r.id DESC`,
+      )
+      .all(status)
+      .map((r) => {
+        const row = r as Record<string, unknown> & { compareJson: string; flagged: number };
+        return { ...row, compare: JSON.parse(row.compareJson ?? "{}"), flagged: Boolean(row.flagged) };
+      });
+  }
+
+  setReviewStatus(id: number, status: string): void {
+    this.db.prepare("UPDATE reviews SET status = ? WHERE id = ?").run(status, id);
+  }
+
+  listPlayers(): PlayerInstance[] {
+    return (
+      this.db
+        .prepare("SELECT id, kind, name, url, token, enabled FROM player_instances ORDER BY id")
+        .all() as Array<PlayerInstance & { enabled: number }>
+    ).map((p) => ({ ...p, enabled: Boolean(p.enabled) }));
+  }
+
+  addHistory(itemId: number | null, title: string, action: string, detail?: string): void {
+    this.db
+      .prepare("INSERT INTO history (item_id, title, action, detail, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(itemId, title, action, detail ?? null, new Date().toISOString());
+  }
+
+  listHistory(): Array<Record<string, unknown>> {
+    return this.db
+      .prepare("SELECT id, item_id AS itemId, title, action, detail, created_at AS createdAt FROM history ORDER BY id DESC")
+      .all() as Array<Record<string, unknown>>;
+  }
+
+  addExclusion(kind: string, value: string): void {
+    this.db.prepare("INSERT INTO exclusions (kind, value) VALUES (?, ?)").run(kind, value);
+  }
+
+  listExclusions(): Array<{ id: number; kind: string; value: string }> {
+    return this.db.prepare("SELECT id, kind, value FROM exclusions").all() as Array<{
+      id: number;
+      kind: string;
+      value: string;
+    }>;
+  }
+
+  isExcluded(item: { title: string; path: string; quality: string | null }): boolean {
+    for (const ex of this.listExclusions()) {
+      const v = ex.value.toLowerCase();
+      if (ex.kind === "title" && item.title.toLowerCase().includes(v)) return true;
+      if (ex.kind === "path" && item.path.toLowerCase().includes(v)) return true;
+      if (ex.kind === "profile" && (item.quality ?? "").toLowerCase().includes(v)) return true;
+      if (ex.kind === "tag" && item.title.toLowerCase().includes(v)) return true;
+    }
+    return false;
+  }
+
+  createPlayer(input: { kind: PlayerKind; name: string; url: string; token: string; enabled?: boolean }): PlayerInstance {
+    this.db
+      .prepare("INSERT INTO player_instances (kind, name, url, token, enabled) VALUES (?, ?, ?, ?, ?)")
+      .run(input.kind, input.name, input.url.replace(/\/+$/, ""), input.token, input.enabled === false ? 0 : 1);
+    const id = (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    return this.listPlayers().find((p) => p.id === id)!;
+  }
+
+  removeMissingLibraryItems(instanceId: number, type: ItemType, keepExternalIds: number[]): void {
+    if (keepExternalIds.length === 0) {
+      this.db.prepare("DELETE FROM library_items WHERE instance_id = ? AND type = ?").run(instanceId, type);
+      return;
+    }
+    const placeholders = keepExternalIds.map(() => "?").join(",");
+    this.db
+      .prepare(
+        `DELETE FROM library_items WHERE instance_id = ? AND type = ? AND external_id NOT IN (${placeholders})`,
+      )
+      .run(instanceId, type, ...keepExternalIds);
+  }
+}
+
+function mapInstance(row: ArrInstance & { enabled: number | boolean }): ArrInstance {
+  return { ...row, enabled: Boolean(row.enabled) };
+}
+
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
 }
 
 export function publicSettings(settings: Settings): Settings {

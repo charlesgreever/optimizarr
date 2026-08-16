@@ -77,12 +77,12 @@ Connect a single Radarr instance (URL, API key, enabled flag, test-connection). 
 
 ### Acceptance criteria
 
-- [ ] Saving a Radarr instance and testing the connection succeeds or shows a clear API/URL error.
-- [ ] Synced movies show title, path, quality/codec info from Radarr, and which instance they came from.
-- [ ] Optimizarr opens the path Radarr reported (no rewritten mount prefix).
-- [ ] An unreadable path is surfaced as a volume/mount problem on that item.
-- [ ] Library refresh happens on an interval and from a manual refresh action.
-- [ ] Tests cover one-instance sync, auth failure, and path-not-readable against fake Radarr HTTP.
+- [x] Saving a Radarr instance and testing the connection succeeds or shows a clear API/URL error.
+- [x] Synced movies show title, path, quality/codec info from Radarr, and which instance they came from.
+- [x] Optimizarr opens the path Radarr reported (no rewritten mount prefix).
+- [x] An unreadable path is surfaced as a volume/mount problem on that item.
+- [x] Library refresh happens on an interval and from a manual refresh action.
+- [x] Tests cover one-instance sync, auth failure, and path-not-readable against fake Radarr HTTP.
 
 ---
 
@@ -96,15 +96,15 @@ Inspect each library file (plus Arr metadata) into an `InspectionReport`, then r
 
 ### Acceptance criteria
 
-- [ ] New and existing items are inspected; healthy files do not appear on the suggestions list.
-- [ ] Size-per-hour uses the correct category (movie vs later TV type, 1080p vs 4K, HDR vs SDR) and the shipped defaults unless the user changed them.
-- [ ] Preferred-language tracks are kept in the plan; other languages are suggested for strip; untagged tracks are suggested for drop.
-- [ ] Already-HEVC (or AV1) under-cap files with messy tracks get remux-only suggestions, not a re-encode.
-- [ ] AV1 sources are not suggested back to HEVC.
-- [ ] User can dismiss a suggestion and force work on a file that is under the cap.
-- [ ] Filters and title search narrow the suggestions list.
-- [ ] Estimated space savings appear on size-related suggestions.
-- [ ] Tests are table-driven on the suggestion engine and fixture-based on the inspector; no real NAS required.
+- [x] New and existing items are inspected; healthy files do not appear on the suggestions list.
+- [x] Size-per-hour uses the correct category (movie vs later TV type, 1080p vs 4K, HDR vs SDR) and the shipped defaults unless the user changed them.
+- [x] Preferred-language tracks are kept in the plan; other languages are suggested for strip; untagged tracks are suggested for drop.
+- [x] Already-HEVC (or AV1) under-cap files with messy tracks get remux-only suggestions, not a re-encode.
+- [x] AV1 sources are not suggested back to HEVC.
+- [x] User can dismiss a suggestion and force work on a file that is under the cap.
+- [x] Filters and title search narrow the suggestions list.
+- [x] Estimated space savings appear on size-related suggestions.
+- [x] Tests are table-driven on the suggestion engine and fixture-based on the inspector; no real NAS required.
 
 ---
 
@@ -118,15 +118,15 @@ The first complete optimize loop, remux-only: approve a track-cleanup suggestion
 
 ### Acceptance criteria
 
-- [ ] A remux job writes only to the review path; the library folder still has exactly the original until Keep.
-- [ ] Review shows side-by-side metadata (and playback or a clear compare if playback is not ready).
-- [ ] Keep replaces the original, deletes the old file, and requests Arr rename/media-info refresh.
-- [ ] Keep notifies all configured players; a player or Arr outage is reported and does not undo the replace.
-- [ ] Discard deletes the sidecar and leaves the original.
-- [ ] Permission errors on Keep leave both files and show the error.
-- [ ] Duration/integrity failure does not present a truncated file as success; temps are cleaned up.
-- [ ] A second job cannot start while a sidecar for that title is pending.
-- [ ] Tests cover Keep, Discard, Arr/player fakes, pending lock, and “original survives failure.”
+- [x] A remux job writes only to the review path; the library folder still has exactly the original until Keep.
+- [x] Review shows side-by-side metadata (and playback or a clear compare if playback is not ready).
+- [x] Keep replaces the original, deletes the old file, and requests Arr rename/media-info refresh.
+- [x] Keep notifies all configured players; a player or Arr outage is reported and does not undo the replace.
+- [x] Discard deletes the sidecar and leaves the original.
+- [x] Permission errors on Keep leave both files and show the error.
+- [x] Duration/integrity failure does not present a truncated file as success; temps are cleaned up.
+- [x] A second job cannot start while a sidecar for that title is pending.
+- [x] Tests cover Keep, Discard, Arr/player fakes, pending lock, and “original survives failure.”
 
 ---
 
@@ -140,13 +140,13 @@ Approve a transcode suggestion. The runner uses hardware encode (CUDA or VAAPI f
 
 ### Acceptance criteria
 
-- [ ] H.264 (and other less efficient video) can be queued to HEVC aimed at the size cap.
-- [ ] Output bit depth matches the source.
-- [ ] DV/HDR10+ transcodes show a metadata-loss warning before and on the job.
-- [ ] UI shows which backends were detected (CUDA, VAAPI, AV1 capability reserved for a later phase).
-- [ ] Hardware failure fails the job, keeps the original, and shows a hardware error (no CPU encode).
-- [ ] Successful output goes through the same sidecar + Keep/Discard path as remux.
-- [ ] Tests cover target-aim behavior, bit-depth preservation on fixtures, DV warning, and hardware-failure → failed job.
+- [x] H.264 (and other less efficient video) can be queued to HEVC aimed at the size cap.
+- [x] Output bit depth matches the source.
+- [x] DV/HDR10+ transcodes show a metadata-loss warning before and on the job.
+- [x] UI shows which backends were detected (CUDA, VAAPI, AV1 capability reserved for a later phase).
+- [x] Hardware failure fails the job, keeps the original, and shows a hardware error (no CPU encode).
+- [x] Successful output goes through the same sidecar + Keep/Discard path as remux.
+- [x] Tests cover target-aim behavior, bit-depth preservation on fixtures, DV warning, and hardware-failure → failed job.
 
 ---
 
@@ -160,12 +160,12 @@ Suggest adding AAC stereo when the file has Atmos or more than 5.1, and always o
 
 ### Acceptance criteria
 
-- [ ] Atmos or >5.1 produces a stereo-add suggestion; stereo files do not.
-- [ ] User can add stereo to any non-stereo file from the UI even when it was not auto-suggested.
-- [ ] Result contains original audio plus AAC 2.0.
-- [ ] Chapters and attachments survive the job.
-- [ ] Stereo-add-only still requires Keep before the library file changes.
-- [ ] Tests cover suggest vs manual, “original audio retained,” and remux of chapters/attachments.
+- [x] Atmos or >5.1 produces a stereo-add suggestion; stereo files do not.
+- [x] User can add stereo to any non-stereo file from the UI even when it was not auto-suggested.
+- [x] Result contains original audio plus AAC 2.0.
+- [x] Chapters and attachments survive the job.
+- [x] Stereo-add-only still requires Keep before the library file changes.
+- [x] Tests cover suggest vs manual, “original audio retained,” and remux of chapters/attachments.
 
 ---
 
@@ -179,12 +179,12 @@ Multiple Radarr and Sonarr instances, each with URL, API key, and enable flag. S
 
 ### Acceptance criteria
 
-- [ ] Two Radarrs and one Sonarr can be enabled at once; disabling one stops syncing it without affecting others.
-- [ ] Series page lists shows and episodes with Arr metadata and paths.
-- [ ] Episode files use TV size caps; movies use movie caps.
-- [ ] Each item shows which instance it came from.
-- [ ] Suggestions, queue, and Keep work for a Sonarr episode.
-- [ ] Tests cover multi-instance sync, enable/disable, and movie vs TV category selection.
+- [x] Two Radarrs and one Sonarr can be enabled at once; disabling one stops syncing it without affecting others.
+- [x] Series page lists shows and episodes with Arr metadata and paths.
+- [x] Episode files use TV size caps; movies use movie caps.
+- [x] Each item shows which instance it came from.
+- [x] Suggestions, queue, and Keep work for a Sonarr episode.
+- [x] Tests cover multi-instance sync, enable/disable, and movie vs TV category selection.
 
 ---
 
@@ -198,13 +198,13 @@ A real queue: reorder, pause, remove, bulk-approve a movie, series, or filtered 
 
 ### Acceptance criteria
 
-- [ ] Default is one active job; raising concurrency runs that many; lowering waits for extras to finish.
-- [ ] Off-peak holds work until the window; run-now starts immediately.
-- [ ] Bulk-approve from a movie, a series, or the current filter adds those plans to the queue.
-- [ ] Pause, reorder, and cancel work; cancel never replaces the original.
-- [ ] Restart does not lose queued work or leave a partial library file.
-- [ ] Progress/ETA and per-job logs are visible.
-- [ ] Tests use a fake clock for the schedule and fake runners for concurrency/cancel/restart.
+- [x] Default is one active job; raising concurrency runs that many; lowering waits for extras to finish.
+- [x] Off-peak holds work until the window; run-now starts immediately.
+- [x] Bulk-approve from a movie, a series, or the current filter adds those plans to the queue.
+- [x] Pause, reorder, and cancel work; cancel never replaces the original.
+- [x] Restart does not lose queued work or leave a partial library file.
+- [x] Progress/ETA and per-job logs are visible.
+- [x] Tests use a fake clock for the schedule and fake runners for concurrency/cancel/restart.
 
 ---
 
@@ -218,13 +218,13 @@ AV1 is selectable only when hardware encode for AV1 is present; otherwise it is 
 
 ### Acceptance criteria
 
-- [ ] AV1 appears only when the capability probe says the hardware can encode it.
-- [ ] Local-copy mode copies in, encodes, and publishes the sidecar to the NAS review path.
-- [ ] NAS-in-place remains the default when local copy is off.
-- [ ] Multi-segment can be enabled per settings or job and is off by default.
-- [ ] Over-cap or larger-than-source outputs stay in review with a flag, not auto-deleted.
-- [ ] User can re-queue a flagged item with a more aggressive target.
-- [ ] Tests cover capability gating, both work modes, missed-target flag, and requeue.
+- [x] AV1 appears only when the capability probe says the hardware can encode it.
+- [x] Local-copy mode copies in, encodes, and publishes the sidecar to the NAS review path.
+- [x] NAS-in-place remains the default when local copy is off.
+- [x] Multi-segment can be enabled per settings or job and is off by default.
+- [x] Over-cap or larger-than-source outputs stay in review with a flag, not auto-deleted.
+- [x] User can re-queue a flagged item with a more aggressive target.
+- [x] Tests cover capability gating, both work modes, missed-target flag, and requeue.
 
 ---
 
@@ -238,13 +238,13 @@ When auto-optimize is on, a newly imported Arr item is inspected and queued with
 
 ### Acceptance criteria
 
-- [ ] With auto-optimize off, new imports become suggestions only.
-- [ ] With auto-optimize on, new imports are queued with the full plan and still require Keep to replace the library file.
-- [ ] A later Arr upgrade is inspected again and can generate new suggestions.
-- [ ] Excluded path/tag/profile/title items are not suggested or auto-queued.
-- [ ] A job does not start if review (or scratch) space is insufficient; the user sees why.
-- [ ] History shows kept, discarded, flagged, and failed outcomes.
-- [ ] Tests cover auto vs manual, upgrade re-inspect, exclusions, and disk preflight.
+- [x] With auto-optimize off, new imports become suggestions only.
+- [x] With auto-optimize on, new imports are queued with the full plan and still require Keep to replace the library file.
+- [x] A later Arr upgrade is inspected again and can generate new suggestions.
+- [x] Excluded path/tag/profile/title items are not suggested or auto-queued.
+- [x] A job does not start if review (or scratch) space is insufficient; the user sees why.
+- [x] History shows kept, discarded, flagged, and failed outcomes.
+- [x] Tests cover auto vs manual, upgrade re-inspect, exclusions, and disk preflight.
 
 ---
 

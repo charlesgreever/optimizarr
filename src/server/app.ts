@@ -4,9 +4,19 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { HttpBindings } from "@hono/node-server";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ArrClient, ArrError } from "./arr.ts";
+import type { ArrKind } from "./models.ts";
 import { clientIp, isPrivateIp } from "./net.ts";
 import { Store, publicSettings } from "./store.ts";
+import { Catalog, type ProbeFn } from "./catalog.ts";
+import { detectBackends, type EncodeBackends } from "./hardware.ts";
+import { JobService } from "./jobs.ts";
+import { publicArrInstance } from "./models.ts";
+import type { PlayerKind } from "./models.ts";
+import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
+import { LibrarySync, defaultPathReadable, movieListPayload, type PathCheck } from "./sync.ts";
 import type { Settings } from "./types.ts";
+import type { FetchLike } from "./arr.ts";
 
 export const SESSION_COOKIE = "optimizarr_session";
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -60,7 +70,31 @@ function pickSettings(body: Record<string, unknown>, current: Settings): Setting
   return next;
 }
 
-export function createApp(store: Store, opts?: { webRoot?: string; remoteAddress?: string }): App {
+export type AppOpts = {
+  webRoot?: string;
+  remoteAddress?: string;
+  fetchImpl?: FetchLike;
+  pathReadable?: PathCheck;
+  now?: () => Date;
+  sync?: LibrarySync;
+  probe?: ProbeFn;
+  catalog?: Catalog;
+  optimize?: Optimizer;
+  jobs?: JobService;
+  backends?: EncodeBackends;
+};
+
+export function createApp(store: Store, opts?: AppOpts): App {
+  const client = new ArrClient(opts?.fetchImpl);
+  const catalog = opts?.catalog ?? new Catalog(store, opts?.probe);
+  const sync =
+    opts?.sync ??
+    new LibrarySync(store, client, opts?.pathReadable ?? defaultPathReadable, opts?.now ?? (() => new Date()));
+  const backends = opts?.backends ?? detectBackends();
+  const jobs = opts?.jobs ?? new JobService(store, opts?.optimize ?? copyOptimizer(), opts?.fetchImpl);
+  jobs.backends = backends;
+  sync.catalog = catalog;
+  sync.jobs = jobs;
   const app = new Hono<Env>();
 
   app.use("*", async (c, next) => {
@@ -167,6 +201,8 @@ export function createApp(store: Store, opts?: { webRoot?: string; remoteAddress
     await next();
   };
 
+  app.get("/api/hardware", requireAuth, (c) => c.json(backends));
+
   app.get("/api/settings", requireAuth, (c) => {
     return c.json(publicSettings(store.getSettings()));
   });
@@ -199,36 +235,188 @@ export function createApp(store: Store, opts?: { webRoot?: string; remoteAddress
     return c.json({ ok: true, username: updated.username });
   });
 
-  app.get("/api/library/movies", requireAuth, (c) => {
-    return c.json({ items: [], message: "Connect Radarr in Settings to sync your library." });
+  app.get("/api/instances", requireAuth, (c) => {
+    return c.json({ items: store.listArrInstances().map(publicArrInstance) });
   });
-  app.get("/api/library/series", requireAuth, (c) => {
-    return c.json({ items: [], message: "Connect Sonarr in Settings to sync your library." });
+
+  app.post("/api/instances", requireAuth, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const kind = body.kind === "sonarr" ? "sonarr" : body.kind === "radarr" ? "radarr" : "";
+    if (kind !== "radarr" && kind !== "sonarr") return c.json({ error: "kind must be radarr or sonarr" }, 400);
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const url = typeof body.url === "string" ? body.url.trim() : "";
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    if (!name || !url || !apiKey) return c.json({ error: "name, url, and apiKey are required" }, 400);
+    const created = store.createArrInstance({
+      kind: kind as ArrKind,
+      name,
+      url,
+      apiKey,
+      enabled: body.enabled === false ? false : true,
+    });
+    return c.json(publicArrInstance(created), 201);
   });
-  app.get("/api/suggestions", requireAuth, (c) => {
+
+  app.put("/api/instances/:id", requireAuth, async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const patch: Parameters<Store["updateArrInstance"]>[1] = {};
+    if (typeof body.name === "string") patch.name = body.name.trim();
+    if (typeof body.url === "string") patch.url = body.url.trim();
+    if (typeof body.apiKey === "string") patch.apiKey = body.apiKey;
+    if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+    if (body.kind === "radarr" || body.kind === "sonarr") patch.kind = body.kind;
+    const updated = store.updateArrInstance(id, patch);
+    if (!updated) return c.json({ error: "Instance not found" }, 404);
+    return c.json(publicArrInstance(updated));
+  });
+
+  app.delete("/api/instances/:id", requireAuth, async (c) => {
+    store.deleteArrInstance(Number(c.req.param("id")));
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/instances/:id/test", requireAuth, async (c) => {
+    const instance = store.getArrInstance(Number(c.req.param("id")));
+    if (!instance) return c.json({ error: "Instance not found" }, 404);
+    try {
+      const result = await client.test(instance.url, instance.apiKey);
+      return c.json({ ok: true, version: result.version });
+    } catch (err) {
+      const message = err instanceof ArrError ? err.message : "Connection failed";
+      return c.json({ ok: false, error: message }, 400);
+    }
+  });
+
+  app.post("/api/library/refresh", requireAuth, async (c) => {
+    const result = await sync.refreshAll();
     return c.json({
-      items: [],
-      message: "After your library syncs, suggested optimizations will show up here.",
+      ...result,
+      lastSyncAt: sync.lastSyncAt,
     });
   });
-  app.get("/api/review", requireAuth, (c) => {
+
+  app.get("/api/library/movies", requireAuth, (c) => {
+    return c.json(
+      movieListPayload(store.listLibraryItems("movie"), sync.lastSyncAt, "Connect Radarr in Settings to sync your library."),
+    );
+  });
+  app.get("/api/library/series", requireAuth, (c) => {
+    return c.json(
+      movieListPayload(
+        store.listLibraryItems("episode"),
+        sync.lastSyncAt,
+        "Connect Sonarr in Settings to sync your library.",
+      ),
+    );
+  });
+  app.get("/api/suggestions", requireAuth, (c) => {
+    const q = c.req.query("q") ?? undefined;
+    const codec = c.req.query("codec") ?? undefined;
+    const type = c.req.query("type") === "episode" ? "episode" : c.req.query("type") === "movie" ? "movie" : undefined;
+    const overCap = c.req.query("overCap") === "1";
+    const extraTracks = c.req.query("extraTracks") === "1";
+    const items = store.listSuggestions({ q, codec, type, overCap: overCap || undefined, extraTracks: extraTracks || undefined });
     return c.json({
-      items: [],
-      message: "Finished sidecars wait here for Keep or Discard.",
+      items,
+      message: items.length ? undefined : "After your library syncs, suggested optimizations will show up here.",
+    });
+  });
+
+  app.post("/api/suggestions/:id/dismiss", requireAuth, (c) => {
+    store.dismissSuggestion(Number(c.req.param("id")));
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/library/items/:id/force", requireAuth, async (c) => {
+    await catalog.inspectItem(Number(c.req.param("id")), { force: true });
+    return c.json({ ok: true });
+  });
+  app.post("/api/library/items/:id/stereo", requireAuth, async (c) => {
+    await catalog.inspectItem(Number(c.req.param("id")), { addStereo: true });
+    return c.json({ ok: true });
+  });
+  app.get("/api/review", requireAuth, (c) => {
+    const items = store.listReviews("pending");
+    return c.json({
+      items,
+      message: items.length ? undefined : "Finished sidecars wait here for Keep or Discard.",
     });
   });
   app.get("/api/history", requireAuth, (c) => {
-    return c.json({ items: [], message: "Completed jobs will be listed here." });
+    const items = store.listHistory();
+    return c.json({ items, message: items.length ? undefined : "Completed jobs will be listed here." });
+  });
+  app.get("/api/exclusions", requireAuth, (c) => c.json({ items: store.listExclusions() }));
+  app.post("/api/exclusions", requireAuth, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { kind?: string; value?: string };
+    if (!body.kind || !body.value) return c.json({ error: "kind and value required" }, 400);
+    store.addExclusion(body.kind, body.value);
+    return c.json({ ok: true }, 201);
+  });
+  app.post("/api/queue/:id/cancel", requireReady, (c) => {
+    jobs.cancel(Number(c.req.param("id")));
+    return c.json({ ok: true });
+  });
+  app.post("/api/review/:id/requeue", requireReady, async (c) => {
+    const review = store.getReview(Number(c.req.param("id")));
+    if (!review) return c.json({ error: "Review not found" }, 404);
+    const sug = store.listSuggestions({ includeDismissed: true }).find((s) => s.itemId === review.itemId);
+    if (!sug) return c.json({ error: "No suggestion to requeue" }, 400);
+    store.setReviewStatus(review.id, "discarded");
+    const result = await jobs.enqueue(sug.id as number);
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json(result);
   });
 
   app.get("/api/queue", requireReady, (c) => {
-    return c.json({ items: [], message: "Approved work will appear here." });
+    const items = store.listJobs();
+    return c.json({ items, message: items.length ? undefined : "Approved work will appear here." });
   });
-  app.post("/api/queue", requireReady, (c) => c.json({ error: "Not implemented" }, 501));
-  app.get("/api/jobs", requireReady, (c) => c.json({ items: [] }));
-  app.post("/api/jobs", requireReady, (c) => c.json({ error: "Not implemented" }, 501));
-  app.post("/api/review/keep", requireReady, (c) => c.json({ error: "Not implemented" }, 501));
-  app.post("/api/review/discard", requireReady, (c) => c.json({ error: "Not implemented" }, 501));
+  app.post("/api/queue", requireReady, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { suggestionId?: number };
+    if (!body.suggestionId) return c.json({ error: "suggestionId is required" }, 400);
+    const result = await jobs.enqueue(body.suggestionId);
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json(result, 201);
+  });
+  app.get("/api/jobs", requireReady, (c) => c.json({ items: store.listJobs() }));
+  app.post("/api/review/:id/keep", requireReady, async (c) => {
+    const result = await jobs.keep(Number(c.req.param("id")));
+    if (!result.ok) return c.json(result, 400);
+    return c.json(result);
+  });
+  app.post("/api/review/:id/discard", requireReady, async (c) => {
+    const result = await jobs.discard(Number(c.req.param("id")));
+    if (!result.ok) return c.json(result, 400);
+    return c.json(result);
+  });
+
+  app.get("/api/players", requireAuth, (c) => {
+    return c.json({
+      items: store.listPlayers().map((p) => ({
+        id: p.id,
+        kind: p.kind,
+        name: p.name,
+        url: p.url,
+        enabled: p.enabled,
+        hasToken: Boolean(p.token),
+      })),
+    });
+  });
+  app.post("/api/players", requireAuth, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const kind = body.kind as PlayerKind;
+    if (kind !== "plex" && kind !== "jellyfin" && kind !== "other") {
+      return c.json({ error: "kind must be plex, jellyfin, or other" }, 400);
+    }
+    const name = String(body.name ?? "").trim();
+    const url = String(body.url ?? "").trim();
+    const token = String(body.token ?? "").trim();
+    if (!name || !url || !token) return c.json({ error: "name, url, and token are required" }, 400);
+    const created = store.createPlayer({ kind, name, url, token });
+    return c.json({ id: created.id, kind: created.kind, name: created.name, url: created.url, enabled: created.enabled, hasToken: true }, 201);
+  });
 
   const webRoot = opts?.webRoot;
   if (webRoot && existsSync(webRoot)) {
