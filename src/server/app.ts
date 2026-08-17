@@ -514,7 +514,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     return inspectActionResponse(c, await catalog.inspectItem(Number(c.req.param("id")), { addStereo: true }));
   });
   app.get("/api/review", requireAuth, (c) => {
-    const items = store.listReviews("pending");
+    const items = store.listReviews(["pending", "keeping", "discarding"]);
     return c.json({
       items,
       message: items.length ? undefined : "Sidecars wait here until you Keep them into the library or Discard them.",
@@ -559,10 +559,10 @@ export function createApp(store: Store, opts?: AppOpts): App {
     return c.json(result, 201);
   });
   app.get("/api/jobs", requireReady, (c) => c.json({ items: store.listJobs() }));
-  app.post("/api/review/:id/keep", requireReady, async (c) => {
-    const result = await jobs.keep(Number(c.req.param("id")));
-    if (!result.ok) return c.json(result, 400);
-    return c.json(result);
+  app.post("/api/review/:id/keep", requireReady, (c) => {
+    const result = jobs.startKeep(Number(c.req.param("id")));
+    if (!result.ok) return c.json({ error: result.error }, result.status ?? 400);
+    return c.json({ ok: true, accepted: true }, 202);
   });
   app.post("/api/review/:id/discard", requireReady, async (c) => {
     const result = await jobs.discard(Number(c.req.param("id")));

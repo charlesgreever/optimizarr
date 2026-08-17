@@ -38,7 +38,7 @@ Durable decisions that apply across all phases:
 - **Schema shape**: Persistent app volume holds users, settings, instances, synced library rows, suggestions, jobs, and reviews. Secrets stored hashed or encrypted at rest; never echoed back after save.
 - **Auth**: Arr-style local login with a modern password hash and server sessions. Optional local-address auth bypass.
 - **Size policy**: GB (or MB) per hour. Defaults — Movie 1080p 2.5, Movie 4K SDR 6, Movie 4K HDR 8, TV 1080p 1.0, TV 4K 4.0. Encodes aim at the category target.
-- **Track policy**: Keep all preferred-language audio/subs (including SDH, forced, commentary). Strip other languages. Drop untagged. Original surround stays when AAC stereo is added.
+- **Track policy**: Keep all preferred-language audio/subs (including SDH, forced, commentary). Strip other languages. Drop untagged tracks except the only audio — a lone untagged dialogue track is kept so remux cannot silence the file. When a file needs track cleanup and a codec or size encode, remux extras first, then transcode that remuxed working file. The library file stays untouched until Keep. Original surround stays when AAC stereo is added.
 - **Output policy**: Sidecar on a configurable NAS review path outside Arr library roots. Original untouched until Keep. Keep replaces, deletes the original, asks the Arr to rename/refresh, notifies all configured players. Missed target or larger-than-source: keep sidecar and flag for review.
 - **Execution policy**: Default one job, multi-segment off, work on the NAS. Honor user concurrency. Optional local copy-before-encode. Optional off-peak window with run-now override. Hardware encode only (CUDA/VAAPI). Hardware failure fails the job and is shown; no software fallback.
 - **Third-party boundaries**: Radarr API, Sonarr API, Plex API, Jellyfin API, ffprobe/ffmpeg (and remux tooling) for inspect/optimize. Players and Arrs are notified after Keep; notify/rename failure does not roll back a successful replace.
@@ -146,6 +146,7 @@ Approve a transcode suggestion. The runner uses hardware encode (CUDA or VAAPI f
 - [x] UI shows which backends were detected (CUDA, VAAPI, AV1 capability reserved for a later phase).
 - [x] Hardware failure fails the job, keeps the original, and shows a hardware error (no CPU encode).
 - [x] Successful output goes through the same sidecar + Keep/Discard path as remux.
+- [x] A file that needs extra-track cleanup and a codec or size encode remuxes first, then transcodes, in one job. The library file is unchanged until Keep.
 - [x] Tests cover target-aim behavior, bit-depth preservation on fixtures, DV warning, and hardware-failure → failed job.
 
 ---
@@ -162,7 +163,7 @@ Suggest adding AAC stereo when the file has Atmos or more than 5.1, and always o
 
 - [x] Atmos or >5.1 produces a stereo-add suggestion; stereo files do not.
 - [x] User can add stereo to any non-stereo file from the UI even when it was not auto-suggested.
-- [x] Result contains original audio plus AAC 2.0.
+- [x] Result contains original audio plus one AAC 2.0. The surround/Atmos track is not duplicated.
 - [x] Chapters and attachments survive the job.
 - [x] Stereo-add-only still requires Keep before the library file changes.
 - [x] Tests cover suggest vs manual, “original audio retained,” and remux of chapters/attachments.

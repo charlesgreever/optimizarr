@@ -9,7 +9,7 @@ import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
 import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
-import { isJobPhase, jobPhaseLabel, type JobPhase } from "./progress.ts";
+import { isJobPhase, jobPhaseLabel, reviewPhaseLabel, type JobPhase } from "./progress.ts";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -155,6 +155,9 @@ export class Store {
     this.ensureColumn("inspections", "source_sig", "TEXT");
     this.ensureColumn("jobs", "phase", "TEXT");
     this.ensureColumn("jobs", "eta_sec", "REAL");
+    this.ensureColumn("reviews", "phase", "TEXT");
+    this.ensureColumn("reviews", "progress", "REAL");
+    this.ensureColumn("reviews", "error", "TEXT");
   }
 
   private ensureColumn(table: string, column: string, spec: string): void {
@@ -597,7 +600,9 @@ export class Store {
 
   pendingReviewForItem(itemId: number): { id: number; sidecarPath: string; sourcePath: string } | undefined {
     const row = this.db
-      .prepare("SELECT id, sidecar_path AS sidecarPath, source_path AS sourcePath FROM reviews WHERE item_id = ? AND status = 'pending'")
+      .prepare(
+        "SELECT id, sidecar_path AS sidecarPath, source_path AS sourcePath FROM reviews WHERE item_id = ? AND status IN ('pending', 'keeping', 'discarding')",
+      )
       .get(itemId) as { id: number; sidecarPath: string; sourcePath: string } | undefined;
     return row;
   }
@@ -718,11 +723,14 @@ export class Store {
     compare: unknown;
     flagged: boolean;
     status: string;
+    phase: string | null;
+    progress: number | null;
+    error: string | null;
   } | undefined {
     const row = this.db
       .prepare(
         `SELECT id, item_id AS itemId, job_id AS jobId, source_path AS sourcePath, sidecar_path AS sidecarPath,
-                compare_json AS compareJson, flagged, status FROM reviews WHERE id = ?`,
+                compare_json AS compareJson, flagged, status, phase, progress, error FROM reviews WHERE id = ?`,
       )
       .get(id) as
       | {
@@ -734,27 +742,37 @@ export class Store {
           compareJson: string;
           flagged: number;
           status: string;
+          phase: string | null;
+          progress: number | null;
+          error: string | null;
         }
       | undefined;
     if (!row) return undefined;
     return { ...row, compare: JSON.parse(row.compareJson ?? "{}"), flagged: Boolean(row.flagged) };
   }
 
-  listReviews(status = "pending"): Array<Record<string, unknown>> {
+  listReviews(status: string | string[] = "pending"): Array<Record<string, unknown>> {
+    const statuses = Array.isArray(status) ? status : [status];
+    const placeholders = statuses.map(() => "?").join(", ");
     return this.db
       .prepare(
         `SELECT r.id, r.item_id AS itemId, r.source_path AS sourcePath, r.sidecar_path AS sidecarPath,
-                r.compare_json AS compareJson, r.flagged, r.status, i.title, i.instance_id AS instanceId,
+                r.compare_json AS compareJson, r.flagged, r.status, r.phase, r.progress, r.error,
+                i.title, i.instance_id AS instanceId,
                 i.series_title AS seriesTitle, i.season_number AS seasonNumber, i.episode_number AS episodeNumber
-         FROM reviews r JOIN library_items i ON i.id = r.item_id WHERE r.status = ? ORDER BY r.id DESC`,
+         FROM reviews r JOIN library_items i ON i.id = r.item_id WHERE r.status IN (${placeholders}) ORDER BY r.id DESC`,
       )
-      .all(status)
+      .all(...statuses)
       .map((r) => {
         const row = r as Record<string, unknown> & { compareJson: string; flagged: number };
+        const reviewStatus = String(row.status);
+        const phase = (row.phase as string | null) ?? null;
         return {
           ...row,
           compare: JSON.parse(row.compareJson ?? "{}"),
           flagged: Boolean(row.flagged),
+          progress: Number(row.progress ?? 0),
+          phaseLabel: reviewPhaseLabel(reviewStatus, phase),
           displayTitle: displayTitle({
             title: String(row.title),
             seriesTitle: (row.seriesTitle as string | null) ?? null,
@@ -767,6 +785,23 @@ export class Store {
 
   setReviewStatus(id: number, status: string): void {
     this.db.prepare("UPDATE reviews SET status = ? WHERE id = ?").run(status, id);
+  }
+
+  updateReview(
+    id: number,
+    patch: { status?: string; phase?: string | null; progress?: number; error?: string | null },
+  ): void {
+    const current = this.getReview(id);
+    if (!current) return;
+    this.db
+      .prepare("UPDATE reviews SET status = ?, phase = ?, progress = ?, error = ? WHERE id = ?")
+      .run(
+        patch.status ?? current.status,
+        patch.phase === undefined ? current.phase : patch.phase,
+        patch.progress ?? current.progress ?? 0,
+        patch.error === undefined ? current.error : patch.error,
+        id,
+      );
   }
 
   listPlayers(): PlayerInstance[] {

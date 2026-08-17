@@ -221,4 +221,51 @@ describe("phase 3 catalog", () => {
     expect(progress.walking).toBe(false);
     expect(catalog.progress().errors).toBe(0);
   });
+
+  it("records a failed probe once and ends the walk", async () => {
+    const { store } = await setup();
+    store.createArrInstance({ kind: "radarr", name: "R2", url: "http://r2", apiKey: "k" });
+    const inst = store.listArrInstances().find((row) => row.name === "R2");
+    store.upsertLibraryItem({
+      instanceId: inst!.id,
+      externalId: 99,
+      seriesId: null,
+      type: "movie",
+      title: "Broken",
+      seriesTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
+      path: "/bad.mkv",
+      folderPath: null,
+      quality: null,
+      videoCodec: null,
+      resolution: null,
+      hdr: null,
+      size: 1,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    let badProbes = 0;
+    const catalog = new Catalog(store, (path) => {
+      if (path === "/bad.mkv") {
+        badProbes += 1;
+        throw new Error("ffprobe failed");
+      }
+      return parseFfprobe(path, {
+        format: { duration: "1", size: "1" },
+        streams: [{ codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 }],
+      });
+    });
+    expect(await catalog.inspectPending()).toBeGreaterThan(0);
+    const first = catalog.progress();
+    expect(first.walking).toBe(false);
+    expect(first.errors).toBe(1);
+    expect(first.pending).toBe(0);
+    expect(first.errors).toBeLessThanOrEqual(first.total);
+    expect(badProbes).toBe(1);
+    expect(await catalog.inspectPending()).toBe(0);
+    expect(badProbes).toBe(1);
+    expect(catalog.progress().errors).toBe(1);
+  });
 });

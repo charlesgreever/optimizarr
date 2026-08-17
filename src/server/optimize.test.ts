@@ -190,4 +190,152 @@ fs.writeFileSync(dest, "MEDIA");
     expect(args.split("0:a:m:language:eng").length - 1).toBe(1);
     expect(args.split("0:s:m:language:eng").length - 1).toBe(1);
   });
+
+  it("remuxes extra tracks first then transcodes the remuxed file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-combo-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const ffprobe = join(dir, "ffprobe");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(
+      ffmpeg,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const dest = process.argv[process.argv.length - 1];
+fs.appendFileSync(${JSON.stringify(argsLog)}, process.argv.slice(2).join(" ") + "\\n---\\n");
+fs.mkdirSync(require("node:path").dirname(dest), { recursive: true });
+fs.writeFileSync(dest, "MEDIA");
+`,
+    );
+    writeFileSync(
+      ffprobe,
+      `#!/bin/sh
+echo '{"format":{"duration":"10","size":"5"},"streams":[{"codec_type":"video","codec_name":"hevc","width":1920,"height":1080}]}'
+`,
+    );
+    chmodSync(ffmpeg, 0o755);
+    chmodSync(ffprobe, 0o755);
+    const source = join(dir, "movie.mkv");
+    const sidecar = join(dir, "review", "Night_Monster.436.mkv");
+    writeFileSync(source, "ORIGINAL");
+    const prevProbe = process.env.FFPROBE;
+    process.env.FFPROBE = ffprobe;
+    const updates: Array<{ phase: string }> = [];
+    try {
+      await ffmpegOptimizer(ffmpeg)({
+        sourcePath: source,
+        sidecarPath: sidecar,
+        plan: {
+          actions: ["remux", "transcode"],
+          keepAudio: ["eng"],
+          stripAudio: ["spa"],
+          keepSubs: ["eng"],
+          stripSubs: ["spa"],
+          category: "movie1080p",
+        } as never,
+        report: {
+          durationSec: 10,
+          sizeBytes: 8,
+          videoCodec: "h264",
+          audio: [{ language: "eng" }, { language: "spa" }],
+          subtitles: [{ language: "spa" }, { language: "eng" }],
+        } as never,
+        backends: { cuda: true, vaapi: false, av1: false },
+        onProgress: (update) => updates.push({ phase: update.phase }),
+      });
+    } finally {
+      if (prevProbe === undefined) delete process.env.FFPROBE;
+      else process.env.FFPROBE = prevProbe;
+    }
+    const passes = readFileSync(argsLog, "utf8").split("---\n").filter((block) => block.trim());
+    expect(passes).toHaveLength(2);
+    expect(passes[0]).toContain(source);
+    expect(passes[0]).toContain("-c copy");
+    expect(passes[0]).not.toContain("hevc_nvenc");
+    expect(passes[0]).toContain("0:a:m:language:eng");
+    expect(passes[0]).not.toContain("0:a:m:language:spa");
+    expect(passes[0]).toContain(".remux.tmp.mkv");
+    expect(passes[1]).toContain("hevc_nvenc");
+    expect(passes[1]).toContain(".remux.tmp.mkv");
+    expect(passes[1]).not.toContain(`-i ${source}`);
+    expect(updates.some((u) => u.phase === "remuxing")).toBe(true);
+    expect(updates.some((u) => u.phase === "transcoding")).toBe(true);
+    expect(updates.findIndex((u) => u.phase === "remuxing")).toBeLessThan(
+      updates.findIndex((u) => u.phase === "transcoding"),
+    );
+    expect(readFileSync(sidecar, "utf8")).toBe("MEDIA");
+  });
+
+  it("keeps the first untagged audio instead of mapping every track", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-und-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(ffmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsLog}"\nexit 1\n`);
+    chmodSync(ffmpeg, 0o755);
+    writeFileSync(join(dir, "movie.mkv"), "MEDIA");
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: join(dir, "movie.mkv"),
+      sidecarPath: join(dir, "out.mkv"),
+      plan: {
+        actions: ["transcode"],
+        keepAudio: ["und"],
+        stripAudio: [],
+        keepSubs: [],
+        stripSubs: [],
+        category: "movie1080p",
+      } as never,
+      report: {
+        durationSec: 10,
+        sizeBytes: 5,
+        videoCodec: "h264",
+        audio: [{ language: undefined }],
+        subtitles: [],
+      } as never,
+      backends: { cuda: true, vaapi: false, av1: false },
+    }).catch(() => undefined);
+    const args = readFileSync(argsLog, "utf8");
+    expect(args).toContain("0:a:0");
+    expect(args).not.toContain("0:a?");
+  });
+
+  it("adds stereo after the original audio instead of duplicating TrueHD", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-stereo-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(ffmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsLog}"\nexit 1\n`);
+    chmodSync(ffmpeg, 0o755);
+    writeFileSync(join(dir, "movie.mkv"), "MEDIA");
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: join(dir, "movie.mkv"),
+      sidecarPath: join(dir, "out.mkv"),
+      plan: {
+        actions: ["transcode", "add_stereo"],
+        keepAudio: ["eng"],
+        stripAudio: [],
+        keepSubs: ["eng"],
+        stripSubs: [],
+        category: "movie4kHdr",
+      } as never,
+      report: {
+        durationSec: 10,
+        sizeBytes: 20,
+        videoCodec: "hevc",
+        audio: [
+          { language: "eng", codec: "truehd", channels: 8, atmos: true },
+          { language: "eng", codec: "ac3", channels: 6 },
+        ],
+        subtitles: [{ language: "eng" }],
+      } as never,
+      backends: { cuda: true, vaapi: false, av1: false },
+    }).catch(() => undefined);
+    const args = readFileSync(argsLog, "utf8").trim().split("\n");
+    expect(args.filter((a) => a === "0:a:m:language:eng")).toHaveLength(1);
+    expect(args.filter((a) => a === "0:a:0")).toHaveLength(1);
+    expect(args).toContain("-c:a:2");
+    expect(args).toContain("-ac:a:2");
+    expect(args).toContain("-b:a:2");
+    expect(args).not.toContain("-c:a:1");
+  });
 });

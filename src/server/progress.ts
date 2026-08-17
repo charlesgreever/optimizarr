@@ -57,8 +57,9 @@ export function jobPhaseLabel(
 }
 
 export function phaseForPlan(actions: string[] | undefined): WorkPhase {
+  if (actions?.includes("remux")) return "remuxing";
   if (actions?.includes("transcode")) return "transcoding";
-  if (actions?.includes("remux") || actions?.includes("add_stereo")) return "remuxing";
+  if (actions?.includes("add_stereo")) return "remuxing";
   return "copying";
 }
 
@@ -75,6 +76,14 @@ export function parseCopiedBytes(text: string): number | null {
   if (!match) return null;
   const n = Number(match[1]);
   return Number.isFinite(n) ? n : null;
+}
+
+export function reviewPhaseLabel(status: string, phase: string | null): string | null {
+  if (status === "discarding") return "Removing the sidecar";
+  if (status !== "keeping") return null;
+  if (phase === "notifying") return "Telling Radarr and the players";
+  if (phase === "copying") return "Copying sidecar into the library folder";
+  return "Moving the sidecar onto the library file";
 }
 
 export function etaSec(done: number, total: number, elapsedSec: number): number | null {

@@ -6,10 +6,11 @@ import { ArrClient } from "./arr.ts";
 import { createApp } from "./app.ts";
 import { Catalog } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
-import { IntegrityError } from "./optimize.ts";
+import { IntegrityError, type Optimizer } from "./optimize.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-import { cookieHeader, waitForQueue } from "./test-http.ts";
+import { JobService } from "./jobs.ts";
+import { cookieHeader, waitForQueue, waitForReview } from "./test-http.ts";
 
 describe("phase 4 remux review keep", () => {
   const dirs: string[] = [];
@@ -20,7 +21,12 @@ describe("phase 4 remux review keep", () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  async function setup(opts?: { failIntegrity?: boolean; notifyStatus?: number; renameError?: string }) {
+  async function setup(opts?: {
+    failIntegrity?: boolean;
+    notifyStatus?: number;
+    renameError?: string;
+    makeJobs?: (store: Store, optimize: Optimizer, fetchImpl: typeof fetch) => JobService;
+  }) {
     const dir = mkdtempSync(join(tmpdir(), "optimizarr-"));
     dirs.push(dir);
     const library = join(dir, "library");
@@ -66,7 +72,8 @@ describe("phase 4 remux review keep", () => {
     };
     const catalog = new Catalog(store, probe);
     const sync = new LibrarySync(store, new ArrClient(fetchImpl), () => true);
-    const app = createApp(store, { fetchImpl, pathReadable: () => true, sync, catalog, probe, optimize });
+    const jobs = opts?.makeJobs?.(store, optimize, fetchImpl);
+    const app = createApp(store, { fetchImpl, pathReadable: () => true, sync, catalog, probe, optimize, jobs });
     const first = await app.request("/api/setup/first-run", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -145,14 +152,11 @@ describe("phase 4 remux review keep", () => {
     await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
-    expect(keep.status).toBe(200);
+    expect(keep.status).toBe(202);
+    expect((await keep.json()).accepted).toBe(true);
+    await waitForReview(app, cookie, (items) => items.length === 0);
     expect(readFileSync(source, "utf8")).toBe("SIDECAR-OUTPUT");
     expect(existsSync(review.sidecarPath)).toBe(false);
-    expect(keep.json).toBeTypeOf("function");
-    const body = await keep.json();
-    expect(body.notify.some((n: { target: string }) => n.target === "Plex")).toBe(true);
-    expect(body.notify.some((n: { target: string }) => n.target === "JF")).toBe(true);
-    expect(body.notify.some((n: { target: string }) => n.target === "R")).toBe(true);
   });
 
   it("does not undo Keep when a player is down", async () => {
@@ -166,10 +170,11 @@ describe("phase 4 remux review keep", () => {
     await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
-    const body = await keep.json();
-    expect(keep.status).toBe(200);
-    expect(body.error).toMatch(/HTTP 503/);
+    expect(keep.status).toBe(202);
+    await waitForReview(app, cookie, (items) => items.length === 0);
     expect(readFileSync(source, "utf8")).toBeTruthy();
+    const history = await app.request("/api/history", { headers: { cookie } }).then((r) => r.json());
+    expect(JSON.stringify(history)).toMatch(/HTTP 503/);
   });
 
   it("keeps later titles in the queue while one job is running", async () => {
@@ -493,6 +498,33 @@ describe("phase 4 remux review keep", () => {
     expect(readFileSync(sidecar, "utf8")).toBe("NEW");
   });
 
+  it("returns a failed Keep to pending with the error on the card", async () => {
+    const { app, cookie, source } = await setup({
+      makeJobs: (store, optimize, fetchImpl) =>
+        new JobService(store, optimize, fetchImpl, {
+          rename: async () => {
+            throw new Error("EACCES");
+          },
+          unlink: async () => undefined,
+          mkdir: async () => undefined,
+          stat: async () => ({ size: 1 }) as never,
+        }),
+    });
+    const sid = (await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
+    await app.request("/api/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ suggestionId: sid }),
+    });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
+    const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
+    const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
+    expect(keep.status).toBe(202);
+    const listed = await waitForReview(app, cookie, (items) => items[0]?.status === "pending" && Boolean(items[0]?.error));
+    expect(listed[0].error).toMatch(/EACCES/);
+    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+  });
+
   it("Discard leaves the original and removes the sidecar", async () => {
     const { app, cookie, source } = await setup();
     const sid = (await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
@@ -509,5 +541,57 @@ describe("phase 4 remux review keep", () => {
     expect(await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).toMatchObject({
       items: [],
     });
+  });
+
+  it("returns Keep before a slow move finishes and rejects a second Keep", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app, cookie, source } = await setup({
+      makeJobs: (store, optimize, fetchImpl) =>
+        new JobService(
+          store,
+          optimize,
+          fetchImpl,
+          {
+            rename: async () => {
+              throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+            },
+            unlink: async () => undefined,
+            mkdir: async () => undefined,
+            stat: async () => ({ size: 1 }) as never,
+          },
+          undefined,
+          () => new Date(),
+          () => ({
+            copy: async () => ({ method: "ssh" as const, bytes: 1 }),
+            move: async (src, dest) => {
+              await gate;
+              writeFileSync(dest, readFileSync(src));
+              return { method: "ssh" as const, bytes: 1 };
+            },
+          }),
+        ),
+    });
+    const sid = (await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
+    await app.request("/api/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ suggestionId: sid }),
+    });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
+    const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
+    const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
+    expect(keep.status).toBe(202);
+    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    const listed = await app.request("/api/review", { headers: { cookie } }).then((r) => r.json());
+    expect(listed.items[0].status).toBe("keeping");
+    expect(listed.items[0].phaseLabel).toMatch(/sidecar/i);
+    const second = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
+    expect(second.status).toBe(409);
+    release();
+    await waitForReview(app, cookie, (items) => items.length === 0);
+    expect(readFileSync(source, "utf8")).toBe("SIDECAR-OUTPUT");
   });
 });

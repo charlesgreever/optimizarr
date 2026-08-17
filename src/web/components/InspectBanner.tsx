@@ -3,6 +3,7 @@ import { api, type InspectProgress } from "../api";
 
 export function InspectBanner() {
   const [progress, setProgress] = useState<InspectProgress | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     let stop = false;
@@ -22,12 +23,32 @@ export function InspectBanner() {
     };
   }, []);
 
-  if (!progress || (!progress.walking && progress.pending === 0)) return null;
-  const total = progress.pending + progress.inspected;
-  return (
-    <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-      Library loaded. Probing {progress.inspected} / {total} files.
-      {progress.errors > 0 ? ` ${progress.errors} failed.` : ""}
-    </div>
-  );
+  if (!progress) return null;
+  const left = progress.left ?? progress.pending;
+  const total = progress.total ?? progress.pending + progress.inspected + progress.errors;
+  const done = total - left;
+
+  if (progress.walking) {
+    return (
+      <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        Movie and series lists are ready. Inspecting file {done} of {total} (ffprobe). {left} left.
+        {progress.errors > 0 ? ` ${progress.errors} files could not be probed.` : ""}
+      </div>
+    );
+  }
+
+  if (progress.errors > 0 && !dismissed) {
+    return (
+      <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
+        <span>
+          {progress.errors} file{progress.errors === 1 ? "" : "s"} could not be probed.
+        </span>
+        <button type="button" className="text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setDismissed(true)}>
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }

@@ -22,7 +22,9 @@ describe("job phase labels", () => {
   });
 
   it("picks the work phase from the plan", () => {
-    expect(phaseForPlan(["transcode", "remux"])).toBe("transcoding");
+    expect(phaseForPlan(["remux", "transcode"])).toBe("remuxing");
+    expect(phaseForPlan(["transcode", "remux"])).toBe("remuxing");
+    expect(phaseForPlan(["transcode"])).toBe("transcoding");
     expect(phaseForPlan(["remux"])).toBe("remuxing");
     expect(phaseForPlan(["add_stereo"])).toBe("remuxing");
     expect(phaseForPlan([])).toBe("copying");

@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import type { InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
-import { IntegrityError, reviewPathFor, tempSidecarPath, type Optimizer } from "./optimize.ts";
+import { IntegrityError, remuxSidecarPath, reviewPathFor, tempSidecarPath, type Optimizer } from "./optimize.ts";
 import { etaSec, phaseForPlan, type JobPhase, type ProgressUpdate } from "./progress.ts";
 import { reviewPathInsideLibrary } from "./paths.ts";
 import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
@@ -125,6 +125,14 @@ export class JobService {
         });
       }
     }
+    for (const review of this.store.listReviews(["keeping", "discarding"])) {
+      this.store.updateReview(review.id as number, {
+        status: "pending",
+        phase: null,
+        progress: 0,
+        error: "Keep was interrupted. The original and sidecar are still on disk.",
+      });
+    }
   }
 
   async cancel(jobId: number): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
@@ -141,6 +149,7 @@ export class JobService {
       this.store.addHistory(item.id, displayTitle(item), "cancelled");
       const sidecarPath = reviewPathFor(this.store.getSettings().reviewPath, item.title, item.id);
       await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
+      await this.fs.unlink(remuxSidecarPath(sidecarPath)).catch(() => undefined);
       if (!this.store.pendingReviewForItem(item.id)) {
         await this.fs.unlink(sidecarPath).catch(() => undefined);
       }
@@ -190,6 +199,7 @@ export class JobService {
       if (this.isCancelled(jobId)) {
         await this.fs.unlink(result.sidecarPath).catch(() => undefined);
         await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
+        await this.fs.unlink(remuxSidecarPath(sidecarPath)).catch(() => undefined);
         return;
       }
       const outHour = sizePerHourGb({ sizeBytes: result.sizeBytes, durationSec: result.durationSec });
@@ -218,6 +228,7 @@ export class JobService {
       this.store.addHistory(item.id, displayTitle(item), flagged ? "flagged" : "finished");
     } catch (err) {
       await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
+      await this.fs.unlink(remuxSidecarPath(sidecarPath)).catch(() => undefined);
       await this.fs.unlink(sidecarPath).catch(() => undefined);
       if (this.isCancelled(jobId) || isAbortError(err)) {
         this.store.updateJob(jobId, { status: "cancelled", etaSec: null, finishedAt: this.now().toISOString() });
@@ -273,43 +284,105 @@ export class JobService {
     });
   }
 
+  startKeep(reviewId: number): { ok: boolean; accepted?: boolean; error?: string; status?: number } {
+    const review = this.store.getReview(reviewId);
+    if (!review) return { ok: false, error: "Review not found", status: 404 };
+    if (review.status === "keeping") {
+      return { ok: false, error: "This title is already being kept", status: 409 };
+    }
+    if (review.status !== "pending") return { ok: false, error: "Review not found", status: 400 };
+    this.store.updateReview(reviewId, { status: "keeping", phase: "moving", progress: 0, error: null });
+    void this.applyKeep(reviewId).catch((err) => {
+      // Shutdown after the process closed SQLite: nothing left to record.
+      if (isClosedStore(err)) return;
+      const message = err instanceof Error ? err.message : "Could not replace the library file";
+      try {
+        if (this.store.getReview(reviewId)?.status === "keeping") this.failKeep(reviewId, message);
+      } catch (storeErr) {
+        if (!isClosedStore(storeErr)) throw storeErr;
+      }
+    });
+    return { ok: true, accepted: true };
+  }
+
   async keep(
     reviewId: number,
   ): Promise<{ ok: boolean; notify: { target: string; ok: boolean; error?: string }[]; error?: string }> {
     const review = this.store.getReview(reviewId);
-    if (!review || review.status !== "pending") return { ok: false, notify: [], error: "Review not found" };
+    if (!review || (review.status !== "pending" && review.status !== "keeping")) {
+      return { ok: false, notify: [], error: "Review not found" };
+    }
+    if (review.status === "pending") {
+      this.store.updateReview(reviewId, { status: "keeping", phase: "moving", progress: 0, error: null });
+    }
+    return this.applyKeep(reviewId);
+  }
+
+  private async applyKeep(
+    reviewId: number,
+  ): Promise<{ ok: boolean; notify: { target: string; ok: boolean; error?: string }[]; error?: string }> {
+    try {
+      return await this.runKeep(reviewId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not replace the library file";
+      if (this.store.getReview(reviewId)?.status === "keeping") this.failKeep(reviewId, message);
+      return { ok: false, notify: [], error: message };
+    }
+  }
+
+  private async runKeep(
+    reviewId: number,
+  ): Promise<{ ok: boolean; notify: { target: string; ok: boolean; error?: string }[]; error?: string }> {
+    const review = this.store.getReview(reviewId);
+    if (!review) return { ok: false, notify: [], error: "Review not found" };
     const item = this.store.getLibraryItem(review.itemId);
-    if (!item) return { ok: false, notify: [], error: "Item not found" };
+    if (!item) {
+      this.store.updateReview(reviewId, { status: "pending", phase: null, error: "Item not found" });
+      return { ok: false, notify: [], error: "Item not found" };
+    }
     const instance = this.store.getArrInstance(item.instanceId);
     try {
       await this.fs.rename(review.sidecarPath, review.sourcePath);
     } catch (err) {
       if (!isCrossDevice(err)) {
-        return {
-          ok: false,
-          notify: [],
-          error: err instanceof Error ? err.message : "Could not replace the library file",
-        };
+        const message = err instanceof Error ? err.message : "Could not replace the library file";
+        this.failKeep(reviewId, message);
+        return { ok: false, notify: [], error: message };
       }
       try {
-        await this.transferFor(this.store.getSettings()).move(review.sidecarPath, review.sourcePath);
+        this.store.updateReview(reviewId, { phase: "copying", progress: 0, error: null });
+        await this.transferFor(this.store.getSettings()).move(review.sidecarPath, review.sourcePath, (copied, total) => {
+          this.store.updateReview(reviewId, {
+            phase: "copying",
+            progress: total > 0 ? Math.min(copied / total, 0.99) : 0,
+          });
+        });
       } catch (moveErr) {
-        return {
-          ok: false,
-          notify: [],
-          error: moveErr instanceof Error ? moveErr.message : "Could not replace the library file",
-        };
+        const message = moveErr instanceof Error ? moveErr.message : "Could not replace the library file";
+        this.failKeep(reviewId, message);
+        return { ok: false, notify: [], error: message };
       }
     }
-    this.store.setReviewStatus(reviewId, "kept");
-    this.store.addHistory(item.id, displayTitle(item), "kept");
-    const notify = [];
-    if (instance) notify.push(await notifyArrRename(this.fetchImpl, instance, item));
-    for (const player of this.store.listPlayers().filter((p) => p.enabled)) {
-      notify.push(await notifyPlayer(this.fetchImpl, player));
+    this.store.updateReview(reviewId, { phase: "notifying", progress: 1, error: null });
+    let notify: { target: string; ok: boolean; error?: string }[] = [];
+    let notifyError: string | undefined;
+    try {
+      if (instance) notify.push(await notifyArrRename(this.fetchImpl, instance, item));
+      for (const player of this.store.listPlayers().filter((p) => p.enabled)) {
+        notify.push(await notifyPlayer(this.fetchImpl, player));
+      }
+      const failed = notify.filter((n) => !n.ok);
+      notifyError = failed.length ? failed.map((f) => `${f.target}: ${f.error}`).join("; ") : undefined;
+    } catch (err) {
+      notifyError = err instanceof Error ? err.message : "Could not notify players";
     }
-    const failed = notify.filter((n) => !n.ok);
-    return { ok: true, notify, error: failed.length ? failed.map((f) => `${f.target}: ${f.error}`).join("; ") : undefined };
+    this.store.updateReview(reviewId, { status: "kept", phase: "notifying", progress: 1, error: notifyError ?? null });
+    this.store.addHistory(item.id, displayTitle(item), "kept", notifyError);
+    return { ok: true, notify, error: notifyError };
+  }
+
+  private failKeep(reviewId: number, message: string): void {
+    this.store.updateReview(reviewId, { status: "pending", phase: null, progress: 0, error: message });
   }
 
   async discard(reviewId: number): Promise<{ ok: boolean; error?: string }> {

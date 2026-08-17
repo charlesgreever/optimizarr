@@ -32,6 +32,41 @@ describe("suggestion engine", () => {
       want: { healthy: false, actions: ["transcode"] },
     },
     {
+      name: "H.264 with extra languages remuxes first then transcodes",
+      streams: [
+        { codec_type: "video", codec_name: "h264", width: 1920, height: 1080 },
+        { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" } },
+        { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "spa" } },
+        { codec_type: "subtitle", codec_name: "subrip", tags: { language: "spa" } },
+        { codec_type: "subtitle", codec_name: "subrip", tags: { language: "eng" } },
+      ],
+      want: {
+        healthy: false,
+        actions: ["remux", "transcode"],
+        extraTracks: true,
+        keepAudio: ["eng"],
+        stripAudio: ["spa"],
+        keepSubs: ["eng"],
+        stripSubs: ["spa"],
+      },
+    },
+    {
+      name: "already-HEVC with only untagged audio is healthy",
+      streams: [
+        { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+        { codec_type: "audio", codec_name: "aac", channels: 2 },
+      ],
+      want: { healthy: true, actions: [] as string[], extraTracks: false, keepAudio: ["und"] },
+    },
+    {
+      name: "H.264 with only untagged audio transcodes without a leftover remux",
+      streams: [
+        { codec_type: "video", codec_name: "h264", width: 1920, height: 1080 },
+        { codec_type: "audio", codec_name: "aac", channels: 2 },
+      ],
+      want: { healthy: false, actions: ["transcode"], extraTracks: false, keepAudio: ["und"] },
+    },
+    {
       name: "HEVC under cap with extra languages is remux-only",
       streams: [
         { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
@@ -47,6 +82,7 @@ describe("suggestion engine", () => {
       streams: [
         { codec_type: "video", codec_name: "av1", width: 1920, height: 1080 },
         { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "deu" } },
+        { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "spa" } },
       ],
       want: { healthy: false, actions: ["remux"] },
     },
@@ -64,6 +100,10 @@ describe("suggestion engine", () => {
     expect(plan.actions).toEqual(want.actions);
     if (want.healthy !== undefined) expect(plan.healthy).toBe(want.healthy);
     if (want.extraTracks !== undefined) expect(plan.extraTracks).toBe(want.extraTracks);
+    if (want.keepAudio !== undefined) expect(plan.keepAudio).toEqual(want.keepAudio);
+    if (want.stripAudio !== undefined) expect(plan.stripAudio).toEqual(want.stripAudio);
+    if (want.keepSubs !== undefined) expect(plan.keepSubs).toEqual(want.keepSubs);
+    if (want.stripSubs !== undefined) expect(plan.stripSubs).toEqual(want.stripSubs);
   });
 
   it("uses movie vs TV size caps and estimates savings when over cap", () => {
@@ -88,6 +128,26 @@ describe("suggestion engine", () => {
     expect(tv.category).toBe("tv1080p");
     expect(tv.overCap).toBe(true);
     expect(tv.actions).toContain("transcode");
+  });
+
+  it("remuxes extra tracks first when an already-HEVC file is also over the cap", () => {
+    const plan = buildSuggestion(
+      report(
+        [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" } },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "spa" } },
+        ],
+        { format: { duration: "3600", size: String(8 * 1024 ** 3) } },
+      ),
+      settings,
+      "movie",
+    );
+    expect(plan.overCap).toBe(true);
+    expect(plan.extraTracks).toBe(true);
+    expect(plan.actions).toEqual(["remux", "transcode"]);
+    expect(plan.keepAudio).toEqual(["eng"]);
+    expect(plan.stripAudio).toEqual(["spa"]);
   });
 
   it("warns when transcoding Dolby Vision", () => {
@@ -192,6 +252,22 @@ describe("suggestion reasons and targets", () => {
       estimatedSavingsBytes: null,
       category: "movie1080p",
       wantReasons: ["Keep the video; drop extra audio and subtitle tracks."],
+      wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
+    },
+    {
+      name: "H.264 with extra tracks remuxes then converts and does not invent a size",
+      actions: ["remux", "transcode"],
+      overCap: false,
+      extraTracks: true,
+      videoCodec: "h264",
+      size: 3 * 1024 ** 3,
+      sizePerHourGb: 3,
+      estimatedSavingsBytes: null,
+      category: "movie1080p",
+      wantReasons: [
+        "Video is H.264. Convert to HEVC.",
+        "Drop extra audio and subtitle tracks.",
+      ],
       wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
     },
     {

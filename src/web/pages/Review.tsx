@@ -7,6 +7,11 @@ type ReviewRow = {
   displayTitle?: string;
   sourcePath: string;
   sidecarPath: string;
+  status?: string;
+  phase?: string | null;
+  phaseLabel?: string | null;
+  progress?: number;
+  error?: string | null;
   compare: { source?: { size?: number; duration?: number; codec?: string }; sidecar?: { size?: number; duration?: number } };
 };
 
@@ -14,6 +19,7 @@ export function Review() {
   const [items, setItems] = useState<ReviewRow[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   async function load() {
     const data = await api.review();
@@ -24,6 +30,15 @@ export function Review() {
   useEffect(() => {
     load().catch((e: Error) => setError(e.message));
   }, []);
+
+  const hasActive = items.some((item) => item.status === "keeping" || item.status === "discarding");
+  useEffect(() => {
+    if (!hasActive) return;
+    const timer = window.setInterval(() => {
+      void load().catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [hasActive]);
 
   return (
     <section>
@@ -52,20 +67,57 @@ export function Review() {
                   <div className="truncate">{item.sidecarPath}</div>
                 </div>
               </div>
+              {(item.status === "keeping" || item.phaseLabel) && (
+                <p className="mt-3 text-sm text-amber-300">
+                  {item.phaseLabel || "Moving the sidecar onto the library file"}
+                  {item.status === "keeping" && item.progress
+                    ? ` · ${Math.round(Math.min(1, item.progress) * 100)}%`
+                    : ""}
+                </p>
+              )}
+              {item.error && <p className="mt-2 text-sm text-red-400">{item.error}</p>}
               <div className="mt-4 flex gap-2">
                 <button
                   className="btn !w-auto"
                   type="button"
-                  onClick={() => void api.keepReview(item.id).then(load).catch((e: Error) => setError(e.message))}
+                  disabled={busyId === item.id || item.status === "keeping" || item.status === "discarding"}
+                  onClick={() => {
+                    void (async () => {
+                      setBusyId(item.id);
+                      setError(null);
+                      try {
+                        await api.keepReview(item.id);
+                        await load();
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Could not keep this sidecar.");
+                      } finally {
+                        setBusyId(null);
+                      }
+                    })();
+                  }}
                 >
-                  Keep
+                  {item.status === "keeping" || busyId === item.id ? "Keeping…" : "Keep"}
                 </button>
                 <button
                   className="btn !w-auto !bg-zinc-700 !text-zinc-100"
                   type="button"
-                  onClick={() => void api.discardReview(item.id).then(load)}
+                  disabled={busyId === item.id || item.status === "keeping" || item.status === "discarding"}
+                  onClick={() => {
+                    void (async () => {
+                      setBusyId(item.id);
+                      setError(null);
+                      try {
+                        await api.discardReview(item.id);
+                        await load();
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Could not discard this sidecar.");
+                      } finally {
+                        setBusyId(null);
+                      }
+                    })();
+                  }}
                 >
-                  Discard
+                  {busyId === item.id ? "Discarding…" : "Discard"}
                 </button>
               </div>
             </article>

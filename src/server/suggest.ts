@@ -33,6 +33,33 @@ export type ExplainedSuggestion = {
 
 const UNTAGGED = new Set(["", "und", "unk", "unknown"]);
 
+function trackLabel(lang: string | undefined): string {
+  return lang ?? "und";
+}
+
+/** Keep preferred languages. Audio also keeps a primary track so remux never strips the only dialogue. */
+function partitionTracks(
+  tracks: Array<{ language?: string }>,
+  preferred: string,
+  opts: { keepPrimary: boolean },
+): { keep: string[]; strip: string[] } {
+  const keep: string[] = [];
+  const strip: string[] = [];
+  const hasPreferred = tracks.some((track) => isPreferredLang(track.language, preferred));
+  const hasUntagged = tracks.some((track) => isUntagged(track.language));
+  for (const track of tracks) {
+    const label = trackLabel(track.language);
+    if (isPreferredLang(track.language, preferred)) keep.push(label);
+    else if (opts.keepPrimary && !hasPreferred && isUntagged(track.language)) keep.push(label);
+    else strip.push(label);
+  }
+  if (opts.keepPrimary && keep.length === 0 && !hasPreferred && !hasUntagged) {
+    const primary = strip.shift();
+    if (primary) keep.push(primary);
+  }
+  return { keep, strip };
+}
+
 export function isPreferredLang(lang: string | undefined, preferred: string): boolean {
   if (!lang) return false;
   const l = lang.toLowerCase();
@@ -57,20 +84,12 @@ export function buildSuggestion(
   const cap = settings.sizeCapsGbPerHour[category];
   const overCap = sph !== null && sph > cap;
 
-  const keepAudio: string[] = [];
-  const stripAudio: string[] = [];
-  for (const a of report.audio) {
-    const label = a.language ?? "und";
-    if (isPreferredLang(a.language, preferred)) keepAudio.push(label);
-    else stripAudio.push(label);
-  }
-  const keepSubs: string[] = [];
-  const stripSubs: string[] = [];
-  for (const s of report.subtitles) {
-    const label = s.language ?? "und";
-    if (isPreferredLang(s.language, preferred)) keepSubs.push(label);
-    else stripSubs.push(label);
-  }
+  const audio = partitionTracks(report.audio, preferred, { keepPrimary: true });
+  const subs = partitionTracks(report.subtitles, preferred, { keepPrimary: false });
+  const keepAudio = audio.keep;
+  const stripAudio = audio.strip;
+  const keepSubs = subs.keep;
+  const stripSubs = subs.strip;
   const extraTracks = stripAudio.length + stripSubs.length > 0;
   const hasStereo = report.audio.some((a) => (a.channels ?? 0) > 0 && (a.channels ?? 0) <= 2);
   const complexSurround = report.audio.some((a) => a.atmos || (a.channels ?? 0) > 6);
@@ -79,18 +98,9 @@ export function buildSuggestion(
   const actions: SuggestionAction[] = [];
   let warning: string | null = null;
 
-  if (codec === "av1") {
-    if (extraTracks) actions.push("remux");
-  } else if (codec === "hevc") {
-    if (overCap) {
-      actions.push("transcode");
-    } else if (extraTracks) {
-      actions.push("remux");
-    }
-  } else {
-    actions.push("transcode");
-    if (extraTracks) actions.push("remux");
-  }
+  if (extraTracks) actions.push("remux");
+  const needsEncode = codec === "hevc" ? overCap : codec !== "av1";
+  if (needsEncode) actions.push("transcode");
 
   if (actions.includes("transcode") && (report.hdr === "dolby_vision" || report.hdr === "hdr10plus")) {
     warning = "Dolby Vision / HDR10+ metadata may be lost in a hardware transcode.";
@@ -184,7 +194,11 @@ export function explainSuggestion(
     );
   }
   if (actions.includes("remux") && input.extraTracks) {
-    reasons.push("Keep the video; drop extra audio and subtitle tracks.");
+    reasons.push(
+      actions.includes("transcode")
+        ? "Drop extra audio and subtitle tracks."
+        : "Keep the video; drop extra audio and subtitle tracks.",
+    );
   }
   if (actions.includes("add_stereo")) {
     reasons.push("Add a stereo AAC track.");

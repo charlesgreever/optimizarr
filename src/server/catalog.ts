@@ -8,6 +8,8 @@ export type InspectProgress = {
   pending: number;
   inspected: number;
   errors: number;
+  left: number;
+  total: number;
   walking: boolean;
 };
 
@@ -17,7 +19,6 @@ export async function defaultProbe(path: string): Promise<InspectionReport> {
 
 export class Catalog {
   private walk: Promise<number> | null = null;
-  probeErrors = 0;
   onInspected: ((itemId: number) => Promise<void>) | undefined;
 
   constructor(
@@ -32,12 +33,18 @@ export class Catalog {
   progress(): InspectProgress {
     let pending = 0;
     let inspected = 0;
+    let errors = 0;
     for (const item of this.store.listLibraryItems()) {
       if (!item.path || !item.readable) continue;
-      if (this.store.getInspectionSig(item.id) === this.sourceSig(item.path, item.size)) inspected += 1;
-      else pending += 1;
+      if (this.store.getInspectionSig(item.id) !== this.sourceSig(item.path, item.size)) {
+        pending += 1;
+        continue;
+      }
+      if (isFailedInspection(this.store.getInspection(item.id))) errors += 1;
+      else inspected += 1;
     }
-    return { pending, inspected, errors: this.probeErrors, walking: this.walk !== null };
+    const total = pending + inspected + errors;
+    return { pending, inspected, errors, left: pending, total, walking: this.walk !== null };
   }
 
   startBackgroundInspect(): void {
@@ -65,15 +72,17 @@ export class Catalog {
     try {
       report = await this.probe(item.path);
     } catch {
-      this.probeErrors += 1;
-      let existing: InspectionReport | undefined;
+      let existing: unknown;
       try {
-        existing = this.store.getInspection(itemId) as InspectionReport | undefined;
+        existing = this.store.getInspection(itemId);
       } catch {
         return { onSuggestions: false, error: "Could not inspect this file." };
       }
-      if (!existing) return { onSuggestions: false, error: "Could not inspect this file." };
-      report = existing;
+      if (!existing || isFailedInspection(existing)) {
+        this.store.saveInspection(itemId, { probeFailed: true }, new Date().toISOString(), sourceSig);
+        return { onSuggestions: false, error: "Could not inspect this file." };
+      }
+      report = existing as InspectionReport;
     }
     this.store.saveInspection(itemId, report, new Date().toISOString(), sourceSig);
     const plan = buildSuggestion(report, this.store.getSettings(), item.type, {
@@ -157,6 +166,10 @@ export class Catalog {
     }
     return undefined;
   }
+}
+
+export function isFailedInspection(report: unknown): boolean {
+  return Boolean(report && typeof report === "object" && (report as { probeFailed?: unknown }).probeFailed === true);
 }
 
 function yieldWalk(): Promise<void> {
