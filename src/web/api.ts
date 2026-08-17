@@ -40,6 +40,7 @@ export type Settings = {
     tv1080p: number;
     tv4k: number;
   };
+  hasWidgetToken?: boolean;
 };
 
 export type EmptyList = { items: unknown[]; message?: string; lastSyncAt?: string | null; inspect?: InspectProgress };
@@ -112,6 +113,8 @@ export const api = {
   settings: () => request<Settings>("/api/settings"),
   saveSettings: (body: Partial<Settings>) =>
     request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  createWidgetToken: () => request<{ token: string; hasWidgetToken: boolean }>("/api/settings/widget-token", { method: "POST" }),
+  revokeWidgetToken: () => request<{ ok: boolean; hasWidgetToken: boolean }>("/api/settings/widget-token", { method: "DELETE" }),
   storageInfo: () =>
     request<{
       copyMode: Settings["copyMode"];

@@ -26,6 +26,7 @@ export function Settings() {
   const [playerTestMsg, setPlayerTestMsg] = useState<string | null>(null);
   const [hw, setHw] = useState<Backends | null>(null);
   const [storageMsg, setStorageMsg] = useState<string | null>(null);
+  const [widgetToken, setWidgetToken] = useState<string | null>(null);
   const loadGen = useRef(0);
 
   function upsertById<T extends { id: number }>(list: T[], item: T): T[] {
@@ -692,6 +693,58 @@ export function Settings() {
           Update account
         </button>
       </form>
+
+      <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <h2 className="text-lg font-medium">Homepage widget</h2>
+        <p className="text-sm text-zinc-500">
+          Homepage polls a stats-only URL. It cannot use your login cookie, so create a widget key and put it in{" "}
+          <code className="text-zinc-300">X-Api-Key</code>. The key is shown once.
+        </p>
+        {widgetToken && (
+          <p className="break-all rounded-lg border border-amber-500/30 bg-zinc-950 px-3 py-2 font-mono text-sm text-amber-200">
+            {widgetToken}
+          </p>
+        )}
+        <p className="text-sm text-zinc-400">
+          {settings.hasWidgetToken ? "A widget key is saved." : "No widget key yet."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn !w-auto"
+            type="button"
+            onClick={() => {
+              void api
+                .createWidgetToken()
+                .then((res) => {
+                  setWidgetToken(res.token);
+                  setSettings({ ...settings, hasWidgetToken: true });
+                  setSaved(true);
+                })
+                .catch((e: Error) => setError(e.message));
+            }}
+          >
+            {settings.hasWidgetToken ? "Replace widget key" : "Create widget key"}
+          </button>
+          {settings.hasWidgetToken && (
+            <button
+              className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+              type="button"
+              onClick={() => {
+                void api
+                  .revokeWidgetToken()
+                  .then(() => {
+                    setWidgetToken(null);
+                    setSettings({ ...settings, hasWidgetToken: false });
+                    setSaved(true);
+                  })
+                  .catch((e: Error) => setError(e.message));
+              }}
+            >
+              Revoke
+            </button>
+          )}
+        </div>
+      </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
       {saved && <p className="text-sm text-emerald-400">Saved.</p>}

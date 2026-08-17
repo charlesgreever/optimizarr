@@ -58,3 +58,8 @@ To use the NVIDIA GPU, uncomment `runtime: nvidia` in `compose.yaml`.
 | `PORT` | `7373` | Listen port |
 | `OPTIMIZARR_SECRET` | generated in `/config/.secret` | AES key for Arr API keys and player tokens at rest |
 | `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy so `X-Forwarded-For` can drive local-address login |
+| `OPTIMIZARR_WIDGET_KEY` | unset | Optional Homepage widget key (`X-Api-Key` / Bearer). Or create a hashed key in Settings |
+
+## Homepage
+
+Optimizarr exposes `GET /api/widget` for a [Homepage](https://github.com/gethomepage/homepage) `customapi` tile. Example YAML and auth: [docs/homepage.md](docs/homepage.md).

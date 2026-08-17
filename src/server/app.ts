@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { HttpBindings } from "@hono/node-server";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,6 +27,7 @@ import {
 import { LibrarySync, defaultPathReadable, libraryListPayload, type PathCheck } from "./sync.ts";
 import type { CopyMode, PathMap, Settings } from "./types.ts";
 import type { FetchLike } from "./arr.ts";
+import { authorizeWidget, hashWidgetToken, widgetKeyFromHeaders, widgetPayload } from "./widget.ts";
 
 export const SESSION_COOKIE = "optimizarr_session";
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -167,6 +169,27 @@ export function createApp(store: Store, opts?: AppOpts): App {
 
   app.get("/api/health", (c) => c.json({ ok: true, service: "optimizarr" }));
 
+  app.get("/api/widget", (c) => {
+    const allowed = authorizeWidget({
+      hasSession: Boolean(c.get("userId")),
+      presentedKey: widgetKeyFromHeaders(c.req.raw.headers),
+      storedHash: store.getWidgetTokenHash(),
+      envKey: process.env.OPTIMIZARR_WIDGET_KEY,
+    });
+    if (!allowed) return c.json({ error: "Not authenticated" }, 401);
+    return c.json(widgetPayload(store));
+  });
+  app.get("/api/homepage", (c) => {
+    const allowed = authorizeWidget({
+      hasSession: Boolean(c.get("userId")),
+      presentedKey: widgetKeyFromHeaders(c.req.raw.headers),
+      storedHash: store.getWidgetTokenHash(),
+      envKey: process.env.OPTIMIZARR_WIDGET_KEY,
+    });
+    if (!allowed) return c.json({ error: "Not authenticated" }, 401);
+    return c.json(widgetPayload(store));
+  });
+
   app.get("/api/setup/status", (c) => {
     const settings = store.getSettings();
     const instances = store.listArrInstances();
@@ -261,7 +284,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
   });
 
   app.get("/api/settings", requireAuth, (c) => {
-    return c.json(publicSettings(store.getSettings()));
+    return c.json(settingsPayload(store));
   });
 
   app.put("/api/settings", requireAuth, async (c) => {
@@ -276,8 +299,19 @@ export function createApp(store: Store, opts?: AppOpts): App {
         return c.json({ error: "Review path must sit outside Arr library folders" }, 400);
       }
     }
-    const saved = store.saveSettings(next);
-    return c.json(publicSettings(saved));
+    store.saveSettings(next);
+    return c.json(settingsPayload(store));
+  });
+
+  app.post("/api/settings/widget-token", requireAuth, (c) => {
+    const token = randomBytes(24).toString("base64url");
+    store.setWidgetTokenHash(hashWidgetToken(token));
+    return c.json({ token, hasWidgetToken: true });
+  });
+
+  app.delete("/api/settings/widget-token", requireAuth, (c) => {
+    store.setWidgetTokenHash(null);
+    return c.json({ ok: true, hasWidgetToken: false });
   });
 
   app.get("/api/settings/storage", requireAuth, (c) => {
@@ -591,6 +625,10 @@ export function createApp(store: Store, opts?: AppOpts): App {
   }
 
   return app;
+}
+
+function settingsPayload(store: Store) {
+  return publicSettings(store.getSettings(), { hasWidgetToken: Boolean(store.getWidgetTokenHash()) });
 }
 
 function cookieOpts(expires: Date) {
