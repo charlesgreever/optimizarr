@@ -9,7 +9,14 @@ import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
 import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
-import { isJobPhase, jobPhaseLabel, reviewPhaseLabel, type JobPhase } from "./progress.ts";
+import {
+  isJobPhase,
+  jobPhaseLabel,
+  reviewPhaseLabel,
+  type JobPhase,
+  type ReviewPhase,
+  type ReviewStatus,
+} from "./progress.ts";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -601,7 +608,7 @@ export class Store {
   pendingReviewForItem(itemId: number): { id: number; sidecarPath: string; sourcePath: string } | undefined {
     const row = this.db
       .prepare(
-        "SELECT id, sidecar_path AS sidecarPath, source_path AS sourcePath FROM reviews WHERE item_id = ? AND status IN ('pending', 'keeping', 'discarding')",
+        "SELECT id, sidecar_path AS sidecarPath, source_path AS sourcePath FROM reviews WHERE item_id = ? AND status IN ('pending', 'keeping')",
       )
       .get(itemId) as { id: number; sidecarPath: string; sourcePath: string } | undefined;
     return row;
@@ -783,13 +790,13 @@ export class Store {
       });
   }
 
-  setReviewStatus(id: number, status: string): void {
+  setReviewStatus(id: number, status: ReviewStatus): void {
     this.db.prepare("UPDATE reviews SET status = ? WHERE id = ?").run(status, id);
   }
 
   updateReview(
     id: number,
-    patch: { status?: string; phase?: string | null; progress?: number; error?: string | null },
+    patch: { status?: ReviewStatus; phase?: ReviewPhase | null; progress?: number; error?: string | null },
   ): void {
     const current = this.getReview(id);
     if (!current) return;

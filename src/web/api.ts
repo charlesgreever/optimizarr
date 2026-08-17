@@ -49,7 +49,6 @@ export type InspectProgress = {
   pending: number;
   inspected: number;
   errors: number;
-  left?: number;
   total?: number;
   walking: boolean;
 };

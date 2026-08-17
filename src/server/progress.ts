@@ -78,10 +78,19 @@ export function parseCopiedBytes(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function reviewPhaseLabel(status: string, phase: string | null): string | null {
-  if (status === "discarding") return "Removing the sidecar";
+export const REVIEW_STATUSES = ["pending", "keeping", "kept", "discarded"] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
+export const REVIEW_PHASES = ["moving", "copying", "notifying"] as const;
+export type ReviewPhase = (typeof REVIEW_PHASES)[number];
+
+export function isReviewStatus(value: unknown): value is ReviewStatus {
+  return typeof value === "string" && (REVIEW_STATUSES as readonly string[]).includes(value);
+}
+
+export function reviewPhaseLabel(status: ReviewStatus | string, phase: ReviewPhase | string | null): string | null {
   if (status !== "keeping") return null;
-  if (phase === "notifying") return "Telling Radarr and the players";
+  if (phase === "notifying") return "Telling the library apps and players";
   if (phase === "copying") return "Copying sidecar into the library folder";
   return "Moving the sidecar onto the library file";
 }

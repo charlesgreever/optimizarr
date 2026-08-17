@@ -514,7 +514,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
     return inspectActionResponse(c, await catalog.inspectItem(Number(c.req.param("id")), { addStereo: true }));
   });
   app.get("/api/review", requireAuth, (c) => {
-    const items = store.listReviews(["pending", "keeping", "discarding"]);
+    const items = store.listReviews(["pending", "keeping"]);
     return c.json({
       items,
       message: items.length ? undefined : "Sidecars wait here until you Keep them into the library or Discard them.",

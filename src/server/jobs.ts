@@ -125,7 +125,7 @@ export class JobService {
         });
       }
     }
-    for (const review of this.store.listReviews(["keeping", "discarding"])) {
+    for (const review of this.store.listReviews(["keeping"])) {
       this.store.updateReview(review.id as number, {
         status: "pending",
         phase: null,

@@ -523,6 +523,7 @@ describe("phase 4 remux review keep", () => {
     const listed = await waitForReview(app, cookie, (items) => items[0]?.status === "pending" && Boolean(items[0]?.error));
     expect(listed[0].error).toMatch(/EACCES/);
     expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    expect(existsSync(String(review.sidecarPath))).toBe(true);
   });
 
   it("Discard leaves the original and removes the sidecar", async () => {

@@ -2,8 +2,44 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { InspectionReport } from "./inspect.ts";
 import { copyOptimizer, ffmpegOptimizer } from "./optimize.ts";
 import type { Transfer } from "./storage.ts";
+import type { SuggestionPlan } from "./suggest.ts";
+
+function inspectReport(over: Partial<InspectionReport> = {}): InspectionReport {
+  return {
+    path: "/f.mkv",
+    durationSec: 10,
+    sizeBytes: 5,
+    videoCodec: "hevc",
+    bitDepth: 8,
+    width: 1920,
+    height: 1080,
+    hdr: "sdr",
+    audio: [],
+    subtitles: [],
+    attachments: 0,
+    ...over,
+  };
+}
+
+function plan(over: Partial<SuggestionPlan> & Pick<SuggestionPlan, "actions">): SuggestionPlan {
+  return {
+    warning: null,
+    estimatedSavingsBytes: null,
+    overCap: false,
+    extraTracks: false,
+    category: "movie1080p",
+    sizePerHourGb: null,
+    keepAudio: ["eng"],
+    stripAudio: [],
+    keepSubs: [],
+    stripSubs: [],
+    healthy: false,
+    ...over,
+  };
+}
 
 describe("storage-aware optimize", () => {
   const dirs: string[] = [];
@@ -30,16 +66,8 @@ describe("storage-aware optimize", () => {
     const result = await copyOptimizer()({
       sourcePath: source,
       sidecarPath: sidecar,
-      plan: { actions: ["remux"], keepAudio: ["eng"], keepSubs: [], category: "movie1080p" },
-      report: {
-        durationSec: 10,
-        sizeBytes: 5,
-        videoCodec: "hevc",
-        width: 1920,
-        height: 1080,
-        audio: [],
-        subs: [],
-      } as never,
+      plan: plan({ actions: ["remux"] }),
+      report: inspectReport(),
       transfer,
     });
     expect(result.sidecarPath).toBe(sidecar);
@@ -68,13 +96,8 @@ describe("transcode must not silently copy", () => {
       ffmpegOptimizer(ffmpeg)({
         sourcePath: source,
         sidecarPath: sidecar,
-        plan: {
-          actions: ["transcode"],
-          keepAudio: ["eng"],
-          keepSubs: ["eng"],
-          category: "movie4kHdr",
-        } as never,
-        report: { durationSec: 6728, sizeBytes: 18, videoCodec: "hevc" } as never,
+        plan: plan({ actions: ["transcode"], keepAudio: ["eng"], keepSubs: ["eng"], category: "movie4kHdr" }),
+        report: inspectReport({ durationSec: 6728, sizeBytes: 18 }),
         backends: { cuda: true, vaapi: false, av1: false },
       }),
     ).rejects.toThrow(/nvenc init failed/i);
@@ -94,8 +117,8 @@ describe("transcode must not silently copy", () => {
     await ffmpegOptimizer(ffmpeg)({
       sourcePath: source,
       sidecarPath: sidecar,
-      plan: { actions: ["transcode"], keepAudio: ["eng"], keepSubs: [], category: "tv1080p" } as never,
-      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      plan: plan({ actions: ["transcode"], category: "tv1080p" }),
+      report: inspectReport(),
       backends: { cuda: true, vaapi: false, av1: false },
     }).catch(() => undefined);
     const args = readFileSync(argsLog, "utf8").trim().split("\n");
@@ -129,8 +152,8 @@ fs.writeFileSync(dest, "MEDIA");
     await ffmpegOptimizer(ffmpeg)({
       sourcePath: source,
       sidecarPath: sidecar,
-      plan: { actions: ["remux"], keepAudio: ["eng"], keepSubs: [], category: "tv1080p" } as never,
-      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      plan: plan({ actions: ["remux"], category: "tv1080p" }),
+      report: inspectReport(),
       onProgress: (update) => updates.push({ phase: update.phase, progress: update.progress }),
     });
     expect(updates.some((u) => u.phase === "remuxing" && u.progress === 0.5)).toBe(true);
@@ -159,8 +182,8 @@ fs.writeFileSync(dest, "MEDIA");
     const result = await ffmpegOptimizer(ffmpeg)({
       sourcePath: source,
       sidecarPath: sidecar,
-      plan: { actions: ["remux"], keepAudio: ["eng", "eng", "eng", "eng", "eng"], keepSubs: [], category: "movie4kHdr" } as never,
-      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      plan: plan({ actions: ["remux"], keepAudio: ["eng", "eng", "eng", "eng", "eng"], category: "movie4kHdr" }),
+      report: inspectReport(),
     });
     expect(result.sidecarPath).toBe(sidecar);
     expect(readFileSync(sidecar, "utf8")).toBe("MEDIA");
@@ -177,13 +200,13 @@ fs.writeFileSync(dest, "MEDIA");
     await ffmpegOptimizer(ffmpeg)({
       sourcePath: join(dir, "movie.mkv"),
       sidecarPath: join(dir, "out.mkv"),
-      plan: {
+      plan: plan({
         actions: ["transcode"],
         keepAudio: ["eng", "eng", "eng", "eng", "eng"],
         keepSubs: ["eng", "eng", "eng"],
         category: "movie4kHdr",
-      } as never,
-      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      }),
+      report: inspectReport(),
       backends: { cuda: true, vaapi: false, av1: false },
     }).catch(() => undefined);
     const args = readFileSync(argsLog, "utf8");
@@ -225,21 +248,27 @@ echo '{"format":{"duration":"10","size":"5"},"streams":[{"codec_type":"video","c
       await ffmpegOptimizer(ffmpeg)({
         sourcePath: source,
         sidecarPath: sidecar,
-        plan: {
+        plan: plan({
           actions: ["remux", "transcode"],
           keepAudio: ["eng"],
           stripAudio: ["spa"],
           keepSubs: ["eng"],
           stripSubs: ["spa"],
           category: "movie1080p",
-        } as never,
-        report: {
+        }),
+        report: inspectReport({
           durationSec: 10,
           sizeBytes: 8,
           videoCodec: "h264",
-          audio: [{ language: "eng" }, { language: "spa" }],
-          subtitles: [{ language: "spa" }, { language: "eng" }],
-        } as never,
+          audio: [
+            { type: "audio", language: "eng" },
+            { type: "audio", language: "spa" },
+          ],
+          subtitles: [
+            { type: "subtitle", language: "spa" },
+            { type: "subtitle", language: "eng" },
+          ],
+        }),
         backends: { cuda: true, vaapi: false, av1: false },
         onProgress: (update) => updates.push({ phase: update.phase }),
       });
@@ -277,21 +306,18 @@ echo '{"format":{"duration":"10","size":"5"},"streams":[{"codec_type":"video","c
     await ffmpegOptimizer(ffmpeg)({
       sourcePath: join(dir, "movie.mkv"),
       sidecarPath: join(dir, "out.mkv"),
-      plan: {
+      plan: plan({
         actions: ["transcode"],
         keepAudio: ["und"],
         stripAudio: [],
         keepSubs: [],
         stripSubs: [],
         category: "movie1080p",
-      } as never,
-      report: {
-        durationSec: 10,
-        sizeBytes: 5,
+      }),
+      report: inspectReport({
         videoCodec: "h264",
-        audio: [{ language: undefined }],
-        subtitles: [],
-      } as never,
+        audio: [{ type: "audio", language: undefined }],
+      }),
       backends: { cuda: true, vaapi: false, av1: false },
     }).catch(() => undefined);
     const args = readFileSync(argsLog, "utf8");
@@ -310,24 +336,21 @@ echo '{"format":{"duration":"10","size":"5"},"streams":[{"codec_type":"video","c
     await ffmpegOptimizer(ffmpeg)({
       sourcePath: join(dir, "movie.mkv"),
       sidecarPath: join(dir, "out.mkv"),
-      plan: {
+      plan: plan({
         actions: ["transcode", "add_stereo"],
         keepAudio: ["eng"],
-        stripAudio: [],
         keepSubs: ["eng"],
-        stripSubs: [],
         category: "movie4kHdr",
-      } as never,
-      report: {
+      }),
+      report: inspectReport({
         durationSec: 10,
         sizeBytes: 20,
-        videoCodec: "hevc",
         audio: [
-          { language: "eng", codec: "truehd", channels: 8, atmos: true },
-          { language: "eng", codec: "ac3", channels: 6 },
+          { type: "audio", language: "eng", codec: "truehd", channels: 8, atmos: true },
+          { type: "audio", language: "eng", codec: "ac3", channels: 6 },
         ],
-        subtitles: [{ language: "eng" }],
-      } as never,
+        subtitles: [{ type: "subtitle", language: "eng" }],
+      }),
       backends: { cuda: true, vaapi: false, av1: false },
     }).catch(() => undefined);
     const args = readFileSync(argsLog, "utf8").trim().split("\n");

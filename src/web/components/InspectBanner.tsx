@@ -24,15 +24,13 @@ export function InspectBanner() {
   }, []);
 
   if (!progress) return null;
-  const left = progress.left ?? progress.pending;
-  const total = progress.total ?? progress.pending + progress.inspected + progress.errors;
-  const done = total - left;
 
   if (progress.walking) {
     return (
       <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-        Movie and series lists are ready. Inspecting file {done} of {total} (ffprobe). {left} left.
-        {progress.errors > 0 ? ` ${progress.errors} files could not be probed.` : ""}
+        Movie and series lists are ready. Still reading leftover files: {progress.inspected} checked,{" "}
+        {progress.pending} left.
+        {progress.errors > 0 ? ` ${progress.errors} files could not be read.` : ""}
       </div>
     );
   }
@@ -41,7 +39,7 @@ export function InspectBanner() {
     return (
       <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
         <span>
-          {progress.errors} file{progress.errors === 1 ? "" : "s"} could not be probed.
+          {progress.errors} file{progress.errors === 1 ? "" : "s"} could not be read.
         </span>
         <button type="button" className="text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setDismissed(true)}>
           Dismiss

@@ -19,7 +19,7 @@ export function Review() {
   const [items, setItems] = useState<ReviewRow[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busy, setBusy] = useState<{ id: number; kind: "keep" | "discard" } | null>(null);
 
   async function load() {
     const data = await api.review();
@@ -31,11 +31,13 @@ export function Review() {
     load().catch((e: Error) => setError(e.message));
   }, []);
 
-  const hasActive = items.some((item) => item.status === "keeping" || item.status === "discarding");
+  const hasActive = items.some((item) => item.status === "keeping");
   useEffect(() => {
     if (!hasActive) return;
     const timer = window.setInterval(() => {
-      void load().catch(() => undefined);
+      void load().catch(() => {
+        // A background poll must not replace a Keep error the operator already sees.
+      });
     }, 1500);
     return () => window.clearInterval(timer);
   }, [hasActive]);
@@ -70,7 +72,7 @@ export function Review() {
               {(item.status === "keeping" || item.phaseLabel) && (
                 <p className="mt-3 text-sm text-amber-300">
                   {item.phaseLabel || "Moving the sidecar onto the library file"}
-                  {item.status === "keeping" && item.progress
+                  {item.status === "keeping" && item.phase === "copying" && item.progress
                     ? ` · ${Math.round(Math.min(1, item.progress) * 100)}%`
                     : ""}
                 </p>
@@ -80,10 +82,10 @@ export function Review() {
                 <button
                   className="btn !w-auto"
                   type="button"
-                  disabled={busyId === item.id || item.status === "keeping" || item.status === "discarding"}
+                  disabled={busy?.id === item.id || item.status === "keeping"}
                   onClick={() => {
                     void (async () => {
-                      setBusyId(item.id);
+                      setBusy({ id: item.id, kind: "keep" });
                       setError(null);
                       try {
                         await api.keepReview(item.id);
@@ -91,20 +93,20 @@ export function Review() {
                       } catch (e) {
                         setError(e instanceof Error ? e.message : "Could not keep this sidecar.");
                       } finally {
-                        setBusyId(null);
+                        setBusy(null);
                       }
                     })();
                   }}
                 >
-                  {item.status === "keeping" || busyId === item.id ? "Keeping…" : "Keep"}
+                  {item.status === "keeping" || (busy?.id === item.id && busy.kind === "keep") ? "Keeping…" : "Keep"}
                 </button>
                 <button
                   className="btn !w-auto !bg-zinc-700 !text-zinc-100"
                   type="button"
-                  disabled={busyId === item.id || item.status === "keeping" || item.status === "discarding"}
+                  disabled={busy?.id === item.id || item.status === "keeping"}
                   onClick={() => {
                     void (async () => {
-                      setBusyId(item.id);
+                      setBusy({ id: item.id, kind: "discard" });
                       setError(null);
                       try {
                         await api.discardReview(item.id);
@@ -112,12 +114,12 @@ export function Review() {
                       } catch (e) {
                         setError(e instanceof Error ? e.message : "Could not discard this sidecar.");
                       } finally {
-                        setBusyId(null);
+                        setBusy(null);
                       }
                     })();
                   }}
                 >
-                  {busyId === item.id ? "Discarding…" : "Discard"}
+                  {busy?.id === item.id && busy.kind === "discard" ? "Discarding…" : "Discard"}
                 </button>
               </div>
             </article>

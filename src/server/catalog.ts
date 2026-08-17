@@ -8,7 +8,6 @@ export type InspectProgress = {
   pending: number;
   inspected: number;
   errors: number;
-  left: number;
   total: number;
   walking: boolean;
 };
@@ -44,7 +43,7 @@ export class Catalog {
       else inspected += 1;
     }
     const total = pending + inspected + errors;
-    return { pending, inspected, errors, left: pending, total, walking: this.walk !== null };
+    return { pending, inspected, errors, total, walking: this.walk !== null };
   }
 
   startBackgroundInspect(): void {
@@ -79,7 +78,7 @@ export class Catalog {
         return { onSuggestions: false, error: "Could not inspect this file." };
       }
       if (!existing || isFailedInspection(existing)) {
-        this.store.saveInspection(itemId, { probeFailed: true }, new Date().toISOString(), sourceSig);
+        this.store.saveInspection(itemId, failedInspection(), new Date().toISOString(), sourceSig);
         return { onSuggestions: false, error: "Could not inspect this file." };
       }
       report = existing as InspectionReport;
@@ -168,8 +167,14 @@ export class Catalog {
   }
 }
 
-export function isFailedInspection(report: unknown): boolean {
-  return Boolean(report && typeof report === "object" && (report as { probeFailed?: unknown }).probeFailed === true);
+export type FailedInspection = { probeFailed: true };
+
+export function failedInspection(): FailedInspection {
+  return { probeFailed: true };
+}
+
+export function isFailedInspection(report: unknown): report is FailedInspection {
+  return Boolean(report && typeof report === "object" && (report as FailedInspection).probeFailed === true);
 }
 
 function yieldWalk(): Promise<void> {
