@@ -121,6 +121,7 @@ export class LibrarySync {
         hdr: movie.hdr,
         size: movie.size,
         posterRemoteUrl: movie.posterRemoteUrl,
+        tags: movie.tags,
         readable,
         pathError: hasPath ? (readable ? null : UNREADABLE) : noFileMessage(instance.kind),
         updatedAt,

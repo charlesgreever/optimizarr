@@ -17,6 +17,7 @@ export type RemoteItem = {
   hdr: string | null;
   size: number | null;
   posterRemoteUrl: string | null;
+  tags: string[];
 };
 
 export class ArrError extends Error {
@@ -40,11 +41,13 @@ export class ArrClient {
 
   async listMovies(instance: ArrInstance): Promise<RemoteItem[]> {
     const rows = await this.getJsonArray(`${instance.url}/api/v3/movie`, instance.apiKey);
-    return rows.map((raw) => withResolvedPoster(parseMovie(raw), instance.url));
+    const tags = await this.listTagNames(instance);
+    return rows.map((raw) => withResolvedPoster(resolveTagNames(parseMovie(raw), tags), instance.url));
   }
 
   async listEpisodes(instance: ArrInstance): Promise<RemoteItem[]> {
     const series = await this.getJsonArray(`${instance.url}/api/v3/series`, instance.apiKey);
+    const tags = await this.listTagNames(instance);
     const out: RemoteItem[] = [];
     for (const show of series) {
       const seriesId = Number(show.id);
@@ -68,7 +71,10 @@ export class ArrClient {
         const attached = episodeFilePath(ep)
           ? ep
           : { ...ep, episodeFile: filesById.get(Number(ep.episodeFileId)) ?? ep.episodeFile };
-        const parsed = parseEpisode(attached, title, seriesId, seriesPoster);
+        const parsed = resolveTagNames(
+          parseEpisode(attached, title, seriesId, seriesPoster, stringList(show.tags)),
+          tags,
+        );
         if (parsed) {
           if (!parsed.folderPath) parsed.folderPath = folderPath;
           out.push(withResolvedPoster(parsed, instance.url));
@@ -92,6 +98,15 @@ export class ArrClient {
       throw new ArrError(`Arr returned HTTP ${res.status}`);
     }
     return res.json();
+  }
+
+  private async listTagNames(instance: ArrInstance): Promise<Map<string, string>> {
+    try {
+      const rows = await this.getJsonArray(`${instance.url}/api/v3/tag`, instance.apiKey);
+      return new Map(rows.map((row) => [String(row.id), String(row.label ?? row.id)]));
+    } catch {
+      return new Map();
+    }
   }
 
   private async getJsonArray(url: string, apiKey: string): Promise<Record<string, unknown>[]> {
@@ -123,6 +138,7 @@ export function parseMovie(raw: Record<string, unknown>): RemoteItem {
     hdr: hdrOf(mediaInfo),
     size: typeof movieFile.size === "number" ? movieFile.size : null,
     posterRemoteUrl: posterUrlFromImages(raw.images),
+    tags: stringList(raw.tags),
   };
 }
 
@@ -180,6 +196,7 @@ export function parseEpisode(
   seriesTitle: string,
   seriesId: number | null = null,
   seriesPoster: string | null = null,
+  seriesTags: string[] = [],
 ): RemoteItem | null {
   const episodeFile = (raw.episodeFile ?? {}) as Record<string, unknown>;
   const filePath = typeof episodeFile.path === "string" ? episodeFile.path : "";
@@ -206,7 +223,22 @@ export function parseEpisode(
     hdr: hdrOf(mediaInfo),
     size: typeof episodeFile.size === "number" ? episodeFile.size : null,
     posterRemoteUrl: seriesPoster ?? posterUrlFromImages(raw.images),
+    tags: [...new Set([...seriesTags, ...stringList(raw.tags)])],
   };
+}
+
+function resolveTagNames(item: RemoteItem, names: Map<string, string>): RemoteItem;
+function resolveTagNames(item: null, names: Map<string, string>): null;
+function resolveTagNames(item: RemoteItem | null, names: Map<string, string>): RemoteItem | null {
+  if (!item) return null;
+  return { ...item, tags: item.tags.map((tag) => names.get(tag) ?? tag) };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string | number => typeof entry === "string" || typeof entry === "number")
+    .map(String);
 }
 
 function normalizeUrl(url: string): string {

@@ -55,6 +55,23 @@ describe("phase 2 radarr sync", () => {
     return { app, store, sync, cookie: cookieHeader(first) };
   }
 
+  it("stores Arr tags and matches tag exclusions without matching title text", async () => {
+    const { store, app, cookie } = await setup([
+      { id: 8, title: "Archive", tags: [42], movieFile: { path: "/archive.mkv", size: 10 } },
+      { id: 9, title: "Tag 42 in title", tags: [7], movieFile: { path: "/other.mkv", size: 10 } },
+    ]);
+    await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr", apiKey: "k" }),
+    });
+    await app.request("/api/library/refresh", { method: "POST", headers: { cookie } });
+    store.addExclusion("tag", "42");
+    const [archive, titleOnly] = store.listLibraryItems("movie");
+    expect(store.isExcluded(archive)).toBe(true);
+    expect(store.isExcluded(titleOnly)).toBe(false);
+  });
+
   it("saves a Radarr instance without echoing the API key and tests the connection", async () => {
     const { app, store, cookie } = await setup([]);
     const created = await app.request("/api/instances", {

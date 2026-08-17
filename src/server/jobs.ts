@@ -349,15 +349,25 @@ export class JobService {
         this.failKeep(reviewId, message);
         return { ok: false, notify: [], error: message };
       }
+      const replacementPath = `${review.sourcePath}.optimizarr-replacement-${reviewId}`;
       try {
         this.store.updateReview(reviewId, { phase: "copying", progress: 0, error: null });
-        await this.transferFor(this.store.getSettings()).move(review.sidecarPath, review.sourcePath, (copied, total) => {
+        const transfer = this.transferFor(this.store.getSettings());
+        await transfer.copy(review.sidecarPath, replacementPath, (copied, total) => {
           this.store.updateReview(reviewId, {
             phase: "copying",
             progress: total > 0 ? Math.min(copied / total, 0.99) : 0,
           });
         });
+        try {
+          await this.fs.rename(replacementPath, review.sourcePath);
+        } catch (replaceErr) {
+          await this.fs.unlink(replacementPath).catch(() => undefined);
+          throw replaceErr;
+        }
+        await this.fs.unlink(review.sidecarPath).catch(() => undefined);
       } catch (moveErr) {
+        await this.fs.unlink(replacementPath).catch(() => undefined);
         const message = moveErr instanceof Error ? moveErr.message : "Could not replace the library file";
         this.failKeep(reviewId, message);
         return { ok: false, notify: [], error: message };
@@ -388,12 +398,22 @@ export class JobService {
   async discard(reviewId: number): Promise<{ ok: boolean; error?: string }> {
     const review = this.store.getReview(reviewId);
     if (!review || review.status !== "pending") return { ok: false, error: "Review not found" };
-    await this.fs.unlink(review.sidecarPath).catch(() => undefined);
+    try {
+      await this.fs.unlink(review.sidecarPath);
+    } catch (err) {
+      if (!isMissingFile(err)) {
+        return { ok: false, error: err instanceof Error ? err.message : "Could not delete the sidecar" };
+      }
+    }
     this.store.setReviewStatus(reviewId, "discarded");
     const item = this.store.getLibraryItem(review.itemId);
     this.store.addHistory(review.itemId, item ? displayTitle(item) : "item", "discarded");
     return { ok: true };
   }
+}
+
+function isMissingFile(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && "code" in err && (err as { code: string }).code === "ENOENT");
 }
 
 function isClosedStore(err: unknown): boolean {

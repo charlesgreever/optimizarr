@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ArrClient } from "./arr.ts";
 import { createApp } from "./app.ts";
-import { Catalog } from "./catalog.ts";
+import { Catalog, isFailedInspection } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
@@ -211,6 +211,19 @@ describe("phase 3 catalog", () => {
     store.upsertLibraryItem({ ...item!, size: 99 });
     expect(await counting.inspectPending()).toBe(1);
     expect(probed).toEqual(["/big.mkv"]);
+  });
+
+  it("marks changed media failed instead of reusing its previous inspection", async () => {
+    const { store } = await setup();
+    const item = store.listLibraryItems("movie").find((row) => row.title === "Giant AVC")!;
+    expect(isFailedInspection(store.getInspection(item.id))).toBe(false);
+    store.upsertLibraryItem({ ...item, size: 99 });
+    const catalog = new Catalog(store, () => {
+      throw new Error("ffprobe failed");
+    });
+    expect(await catalog.inspectItem(item.id)).toEqual({ onSuggestions: false, error: "Could not inspect this file." });
+    expect(isFailedInspection(store.getInspection(item.id))).toBe(true);
+    expect(store.getInspectionSig(item.id)).toBe(catalog.sourceSig(item.path, 99));
   });
 
   it("reports inspect progress on GET /api/library/inspect", async () => {

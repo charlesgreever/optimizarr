@@ -1,6 +1,7 @@
 export type ArrKind = "radarr" | "sonarr";
 export type PlayerKind = "plex" | "jellyfin" | "other";
 export type ItemType = "movie" | "episode";
+export type ExclusionKind = "path" | "profile" | "tag" | "title";
 
 export type ArrInstance = {
   id: number;
@@ -47,6 +48,7 @@ export type LibraryItem = {
   pathError: string | null;
   updatedAt: string;
   posterRemoteUrl?: string | null;
+  tags: string[];
 };
 
 export type PublicLibraryItem = Omit<LibraryItem, "posterRemoteUrl"> & { hasPoster: boolean };
