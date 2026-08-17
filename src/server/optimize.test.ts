@@ -104,4 +104,57 @@ describe("transcode must not silently copy", () => {
     expect(output.endsWith(".mkv.tmp")).toBe(false);
     expect(output).toContain(".tmp.mkv");
   });
+
+  it("finishes an encode when ffmpeg writes more than 1MB of decoder warnings", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-nal-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    writeFileSync(
+      ffmpeg,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const dest = process.argv[process.argv.length - 1];
+process.stderr.write("Skipping NAL unit 63\\n".repeat(80000));
+fs.mkdirSync(require("node:path").dirname(dest), { recursive: true });
+fs.writeFileSync(dest, "MEDIA");
+`,
+    );
+    chmodSync(ffmpeg, 0o755);
+    const source = join(dir, "movie.mkv");
+    const sidecar = join(dir, "review", "American_Underdog.476.mkv");
+    writeFileSync(source, "MEDIA");
+    const result = await ffmpegOptimizer(ffmpeg)({
+      sourcePath: source,
+      sidecarPath: sidecar,
+      plan: { actions: ["remux"], keepAudio: ["eng", "eng", "eng", "eng", "eng"], keepSubs: [], category: "movie4kHdr" } as never,
+      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+    });
+    expect(result.sidecarPath).toBe(sidecar);
+    expect(readFileSync(sidecar, "utf8")).toBe("MEDIA");
+  });
+
+  it("maps each preferred language once", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-map-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(ffmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsLog}"\nexit 1\n`);
+    chmodSync(ffmpeg, 0o755);
+    writeFileSync(join(dir, "movie.mkv"), "MEDIA");
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: join(dir, "movie.mkv"),
+      sidecarPath: join(dir, "out.mkv"),
+      plan: {
+        actions: ["transcode"],
+        keepAudio: ["eng", "eng", "eng", "eng", "eng"],
+        keepSubs: ["eng", "eng", "eng"],
+        category: "movie4kHdr",
+      } as never,
+      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      backends: { cuda: true, vaapi: false, av1: false },
+    }).catch(() => undefined);
+    const args = readFileSync(argsLog, "utf8");
+    expect(args.split("0:a:m:language:eng").length - 1).toBe(1);
+    expect(args.split("0:s:m:language:eng").length - 1).toBe(1);
+  });
 });

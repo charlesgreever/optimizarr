@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { mkdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pickEncoder, type EncodeBackends, detectBackends } from "./hardware.ts";
@@ -7,8 +6,6 @@ import { ffprobeFile, type InspectionReport } from "./inspect.ts";
 import { createStorage, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
 import { DEFAULT_SIZE_CAPS } from "./types.ts";
-
-const execFileAsync = promisify(execFile);
 
 export type OptimizeResult = {
   sidecarPath: string;
@@ -137,6 +134,17 @@ async function probedDuration(path: string, fallback: number, requireProbe: bool
   return fallback;
 }
 
+function usefulFfmpegLog(text: string): string {
+  const lines = text.split(/\r?\n/).filter((line) => {
+    if (/Skipping NAL unit/i.test(line)) return false;
+    if (/Last message repeated/i.test(line)) return false;
+    return line.trim().length > 0;
+  });
+  const errors = lines.filter((line) => /error|invalid|fail|unable|not supported|conversion|does not/i.test(line));
+  const pick = (errors.length ? errors : lines).join(" ").replace(/\s+/g, " ").trim();
+  return pick.length <= 800 ? pick : pick.slice(-800);
+}
+
 function ffmpegDetail(err: unknown): string {
   if (!err || typeof err !== "object") return err instanceof Error ? err.message : "";
   const rec = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
@@ -145,10 +153,50 @@ function ffmpegDetail(err: unknown): string {
     if (value && typeof value === "object" && Buffer.isBuffer(value)) return value.toString("utf8");
     return "";
   };
-  const text = (asText(rec.stderr) || asText(rec.stdout) || (typeof rec.message === "string" ? rec.message : ""))
-    .trim()
-    .replace(/\s+/g, " ");
-  return text.length <= 800 ? text : text.slice(-800);
+  return usefulFfmpegLog(asText(rec.stderr) || asText(rec.stdout) || (typeof rec.message === "string" ? rec.message : ""));
+}
+
+/** Drain ffmpeg stdio so Dolby Vision NAL warnings cannot fill Node's 1MB execFile buffer and kill the encode. */
+function runFfmpeg(bin: string, args: string[], signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { signal });
+    const chunks: string[] = [];
+    let stored = 0;
+    const keep = 16 * 1024;
+    const take = (buf: Buffer) => {
+      const text = buf.toString("utf8");
+      chunks.push(text);
+      stored += text.length;
+      while (stored > keep && chunks.length > 1) {
+        stored -= chunks[0].length;
+        chunks.shift();
+      }
+    };
+    child.stderr?.on("data", take);
+    child.stdout?.on("data", take);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const err = new Error(`ffmpeg exited ${code}`) as Error & { stderr: string };
+      err.stderr = usefulFfmpegLog(chunks.join(""));
+      reject(err);
+    });
+  });
+}
+
+function uniqueLangs(langs: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const lang of langs ?? []) {
+    if (!lang || lang === "und") continue;
+    if (seen.has(lang)) continue;
+    seen.add(lang);
+    out.push(lang);
+  }
+  return out;
 }
 
 export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimizer {
@@ -156,13 +204,11 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     await mkdir(dirname(req.sidecarPath), { recursive: true });
     const tmp = tempSidecarPath(req.sidecarPath);
     const args = ["-hide_banner", "-y", "-nostdin", "-i", req.sourcePath, "-map", "0:v:0"];
-    for (const lang of req.plan.keepAudio ?? []) {
-      if (lang && lang !== "und") args.push("-map", `0:a:m:language:${lang}`);
-    }
-    if (!req.plan.keepAudio?.length) args.push("-map", "0:a?");
-    for (const lang of req.plan.keepSubs ?? []) {
-      if (lang && lang !== "und") args.push("-map", `0:s:m:language:${lang}`);
-    }
+    const audioLangs = uniqueLangs(req.plan.keepAudio);
+    const subLangs = uniqueLangs(req.plan.keepSubs);
+    for (const lang of audioLangs) args.push("-map", `0:a:m:language:${lang}`);
+    if (!audioLangs.length) args.push("-map", "0:a?");
+    for (const lang of subLangs) args.push("-map", `0:s:m:language:${lang}`);
     args.push("-map", "0:t?", "-map_chapters", "0");
     if (req.plan.actions.includes("transcode")) {
       const backends = req.backends ?? detectBackends();
@@ -178,7 +224,7 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     }
     args.push(tmp);
     try {
-      await execFileAsync(ffmpeg, args, req.signal ? { signal: req.signal } : {});
+      await runFfmpeg(ffmpeg, args, req.signal);
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
       if (err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError") {
