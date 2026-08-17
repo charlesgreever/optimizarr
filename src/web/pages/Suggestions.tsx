@@ -132,10 +132,11 @@ export function Suggestions() {
 
   return (
     <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Suggestions</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <div className="page-eyebrow">Opportunities</div>
+          <h1 className="page-title">Suggestions</h1>
+          <p className="page-description">
             Approve work here. Queued items run in{" "}
             <Link to="/queue" className="text-amber-400 hover:text-amber-300">
               Queue
@@ -157,7 +158,7 @@ export function Suggestions() {
             {busyId === "all" ? "Queuing…" : `Add selected to queue${selectedIds.length ? ` (${selectedIds.length})` : ""}`}
           </button>
           <button
-            className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+            className="btn-secondary"
             type="button"
             disabled={busyId !== null || items.length === 0}
             onClick={() => void queueMany(items.map((i) => i.id))}
@@ -166,23 +167,23 @@ export function Suggestions() {
           </button>
         </div>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="panel flex flex-wrap items-center gap-3 p-3.5">
         <input
           className="input max-w-xs"
           placeholder="Search show, episode, or codec"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
+        <label className="flex items-center gap-2 rounded-lg px-2 text-sm text-zinc-300">
           <input type="checkbox" checked={overCap} onChange={(e) => setOverCap(e.target.checked)} />
           Over size cap
         </label>
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
+        <label className="flex items-center gap-2 rounded-lg px-2 text-sm text-zinc-300">
           <input type="checkbox" checked={extraTracks} onChange={(e) => setExtraTracks(e.target.checked)} />
           Extra tracks
         </label>
         <button
-          className="text-xs text-zinc-400 hover:text-zinc-200"
+          className="btn-secondary ml-auto !py-2"
           type="button"
           onClick={() => setView((v) => (v === "cards" ? "list" : "cards"))}
         >
@@ -192,13 +193,13 @@ export function Suggestions() {
       {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
       {status && <p className="mt-4 text-sm text-emerald-400">{status}</p>}
       {items.length === 0 ? (
-        <div className="mt-8 max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-8">
+        <div className="empty-panel mt-6">
           <p className="text-sm text-zinc-400">{message || "No suggestions."}</p>
         </div>
       ) : (
-        <ul className={view === "cards" ? "mt-6 grid gap-3 sm:grid-cols-1 xl:grid-cols-2" : "mt-6 space-y-3"}>
+        <ul className={view === "cards" ? "mt-5 grid gap-4 sm:grid-cols-1 xl:grid-cols-2" : "mt-5 space-y-3"}>
           {items.map((item) => (
-            <li key={item.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <li key={item.id} className="panel p-4 transition hover:border-white/[0.12] hover:bg-zinc-900/70">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <label className="flex min-w-0 flex-1 items-start gap-3">
                   <input
@@ -211,11 +212,11 @@ export function Suggestions() {
                     itemId={item.itemId}
                     hasPoster={item.hasPoster}
                     alt=""
-                    className="h-20 w-[3.35rem] rounded-md"
+                    className="h-24 w-16 rounded-xl shadow-md shadow-black/30"
                   />
                   <span className="min-w-0">
-                    <span className="block font-medium">{item.displayTitle || item.title}</span>
-                    <span className="block text-xs text-zinc-500">{item.instanceName}</span>
+                    <span className="block font-semibold tracking-[-0.01em]">{item.displayTitle || item.title}</span>
+                    <span className="mt-1 block text-[0.68rem] font-medium uppercase tracking-wider text-zinc-600">{item.instanceName}</span>
                     {item.reasons && item.reasons.length > 0 ? (
                       <ul className="mt-1 space-y-0.5 text-sm text-zinc-300">
                         {item.reasons.map((reason) => (
@@ -227,9 +228,9 @@ export function Suggestions() {
                         Plan: {item.actions.join(", ") || "none"}
                       </span>
                     )}
-                    <div className="mt-2 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
-                      <div>
-                        <div className="font-medium text-zinc-400">Now</div>
+                    <div className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+                      <div className="rounded-xl border border-white/[0.06] bg-black/15 p-3">
+                        <div className="mb-1 font-semibold uppercase tracking-wider text-zinc-500">Now</div>
                         <div>
                           {item.now?.codec || item.videoCodec || "unknown codec"}
                           {item.now?.quality || item.quality ? ` · ${item.now?.quality || item.quality}` : ""}
@@ -239,8 +240,8 @@ export function Suggestions() {
                             : ""}
                         </div>
                       </div>
-                      <div>
-                        <div className="font-medium text-zinc-400">After</div>
+                      <div className="rounded-xl border border-amber-300/10 bg-amber-400/[0.035] p-3">
+                        <div className="mb-1 font-semibold uppercase tracking-wider text-amber-300/70">After</div>
                         <div>
                           {item.after?.codec || "—"}
                           {item.after?.sizeBytes != null ? ` · ${formatSize(item.after.sizeBytes)}` : ""}
@@ -262,7 +263,7 @@ export function Suggestions() {
                     {busyId === item.id ? "Adding…" : "Add to queue"}
                   </button>
                   <button
-                    className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                    className="btn-secondary"
                     type="button"
                     disabled={busyId !== null}
                     onClick={() => {

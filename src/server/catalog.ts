@@ -71,17 +71,8 @@ export class Catalog {
     try {
       report = await this.probe(item.path);
     } catch {
-      let existing: unknown;
-      try {
-        existing = this.store.getInspection(itemId);
-      } catch {
-        return { onSuggestions: false, error: "Could not inspect this file." };
-      }
-      if (!existing || isFailedInspection(existing)) {
-        this.store.saveInspection(itemId, failedInspection(), new Date().toISOString(), sourceSig);
-        return { onSuggestions: false, error: "Could not inspect this file." };
-      }
-      report = existing as InspectionReport;
+      this.store.saveInspection(itemId, failedInspection(), new Date().toISOString(), sourceSig);
+      return { onSuggestions: false, error: "Could not inspect this file." };
     }
     this.store.saveInspection(itemId, report, new Date().toISOString(), sourceSig);
     const plan = buildSuggestion(report, this.store.getSettings(), item.type, {

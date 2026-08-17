@@ -57,6 +57,7 @@ describe("arr rename", () => {
         readable: true,
         pathError: null,
         updatedAt: "",
+        tags: [],
       },
     );
     expect(body).toEqual({ name: "RescanSeries", seriesId: 3 });

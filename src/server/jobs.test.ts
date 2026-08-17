@@ -437,7 +437,47 @@ describe("phase 4 remux review keep", () => {
       compare: {},
     });
     const { JobService } = await import("./jobs.ts");
-    const moved: string[] = [];
+    const copied: string[] = [];
+    let renames = 0;
+    const jobs = new JobService(
+      store,
+      async () => {
+        throw new Error("unused");
+      },
+      fetch,
+      {
+        rename: async (src, dest) => {
+          renames += 1;
+          if (renames === 1) throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+          writeFileSync(dest, readFileSync(src));
+        },
+        unlink: async () => undefined,
+        mkdir: async () => undefined,
+        stat: async () => ({ size: 1 }) as never,
+      },
+      undefined,
+      () => new Date(),
+      () => ({
+        copy: async (src, dest) => {
+          copied.push(`${src} -> ${dest}`);
+          writeFileSync(dest, "NEW");
+          return { method: "ssh", bytes: 3 };
+        },
+        move: async () => ({ method: "ssh" as const, bytes: 3 }),
+      }),
+    );
+    const result = await jobs.keep(store.listReviews()[0].id as number);
+    expect(result.ok).toBe(true);
+    expect(copied).toEqual([`${sidecar} -> ${source}.optimizarr-replacement-1`]);
+    expect(readFileSync(source, "utf8")).toBe("NEW");
+  });
+
+  it("keeps the original and sidecar when a cross-device copy stops early", async () => {
+    const { store, source, review } = await setup();
+    const item = store.listLibraryItems("movie")[0];
+    const sidecar = join(review, "x.mkv");
+    writeFileSync(sidecar, "NEW");
+    store.createReview({ itemId: item.id, jobId: 1, sourcePath: source, sidecarPath: sidecar, compare: {} });
     const jobs = new JobService(
       store,
       async () => {
@@ -455,18 +495,17 @@ describe("phase 4 remux review keep", () => {
       undefined,
       () => new Date(),
       () => ({
-        copy: async () => ({ method: "ssh" as const, bytes: 3 }),
-        move: async (src, dest) => {
-          moved.push(`${src} -> ${dest}`);
-          writeFileSync(dest, "NEW");
-          return { method: "ssh", bytes: 3 };
+        copy: async (_src, dest) => {
+          writeFileSync(dest, "PARTIAL");
+          throw new Error("connection reset");
         },
+        move: async () => ({ method: "proxy" as const, bytes: 0 }),
       }),
     );
     const result = await jobs.keep(store.listReviews()[0].id as number);
-    expect(result.ok).toBe(true);
-    expect(moved).toEqual([`${sidecar} -> ${source}`]);
-    expect(readFileSync(source, "utf8")).toBe("NEW");
+    expect(result).toMatchObject({ ok: false, error: "connection reset" });
+    expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
+    expect(readFileSync(sidecar, "utf8")).toBe("NEW");
   });
 
   it("keeps both files when Keep cannot replace the original", async () => {
@@ -544,8 +583,30 @@ describe("phase 4 remux review keep", () => {
     });
   });
 
+  it("keeps a review pending when Discard cannot delete its sidecar", async () => {
+    const { store, source, review } = await setup();
+    const item = store.listLibraryItems("movie")[0];
+    const sidecar = join(review, "x.mkv");
+    writeFileSync(sidecar, "NEW");
+    store.createReview({ itemId: item.id, jobId: 1, sourcePath: source, sidecarPath: sidecar, compare: {} });
+    const jobs = new JobService(store, async () => {
+      throw new Error("unused");
+    }, fetch, {
+      rename: async () => undefined,
+      unlink: async () => {
+        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      },
+      mkdir: async () => undefined,
+      stat: async () => ({ size: 1 }) as never,
+    });
+    expect(await jobs.discard(store.listReviews()[0].id as number)).toEqual({ ok: false, error: "permission denied" });
+    expect(store.listReviews()).toHaveLength(1);
+    expect(readFileSync(sidecar, "utf8")).toBe("NEW");
+  });
+
   it("returns Keep before a slow move finishes and rejects a second Keep", async () => {
     let release!: () => void;
+    let keepRenames = 0;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -556,8 +617,10 @@ describe("phase 4 remux review keep", () => {
           optimize,
           fetchImpl,
           {
-            rename: async () => {
-              throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+            rename: async (src, dest) => {
+              keepRenames += 1;
+              if (keepRenames === 1) throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+              writeFileSync(dest, readFileSync(src));
             },
             unlink: async () => undefined,
             mkdir: async () => undefined,
@@ -566,12 +629,12 @@ describe("phase 4 remux review keep", () => {
           undefined,
           () => new Date(),
           () => ({
-            copy: async () => ({ method: "ssh" as const, bytes: 1 }),
-            move: async (src, dest) => {
+            copy: async (src, dest) => {
               await gate;
               writeFileSync(dest, readFileSync(src));
               return { method: "ssh" as const, bytes: 1 };
             },
+            move: async () => ({ method: "ssh" as const, bytes: 1 }),
           }),
         ),
     });

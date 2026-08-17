@@ -8,7 +8,7 @@ import { explainSuggestion } from "./suggest.ts";
 import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
-import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
+import type { ArrInstance, ArrKind, ExclusionKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
 import {
   isJobPhase,
   jobPhaseLabel,
@@ -17,11 +17,17 @@ import {
   type ReviewPhase,
   type ReviewStatus,
 } from "./progress.ts";
+import { ExclusionStore } from "./store-exclusions.ts";
+import { HistoryStore } from "./store-history.ts";
+import { WidgetStore } from "./store-widget.ts";
 
 export class Store {
   readonly db: DatabaseSync;
   readonly dataDir: string;
   private readonly secretKey: Buffer;
+  private readonly exclusions: ExclusionStore;
+  private readonly history: HistoryStore;
+  private readonly widget: WidgetStore;
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
@@ -31,6 +37,9 @@ export class Store {
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.migrate();
+    this.exclusions = new ExclusionStore(this.db);
+    this.history = new HistoryStore(this.db);
+    this.widget = new WidgetStore(this.db);
   }
 
   close(): void {
@@ -159,6 +168,7 @@ export class Store {
     this.ensureColumn("library_items", "episode_number", "INTEGER");
     this.ensureColumn("library_items", "series_id", "INTEGER");
     this.ensureColumn("library_items", "poster_remote_url", "TEXT");
+    this.ensureColumn("library_items", "tags_json", "TEXT NOT NULL DEFAULT '[]'");
     this.ensureColumn("inspections", "source_sig", "TEXT");
     this.ensureColumn("jobs", "phase", "TEXT");
     this.ensureColumn("jobs", "eta_sec", "REAL");
@@ -339,14 +349,16 @@ export class Store {
     this.db.prepare("DELETE FROM arr_instances WHERE id = ?").run(id);
   }
 
-  upsertLibraryItem(item: Omit<LibraryItem, "id" | "instanceName" | "instanceKind">): LibraryItem {
+  upsertLibraryItem(
+    item: Omit<LibraryItem, "id" | "instanceName" | "instanceKind" | "tags"> & { tags?: string[] },
+  ): LibraryItem {
     this.db
       .prepare(
         `INSERT INTO library_items (
           instance_id, external_id, type, title, series_title, path, folder_path,
           quality, video_codec, resolution, hdr, size, readable, path_error, updated_at,
-          season_number, episode_number, series_id, poster_remote_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season_number, episode_number, series_id, poster_remote_url, tags_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id, type, external_id) DO UPDATE SET
           title = excluded.title,
           series_title = excluded.series_title,
@@ -363,7 +375,8 @@ export class Store {
           season_number = excluded.season_number,
           episode_number = excluded.episode_number,
           series_id = excluded.series_id,
-          poster_remote_url = excluded.poster_remote_url`,
+          poster_remote_url = excluded.poster_remote_url,
+          tags_json = excluded.tags_json`,
       )
       .run(
         item.instanceId,
@@ -385,6 +398,7 @@ export class Store {
         item.episodeNumber,
         item.seriesId,
         item.posterRemoteUrl ?? null,
+        JSON.stringify(item.tags ?? []),
       );
     const saved = this.getLibraryItemByExternal(item.instanceId, item.type, item.externalId);
     if (!saved) throw new Error("failed to upsert library item");
@@ -820,38 +834,23 @@ export class Store {
   }
 
   addHistory(itemId: number | null, title: string, action: string, detail?: string): void {
-    this.db
-      .prepare("INSERT INTO history (item_id, title, action, detail, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(itemId, title, action, detail ?? null, new Date().toISOString());
+    this.history.add(itemId, title, action, detail);
   }
 
   listHistory(): Array<Record<string, unknown>> {
-    return this.db
-      .prepare("SELECT id, item_id AS itemId, title, action, detail, created_at AS createdAt FROM history ORDER BY id DESC")
-      .all() as Array<Record<string, unknown>>;
+    return this.history.list();
   }
 
-  addExclusion(kind: string, value: string): void {
-    this.db.prepare("INSERT INTO exclusions (kind, value) VALUES (?, ?)").run(kind, value);
+  addExclusion(kind: ExclusionKind, value: string): void {
+    this.exclusions.add(kind, value);
   }
 
-  listExclusions(): Array<{ id: number; kind: string; value: string }> {
-    return this.db.prepare("SELECT id, kind, value FROM exclusions").all() as Array<{
-      id: number;
-      kind: string;
-      value: string;
-    }>;
+  listExclusions(): Array<{ id: number; kind: ExclusionKind; value: string }> {
+    return this.exclusions.list();
   }
 
-  isExcluded(item: { title: string; path: string; quality: string | null }): boolean {
-    for (const ex of this.listExclusions()) {
-      const v = ex.value.toLowerCase();
-      if (ex.kind === "title" && item.title.toLowerCase().includes(v)) return true;
-      if (ex.kind === "path" && item.path.toLowerCase().includes(v)) return true;
-      if (ex.kind === "profile" && (item.quality ?? "").toLowerCase().includes(v)) return true;
-      if (ex.kind === "tag" && item.title.toLowerCase().includes(v)) return true;
-    }
-    return false;
+  isExcluded(item: Pick<LibraryItem, "title" | "path" | "quality" | "tags">): boolean {
+    return this.exclusions.matches(item);
   }
 
   createPlayer(input: { kind: PlayerKind; name: string; url: string; token: string; enabled?: boolean }): PlayerInstance {
@@ -890,88 +889,35 @@ export class Store {
   }
 
   getWidgetTokenHash(): string | null {
-    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'widget_token'").get() as
-      | { value: string }
-      | undefined;
-    return row?.value || null;
+    return this.widget.getTokenHash();
   }
 
   setWidgetTokenHash(hash: string | null): void {
-    if (!hash) {
-      this.db.prepare("DELETE FROM settings WHERE key = 'widget_token'").run();
-      return;
-    }
-    this.db
-      .prepare("INSERT INTO settings (key, value) VALUES ('widget_token', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .run(hash);
+    this.widget.setTokenHash(hash);
   }
 
   countJobs(statuses: string[]): number {
-    if (statuses.length === 0) return 0;
-    const placeholders = statuses.map(() => "?").join(", ");
-    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE status IN (${placeholders})`).get(...statuses) as {
-      n: number;
-    };
-    return row.n;
+    return this.widget.countJobs(statuses);
   }
 
   countReviews(status: string): number {
-    const row = this.db.prepare("SELECT COUNT(*) AS n FROM reviews WHERE status = ?").get(status) as { n: number };
-    return row.n;
+    return this.widget.countReviews(status);
   }
 
   countOpenSuggestions(): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM suggestions
-         WHERE dismissed = 0 AND (forced = 1 OR actions_json != '[]')`,
-      )
-      .get() as { n: number };
-    return row.n;
+    return this.widget.countOpenSuggestions();
   }
 
   countLibraryByType(type: ItemType): number {
-    const row = this.db.prepare("SELECT COUNT(*) AS n FROM library_items WHERE type = ?").get(type) as { n: number };
-    return row.n;
+    return this.widget.countLibraryByType(type);
   }
 
   lastJobError(): string | null {
-    const row = this.db
-      .prepare("SELECT error FROM jobs WHERE status = 'failed' AND error IS NOT NULL ORDER BY id DESC LIMIT 1")
-      .get() as { error: string | null } | undefined;
-    return row?.error ?? null;
+    return this.widget.lastJobError();
   }
 
   getRunningJob(): { displayTitle: string; phase: string | null; progress: number } | null {
-    const row = this.db
-      .prepare(
-        `SELECT j.phase, j.progress, i.title, i.series_title AS seriesTitle,
-                i.season_number AS seasonNumber, i.episode_number AS episodeNumber
-         FROM jobs j JOIN library_items i ON i.id = j.item_id
-         WHERE j.status = 'running'
-         ORDER BY j.id DESC LIMIT 1`,
-      )
-      .get() as
-      | {
-          phase: string | null;
-          progress: number;
-          title: string;
-          seriesTitle: string | null;
-          seasonNumber: number | null;
-          episodeNumber: number | null;
-        }
-      | undefined;
-    if (!row) return null;
-    return {
-      displayTitle: displayTitle({
-        title: row.title,
-        seriesTitle: row.seriesTitle,
-        seasonNumber: row.seasonNumber,
-        episodeNumber: row.episodeNumber,
-      }),
-      phase: row.phase,
-      progress: Number(row.progress ?? 0),
-    };
+    return this.widget.getRunningJob();
   }
 
   countLibraryItems(instanceId: number, type: ItemType): number {
@@ -1018,13 +964,15 @@ const LIBRARY_ITEM_SQL = `
           i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
           i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
           i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt,
-          i.poster_remote_url AS posterRemoteUrl`;
+          i.poster_remote_url AS posterRemoteUrl, i.tags_json AS tagsJson`;
 
-function asLibraryItem(row: LibraryItem & { readable: number | boolean }): LibraryItem {
+function asLibraryItem(row: LibraryItem & { readable: number | boolean; tagsJson?: string }): LibraryItem {
+  const { tagsJson, ...item } = row;
   return {
-    ...row,
+    ...item,
     readable: Boolean(row.readable),
     posterRemoteUrl: row.posterRemoteUrl ?? null,
+    tags: tagsJson ? JSON.parse(tagsJson) : [],
   };
 }
 

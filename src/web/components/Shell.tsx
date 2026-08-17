@@ -43,15 +43,16 @@ export function Shell({ username, setupComplete, onLogout, children }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4 py-3 md:hidden">
+    <div className="relative flex min-h-screen flex-col overflow-hidden md:flex-row">
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.08] bg-zinc-950/85 px-4 py-3 backdrop-blur-xl md:hidden">
         <div className="flex items-center gap-2">
           <LogoMark className="h-7 w-7 rounded-md" />
           <span className="font-semibold tracking-tight">Optimizarr</span>
         </div>
         <button
           type="button"
-          className="rounded-md px-3 py-1 text-sm text-zinc-300 hover:bg-zinc-800"
+          className="btn-secondary !rounded-lg !px-3 !py-1.5"
           onClick={() => setOpen((v) => !v)}
         >
           Menu
@@ -59,46 +60,57 @@ export function Shell({ username, setupComplete, onLogout, children }: Props) {
       </header>
 
       <aside
-        className={`${open ? "flex" : "hidden"} w-full flex-col border-b border-zinc-800 bg-zinc-900 md:flex md:w-56 md:border-b-0 md:border-r`}
+        className={`${open ? "flex" : "hidden"} z-20 w-full flex-col border-b border-white/[0.08] bg-zinc-950/95 backdrop-blur-xl md:fixed md:inset-y-0 md:left-0 md:flex md:w-64 md:border-b-0 md:border-r`}
       >
-        <div className="hidden items-center gap-2 px-5 py-5 md:flex">
-          <LogoMark className="h-8 w-8 rounded-md" />
+        <div className="hidden items-center gap-3 px-5 py-6 md:flex">
+          <LogoMark className="h-10 w-10 rounded-xl shadow-lg shadow-amber-950/30" />
           <div>
-            <div className="text-base font-semibold tracking-tight">Optimizarr</div>
-            <div className="text-xs text-zinc-500">Companion *arr</div>
+            <div className="text-base font-semibold tracking-[-0.02em]">Optimizarr</div>
+            <div className="mt-0.5 text-[0.66rem] font-medium uppercase tracking-[0.18em] text-zinc-600">Media control</div>
           </div>
         </div>
-        <nav className="flex flex-1 flex-col gap-0.5 p-3">
+        <div className="mx-5 hidden items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-400/[0.04] px-3 py-2 text-xs text-zinc-400 md:flex">
+          <span className="status-dot" />
+          System online
+        </div>
+        <nav className="flex flex-1 flex-col gap-1 p-3 md:mt-4">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm ${
+                `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
                   isActive
-                    ? "bg-amber-500/15 font-medium text-amber-300"
-                    : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                    ? "border border-amber-300/10 bg-gradient-to-r from-amber-400/15 to-transparent font-medium text-amber-200 shadow-inner shadow-amber-300/[0.03]"
+                    : "border border-transparent text-zinc-400 hover:bg-white/[0.045] hover:text-zinc-100"
                 }`
               }
             >
-              <item.Icon className="h-4 w-4 shrink-0" />
+              <item.Icon className="h-[1.05rem] w-[1.05rem] shrink-0 transition group-hover:scale-105" />
               {item.label}
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-zinc-800 p-4 text-xs text-zinc-500">
-          <div className="mb-2 truncate text-zinc-300">{username}</div>
+        <div className="border-t border-white/[0.07] p-4 text-xs text-zinc-500">
+          <div className="mb-3 flex items-center gap-2.5 rounded-xl bg-white/[0.03] p-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 font-semibold text-amber-300">
+              {username.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-zinc-300">{username}</span>
+          </div>
           {!setupComplete && <div className="mb-2 text-amber-400">Finish setup</div>}
-          <button type="button" className="text-zinc-400 hover:text-white" onClick={() => void logout()}>
+          <button type="button" className="px-2 text-zinc-500 transition hover:text-white" onClick={() => void logout()}>
             Log out
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 p-5 md:p-8">
-        <InspectBanner />
-        {children}
+      <main className="relative flex-1 p-5 md:ml-64 md:p-8 lg:p-10">
+        <div className="mx-auto max-w-[92rem]">
+          <InspectBanner />
+          {children}
+        </div>
       </main>
     </div>
   );

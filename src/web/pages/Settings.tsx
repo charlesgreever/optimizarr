@@ -104,14 +104,17 @@ export function Settings() {
   }
 
   return (
-    <section className="max-w-2xl space-y-10">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500">Secrets are never shown after they are saved.</p>
+    <section className="max-w-3xl space-y-8">
+      <div className="page-header !mb-2">
+        <div>
+          <div className="page-eyebrow">Configuration</div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-description">Tune how Optimizarr inspects, processes, stores, and publishes your media. Saved secrets stay hidden.</p>
+        </div>
       </div>
 
-      <form className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6" onSubmit={(e) => void saveGeneral(e)}>
-        <h2 className="text-lg font-medium">General</h2>
+      <form className="panel space-y-4 p-6 md:p-7" onSubmit={(e) => void saveGeneral(e)}>
+        <h2 className="text-lg font-semibold tracking-[-0.02em]">General</h2>
         <label className="block text-sm">
           <span className="mb-1.5 block text-zinc-300">Preferred language</span>
           <select
@@ -398,7 +401,7 @@ export function Settings() {
         </button>
       </form>
 
-      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="panel space-y-4 p-6 md:p-7">
         <h2 className="text-lg font-medium">Radarr / Sonarr</h2>
         <p className="text-sm text-zinc-500">
           Add each Arr separately. Optimizarr uses the same file paths they report. Mount the NAS at that path in this container.
@@ -528,7 +531,7 @@ export function Settings() {
         </form>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="panel space-y-4 p-6 md:p-7">
         <h2 className="text-lg font-medium">Media players</h2>
         <p className="text-sm text-zinc-500">
           Add Plex and Jellyfin separately. Tokens are saved and never shown again.
@@ -661,7 +664,7 @@ export function Settings() {
         </form>
       </div>
 
-      <form className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6" onSubmit={(e) => void saveAccount(e)}>
+      <form className="panel space-y-4 p-6 md:p-7" onSubmit={(e) => void saveAccount(e)}>
         <h2 className="text-lg font-medium">Account</h2>
         <label className="block text-sm">
           <span className="mb-1.5 block text-zinc-300">Username</span>
@@ -694,7 +697,7 @@ export function Settings() {
         </button>
       </form>
 
-      <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="panel space-y-3 p-6 md:p-7">
         <h2 className="text-lg font-medium">Homepage widget</h2>
         <p className="text-sm text-zinc-500">
           Homepage polls a stats-only URL. It cannot use your login cookie, so create a widget key and put it in{" "}

@@ -139,7 +139,7 @@ describe("transcode must not silently copy", () => {
       `#!/usr/bin/env node
 const fs = require("node:fs");
 const dest = process.argv[process.argv.length - 1];
-process.stdout.write("out_time_ms=5000\\nprogress=continue\\n");
+fs.writeSync(1, "out_time_ms=5000\\nprogress=continue\\n");
 fs.mkdirSync(require("node:path").dirname(dest), { recursive: true });
 fs.writeFileSync(dest, "MEDIA");
 `,

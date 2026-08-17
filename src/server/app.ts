@@ -8,7 +8,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ArrClient, ArrError } from "./arr.ts";
 import { loadOrFetchPoster, sniffImageType } from "./art.ts";
-import type { ArrKind } from "./models.ts";
+import type { ArrKind, ExclusionKind } from "./models.ts";
 import { clientIp, isPrivateIp } from "./net.ts";
 import { Store, publicSettings } from "./store.ts";
 import { Catalog, type ProbeFn } from "./catalog.ts";
@@ -528,6 +528,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
   app.post("/api/exclusions", requireAuth, async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { kind?: string; value?: string };
     if (!body.kind || !body.value) return c.json({ error: "kind and value required" }, 400);
+    if (!isExclusionKind(body.kind)) return c.json({ error: "kind must be path, profile, tag, or title" }, 400);
     store.addExclusion(body.kind, body.value);
     return c.json({ ok: true }, 201);
   });
@@ -658,4 +659,6 @@ function storageTestDetail(method: string): string {
   return "Copied through this host. Configure NAS SSH to keep the bytes on the NAS.";
 }
 
-
+function isExclusionKind(value: string): value is ExclusionKind {
+  return value === "path" || value === "profile" || value === "tag" || value === "title";
+}

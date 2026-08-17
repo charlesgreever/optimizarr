@@ -27,17 +27,20 @@ export function InspectBanner() {
 
   if (progress.walking) {
     return (
-      <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-        Movie and series lists are ready. Still reading leftover files: {progress.inspected} checked,{" "}
-        {progress.pending} left.
-        {progress.errors > 0 ? ` ${progress.errors} files could not be read.` : ""}
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-amber-300/15 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100 shadow-lg shadow-amber-950/10 backdrop-blur-sm">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-300 shadow-[0_0_12px_rgba(252,211,77,0.65)]" />
+        <span>
+          Movie and series lists are ready. Still reading leftover files: {progress.inspected} checked,{" "}
+          {progress.pending} left.
+          {progress.errors > 0 ? ` ${progress.errors} files could not be read.` : ""}
+        </span>
       </div>
     );
   }
 
   if (progress.errors > 0 && !dismissed) {
     return (
-      <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
+      <div className="panel mb-6 flex items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-300">
         <span>
           {progress.errors} file{progress.errors === 1 ? "" : "s"} could not be read.
         </span>
