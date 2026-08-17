@@ -41,9 +41,9 @@ export function LibraryActions({ itemId, readable, pathError, titleQuery }: Prop
     : "/suggestions";
 
   return (
-    <div className="mt-2">
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.055] pt-2.5">
       <button
-        className="text-xs text-amber-400 hover:text-amber-300 disabled:opacity-50"
+        className="text-xs font-medium text-amber-400 transition hover:text-amber-300 disabled:opacity-50"
         type="button"
         disabled={busy !== null || !readable}
         onClick={() => void run("force")}
@@ -51,7 +51,7 @@ export function LibraryActions({ itemId, readable, pathError, titleQuery }: Prop
         {busy === "force" ? "Forcing…" : "Force suggestion"}
       </button>
       <button
-        className="ml-3 text-xs text-amber-400 hover:text-amber-300 disabled:opacity-50"
+        className="text-xs font-medium text-amber-400 transition hover:text-amber-300 disabled:opacity-50"
         type="button"
         disabled={busy !== null || !readable}
         onClick={() => void run("stereo")}
@@ -59,14 +59,14 @@ export function LibraryActions({ itemId, readable, pathError, titleQuery }: Prop
         {busy === "stereo" ? "Adding…" : "Add stereo"}
       </button>
       {status && (
-        <div className="mt-1 text-xs text-emerald-400">
+        <div className="basis-full text-xs text-emerald-400">
           {status}{" "}
           <Link to={suggestionsTo} className="underline hover:text-emerald-300">
             Open Suggestions
           </Link>
         </div>
       )}
-      {error && <div className="mt-1 text-xs text-red-400">{error}</div>}
+      {error && <div className="basis-full text-xs text-red-400">{error}</div>}
     </div>
   );
 }

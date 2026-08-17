@@ -44,26 +44,32 @@ export function Review() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold tracking-tight">Review</h1>
+      <div className="page-header">
+        <div>
+          <div className="page-eyebrow">Decision point</div>
+          <h1 className="page-title">Review</h1>
+          <p className="page-description">Compare the original with its sidecar. The library changes only after you choose Keep.</p>
+        </div>
+      </div>
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       {items.length === 0 ? (
-        <div className="mt-8 max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-sm text-zinc-400">
+        <div className="empty-panel text-sm text-zinc-400">
           {message || "Finished sidecars wait here for Keep or Discard."}
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
           {items.map((item) => (
-            <article key={item.id} className="rounded-xl border border-zinc-800 p-5">
-              <h2 className="font-medium">{item.displayTitle || item.title}</h2>
+            <article key={item.id} className="panel overflow-hidden p-5 md:p-6">
+              <h2 className="text-lg font-semibold tracking-[-0.02em]">{item.displayTitle || item.title}</h2>
               <div className="mt-3 grid gap-3 text-sm text-zinc-400 md:grid-cols-2">
-                <div>
-                  <div className="text-xs uppercase text-zinc-500">Original</div>
+                <div className="rounded-xl border border-white/[0.06] bg-black/15 p-4">
+                  <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">Original</div>
                   <div>codec {item.compare.source?.codec ?? "—"}</div>
                   <div>size {item.compare.source?.size ?? "—"}</div>
                   <div className="truncate">{item.sourcePath}</div>
                 </div>
-                <div>
-                  <div className="text-xs uppercase text-zinc-500">Sidecar</div>
+                <div className="rounded-xl border border-amber-300/10 bg-amber-400/[0.035] p-4">
+                  <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-amber-300/70">Optimized sidecar</div>
                   <div>duration {item.compare.sidecar?.duration ?? "—"}s</div>
                   <div>size {item.compare.sidecar?.size ?? "—"}</div>
                   <div className="truncate">{item.sidecarPath}</div>
@@ -101,7 +107,7 @@ export function Review() {
                   {item.status === "keeping" || (busy?.id === item.id && busy.kind === "keep") ? "Keeping…" : "Keep"}
                 </button>
                 <button
-                  className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                  className="btn-secondary"
                   type="button"
                   disabled={busy?.id === item.id || item.status === "keeping"}
                   onClick={() => {

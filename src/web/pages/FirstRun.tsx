@@ -350,13 +350,14 @@ export function AuthCard({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-xl">
-        <div className="mb-6 flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full bg-amber-400" />
-          <span className="font-semibold">Optimizarr</span>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
+      <div className="pointer-events-none absolute left-1/2 top-[-18rem] h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-amber-400/[0.08] blur-3xl" />
+      <div className="panel relative w-full max-w-md p-8 md:p-10">
+        <div className="mb-8 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-400/10 text-lg font-bold text-amber-300">O</span>
+          <span className="font-semibold tracking-[-0.02em]">Optimizarr</span>
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.035em]">{title}</h1>
         <p className="mt-2 mb-6 text-sm leading-6 text-zinc-400">{subtitle}</p>
         {children}
       </div>

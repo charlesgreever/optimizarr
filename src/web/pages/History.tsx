@@ -14,18 +14,26 @@ export function History() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold tracking-tight">History</h1>
+      <div className="page-header">
+        <div>
+          <div className="page-eyebrow">Activity</div>
+          <h1 className="page-title">History</h1>
+          <p className="page-description">A record of finished, kept, discarded, flagged, and failed work.</p>
+        </div>
+      </div>
       {items.length === 0 ? (
-        <div className="mt-8 max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-sm text-zinc-400">
+        <div className="empty-panel text-sm text-zinc-400">
           {message || "Completed jobs will be listed here."}
         </div>
       ) : (
-        <ul className="mt-6 space-y-2 text-sm">
+        <ul className="space-y-3 text-sm">
           {items.map((row) => (
-            <li key={String(row.id)} className="rounded-lg border border-zinc-800 px-4 py-3">
-              <span className="font-medium">{String(row.title)}</span>
-              <span className="ml-2 text-zinc-500">{String(row.action)}</span>
-              {row.detail ? <div className="text-xs text-zinc-500">{String(row.detail)}</div> : null}
+            <li key={String(row.id)} className="panel flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+              <div>
+                <div className="font-semibold">{String(row.title)}</div>
+                {row.detail ? <div className="mt-1 text-xs text-zinc-500">{String(row.detail)}</div> : null}
+              </div>
+              <span className="meta-pill capitalize">{String(row.action)}</span>
             </li>
           ))}
         </ul>

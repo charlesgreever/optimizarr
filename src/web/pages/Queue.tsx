@@ -64,14 +64,20 @@ export function Queue() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold tracking-tight">Queue</h1>
+      <div className="page-header">
+        <div>
+          <div className="page-eyebrow">Processing</div>
+          <h1 className="page-title">Queue</h1>
+          <p className="page-description">Track each copy, remux, and encode from approval through completion.</p>
+        </div>
+      </div>
       {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
       {items.length === 0 ? (
-        <div className="mt-8 max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-sm text-zinc-400">
+        <div className="empty-panel text-sm text-zinc-400">
           {message || "Approved work will appear here."}
         </div>
       ) : (
-        <ul className="mt-6 space-y-2">
+        <ul className="space-y-3">
           {[...items]
             .sort((a, b) => {
               const rank = (status: string) =>
@@ -88,15 +94,15 @@ export function Queue() {
             return (
               <li
                 key={String(job.id)}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 px-4 py-3 text-sm"
+                className="panel flex flex-wrap items-center justify-between gap-4 px-5 py-4 text-sm transition hover:border-white/[0.12]"
               >
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium">{String(job.displayTitle || job.title || "Job")}</span>
-                  <span className="ml-2 text-zinc-500">{label}</span>
+                  <div className="font-semibold tracking-[-0.01em]">{String(job.displayTitle || job.title || "Job")}</div>
+                  <div className="mt-1 text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</div>
                   {showBar && pct != null && (
                     <div className="mt-2 max-w-md">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                        <div className="h-full bg-amber-400" style={{ width: `${pct}%` }} />
+                      <div className="h-2 overflow-hidden rounded-full border border-white/[0.04] bg-black/30">
+                        <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-300 shadow-[0_0_14px_rgba(251,191,36,0.25)]" style={{ width: `${pct}%` }} />
                       </div>
                       <div className="mt-1 text-xs text-zinc-500">
                         {pct}%
@@ -111,7 +117,7 @@ export function Queue() {
                 </div>
                 {ACTIVE.has(status) && (
                   <button
-                    className="btn !w-auto !bg-zinc-700 !text-zinc-100"
+                    className="btn-secondary"
                     type="button"
                     disabled={busyId === job.id}
                     onClick={() => void cancel(job.id)}
