@@ -8,6 +8,8 @@
 
 The `/code-review` skill treats those three as the standards sources. Cite an id (`ENG-09`) or a RULE (`RULE-04`) in findings.
 
+Agents start at [AGENTS.md](AGENTS.md). That file says when to open the engineering and prose standards.
+
 ## Before you open a change
 
 ```bash
