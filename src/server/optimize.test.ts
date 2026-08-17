@@ -80,4 +80,28 @@ describe("transcode must not silently copy", () => {
     ).rejects.toThrow(/nvenc init failed/i);
     expect(existsSync(sidecar)).toBe(false);
   });
+
+  it("asks ffmpeg to write a .mkv temp so the container format is not .tmp", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-ext-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(ffmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsLog}"\nexit 1\n`);
+    chmodSync(ffmpeg, 0o755);
+    const source = join(dir, "movie.mkv");
+    const sidecar = join(dir, "review", "_I_Don_t_Want_to_Go_to_Chelsea.2409.mkv");
+    writeFileSync(source, "MEDIA");
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: source,
+      sidecarPath: sidecar,
+      plan: { actions: ["transcode"], keepAudio: ["eng"], keepSubs: [], category: "tv1080p" } as never,
+      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      backends: { cuda: true, vaapi: false, av1: false },
+    }).catch(() => undefined);
+    const args = readFileSync(argsLog, "utf8").trim().split("\n");
+    const output = args.at(-1) ?? "";
+    expect(output.endsWith(".mkv")).toBe(true);
+    expect(output.endsWith(".mkv.tmp")).toBe(false);
+    expect(output).toContain(".tmp.mkv");
+  });
 });

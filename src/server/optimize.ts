@@ -65,7 +65,7 @@ function transferFor(req: RemuxRequest): Transfer {
 export function copyOptimizer(): Optimizer {
   return async (req) => {
     await mkdir(dirname(req.sidecarPath), { recursive: true });
-    const tmp = `${req.sidecarPath}.tmp`;
+    const tmp = tempSidecarPath(req.sidecarPath);
     const transfer = transferFor(req);
     await transfer.copy(req.sourcePath, tmp);
     const info = await stat(tmp);
@@ -83,6 +83,11 @@ export function copyOptimizer(): Optimizer {
 
 export function reviewPathFor(reviewRoot: string, title: string, itemId: number): string {
   return join(reviewRoot, sidecarName(title, itemId));
+}
+
+/** ffmpeg picks the muxer from the extension; a `.mkv.tmp` path is not Matroska. */
+export function tempSidecarPath(sidecarPath: string): string {
+  return sidecarPath.toLowerCase().endsWith(".mkv") ? `${sidecarPath.slice(0, -4)}.tmp.mkv` : `${sidecarPath}.tmp.mkv`;
 }
 
 function hardwareInputArgs(encoder: string): string[] {
@@ -149,7 +154,7 @@ function ffmpegDetail(err: unknown): string {
 export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimizer {
   return async (req) => {
     await mkdir(dirname(req.sidecarPath), { recursive: true });
-    const tmp = `${req.sidecarPath}.tmp`;
+    const tmp = tempSidecarPath(req.sidecarPath);
     const args = ["-hide_banner", "-y", "-nostdin", "-i", req.sourcePath, "-map", "0:v:0"];
     for (const lang of req.plan.keepAudio ?? []) {
       if (lang && lang !== "und") args.push("-map", `0:a:m:language:${lang}`);

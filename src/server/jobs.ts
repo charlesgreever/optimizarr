@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import type { InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
-import { IntegrityError, reviewPathFor, type Optimizer } from "./optimize.ts";
+import { IntegrityError, reviewPathFor, tempSidecarPath, type Optimizer } from "./optimize.ts";
 import { reviewPathInsideLibrary } from "./paths.ts";
 import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
@@ -106,7 +106,7 @@ export class JobService {
     if (item) {
       this.store.addHistory(item.id, displayTitle(item), "cancelled");
       const sidecarPath = reviewPathFor(this.store.getSettings().reviewPath, item.title, item.id);
-      await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+      await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
       if (!this.store.pendingReviewForItem(item.id)) {
         await this.fs.unlink(sidecarPath).catch(() => undefined);
       }
@@ -146,7 +146,7 @@ export class JobService {
       });
       if (this.isCancelled(jobId)) {
         await this.fs.unlink(result.sidecarPath).catch(() => undefined);
-        await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+        await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
         return;
       }
       const outHour = sizePerHourGb({ sizeBytes: result.sizeBytes, durationSec: result.durationSec });
@@ -167,7 +167,7 @@ export class JobService {
       this.store.updateJob(jobId, { status: "succeeded", progress: 1, finishedAt: this.now().toISOString() });
       this.store.addHistory(item.id, displayTitle(item), flagged ? "flagged" : "finished");
     } catch (err) {
-      await this.fs.unlink(`${sidecarPath}.tmp`).catch(() => undefined);
+      await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
       await this.fs.unlink(sidecarPath).catch(() => undefined);
       if (this.isCancelled(jobId) || isAbortError(err)) {
         this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
