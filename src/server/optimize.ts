@@ -3,6 +3,7 @@ import { mkdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pickEncoder, type EncodeBackends, detectBackends } from "./hardware.ts";
 import { ffprobeFile, type InspectionReport } from "./inspect.ts";
+import { parseFfmpegOutTime, phaseForPlan, ratioProgress, type ProgressUpdate } from "./progress.ts";
 import { createStorage, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
 import { DEFAULT_SIZE_CAPS } from "./types.ts";
@@ -23,6 +24,7 @@ export type RemuxRequest = {
   sizeCaps?: typeof DEFAULT_SIZE_CAPS;
   targetCodec?: "hevc" | "av1";
   signal?: AbortSignal;
+  onProgress?: (update: ProgressUpdate) => void;
 };
 
 export type Optimizer = (req: RemuxRequest) => Promise<OptimizeResult>;
@@ -64,15 +66,16 @@ export function copyOptimizer(): Optimizer {
     await mkdir(dirname(req.sidecarPath), { recursive: true });
     const tmp = tempSidecarPath(req.sidecarPath);
     const transfer = transferFor(req);
-    await transfer.copy(req.sourcePath, tmp);
+    await copyWithProgress(req, transfer, req.sourcePath, tmp);
     const info = await stat(tmp);
     const result = {
       sidecarPath: req.sidecarPath,
       durationSec: req.report.durationSec,
       sizeBytes: info.size,
     };
+    req.onProgress?.({ phase: "finishing", progress: 0 });
     assertIntegrity(req.report, result);
-    await transfer.copy(tmp, req.sidecarPath);
+    await copyWithProgress(req, transfer, tmp, req.sidecarPath);
     await unlink(tmp).catch(() => undefined);
     return result;
   };
@@ -157,9 +160,13 @@ function ffmpegDetail(err: unknown): string {
 }
 
 /** Drain ffmpeg stdio so Dolby Vision NAL warnings cannot fill Node's 1MB execFile buffer and kill the encode. */
-function runFfmpeg(bin: string, args: string[], signal?: AbortSignal): Promise<void> {
+function runFfmpeg(
+  bin: string,
+  args: string[],
+  opts?: { signal?: AbortSignal; onStdout?: (text: string) => void },
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { signal });
+    const child = spawn(bin, args, { signal: opts?.signal });
     const chunks: string[] = [];
     let stored = 0;
     const keep = 16 * 1024;
@@ -173,7 +180,10 @@ function runFfmpeg(bin: string, args: string[], signal?: AbortSignal): Promise<v
       }
     };
     child.stderr?.on("data", take);
-    child.stdout?.on("data", take);
+    child.stdout?.on("data", (buf: Buffer) => {
+      const text = buf.toString("utf8");
+      opts?.onStdout?.(text);
+    });
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
@@ -183,6 +193,22 @@ function runFfmpeg(bin: string, args: string[], signal?: AbortSignal): Promise<v
       const err = new Error(`ffmpeg exited ${code}`) as Error & { stderr: string };
       err.stderr = usefulFfmpegLog(chunks.join(""));
       reject(err);
+    });
+  });
+}
+
+async function copyWithProgress(
+  req: RemuxRequest,
+  transfer: Transfer,
+  src: string,
+  dest: string,
+): Promise<void> {
+  await transfer.copy(src, dest, (copied, total) => {
+    req.onProgress?.({
+      phase: "copying",
+      progress: ratioProgress(copied, total, { allowComplete: copied >= total && total > 0 }),
+      copiedBytes: copied,
+      totalBytes: total,
     });
   });
 }
@@ -203,7 +229,9 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
   return async (req) => {
     await mkdir(dirname(req.sidecarPath), { recursive: true });
     const tmp = tempSidecarPath(req.sidecarPath);
-    const args = ["-hide_banner", "-y", "-nostdin", "-i", req.sourcePath, "-map", "0:v:0"];
+    const encodePhase = phaseForPlan(req.plan.actions);
+    req.onProgress?.({ phase: encodePhase, progress: 0, durationSec: req.report.durationSec });
+    const args = ["-hide_banner", "-y", "-nostdin", "-progress", "pipe:1", "-nostats", "-i", req.sourcePath, "-map", "0:v:0"];
     const audioLangs = uniqueLangs(req.plan.keepAudio);
     const subLangs = uniqueLangs(req.plan.keepSubs);
     for (const lang of audioLangs) args.push("-map", `0:a:m:language:${lang}`);
@@ -224,7 +252,25 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     }
     args.push(tmp);
     try {
-      await runFfmpeg(ffmpeg, args, req.signal);
+      let leftover = "";
+      await runFfmpeg(ffmpeg, args, {
+        signal: req.signal,
+        onStdout: (text) => {
+          leftover += text;
+          const parts = leftover.split(/\r?\n/);
+          leftover = parts.pop() ?? "";
+          for (const line of parts) {
+            const outTimeSec = parseFfmpegOutTime(`${line}\n`);
+            if (outTimeSec == null) continue;
+            req.onProgress?.({
+              phase: encodePhase,
+              progress: ratioProgress(outTimeSec, req.report.durationSec),
+              outTimeSec,
+              durationSec: req.report.durationSec,
+            });
+          }
+        },
+      });
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
       if (err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError") {
@@ -234,6 +280,7 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
       const kind = req.plan.actions.includes("transcode") ? "Hardware encode failed" : "Remux failed";
       throw new Error(detail ? `${kind}: ${detail}` : kind);
     }
+    req.onProgress?.({ phase: "finishing", progress: 0 });
     const info = await stat(tmp);
     const durationSec = await probedDuration(
       tmp,
@@ -242,7 +289,7 @@ export function ffmpegOptimizer(ffmpeg = process.env.FFMPEG || "ffmpeg"): Optimi
     );
     const result = { sidecarPath: req.sidecarPath, durationSec, sizeBytes: info.size };
     assertIntegrity(req.report, result);
-    await transferFor(req).copy(tmp, req.sidecarPath);
+    await copyWithProgress(req, transferFor(req), tmp, req.sidecarPath);
     await unlink(tmp).catch(() => undefined);
     return result;
   };

@@ -1,9 +1,11 @@
-import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { createReadStream, createWriteStream, existsSync, readFileSync } from "node:fs";
 import { copyFile, constants, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { mediaShareRoot } from "./paths.ts";
+import { parseCopiedBytes } from "./progress.ts";
 import type { CopyMode, PathMap, Settings } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -14,6 +16,8 @@ export type TransferResult = {
   method: TransferMethod;
   bytes: number;
 };
+
+export type CopyProgress = (copied: number, total: number) => void;
 
 export type { CopyMode, PathMap };
 
@@ -41,12 +45,14 @@ export type SshTransfer = {
   identityFile?: string;
   remoteSrc: string;
   remoteDest: string;
+  totalBytes?: number;
+  onProgress?: CopyProgress;
 };
 
 export type StorageAdapters = {
   cloneFile?: (src: string, dest: string) => Promise<boolean>;
   serverCopy?: (src: string, dest: string) => Promise<boolean>;
-  proxyCopy?: (src: string, dest: string) => Promise<void>;
+  proxyCopy?: (src: string, dest: string, onProgress?: CopyProgress) => Promise<void>;
   rename?: (src: string, dest: string) => Promise<void>;
   unlink?: (path: string) => Promise<void>;
   mkdir?: (dir: string) => Promise<void>;
@@ -58,8 +64,8 @@ export type StorageAdapters = {
 };
 
 export type Transfer = {
-  copy(src: string, dest: string): Promise<TransferResult>;
-  move(src: string, dest: string): Promise<TransferResult>;
+  copy(src: string, dest: string, onProgress?: CopyProgress): Promise<TransferResult>;
+  move(src: string, dest: string, onProgress?: CopyProgress): Promise<TransferResult>;
 };
 
 export function mapToRemote(localPath: string, maps: PathMap[]): string | null {
@@ -192,19 +198,24 @@ export function createStorage(config: StorageConfig, adapters: StorageAdapters =
   }
 
   return {
-    async copy(src, dest) {
+    async copy(src, dest, onProgress) {
       if (normalizePath(src) === normalizePath(dest)) {
-        return { method: "rename", bytes: await bytesOf(src) };
+        const bytes = await bytesOf(src);
+        onProgress?.(bytes, bytes);
+        return { method: "rename", bytes };
       }
       await ensureParent(dest);
       const mode = config.copyMode;
       const pair = remotePair(src, dest);
       const ssh = sshTarget();
+      const total = await bytesOf(src);
 
       if (mode !== "proxy" && mode !== "mount" && pair && ssh) {
         try {
-          await impl.sshCopy({ ...ssh, ...pair });
-          return { method: "ssh", bytes: await bytesOf(dest) || await bytesOf(src) };
+          await impl.sshCopy({ ...ssh, ...pair, totalBytes: total, onProgress });
+          const bytes = (await bytesOf(dest)) || total;
+          onProgress?.(bytes, bytes || total);
+          return { method: "ssh", bytes };
         } catch (err) {
           if (mode === "ssh") throw err;
         }
@@ -212,35 +223,49 @@ export function createStorage(config: StorageConfig, adapters: StorageAdapters =
       if (mode === "ssh") {
         if (!ssh) throw new Error("NAS SSH host and user are required for on-NAS copies");
         if (!pair) throw new Error("Both paths must be on a mapped NAS share for SSH copy");
-        await impl.sshCopy({ ...ssh, ...pair });
-        return { method: "ssh", bytes: await bytesOf(dest) || await bytesOf(src) };
+        await impl.sshCopy({ ...ssh, ...pair, totalBytes: total, onProgress });
+        const bytes = (await bytesOf(dest)) || total;
+        onProgress?.(bytes, bytes || total);
+        return { method: "ssh", bytes };
       }
       if (mode === "proxy") {
-        await impl.proxyCopy(src, dest);
-        return { method: "proxy", bytes: await bytesOf(dest) || await bytesOf(src) };
+        await impl.proxyCopy(src, dest, onProgress);
+        const bytes = (await bytesOf(dest)) || total;
+        onProgress?.(bytes, bytes || total);
+        return { method: "proxy", bytes };
       }
 
       if (await impl.cloneFile(src, dest)) {
-        return { method: "clone", bytes: await bytesOf(dest) || await bytesOf(src) };
+        const bytes = (await bytesOf(dest)) || total;
+        onProgress?.(bytes, bytes || total);
+        return { method: "clone", bytes };
       }
       if (mode !== "ssh" && (await impl.serverCopy(src, dest))) {
-        return { method: "server", bytes: await bytesOf(dest) || await bytesOf(src) };
+        const bytes = (await bytesOf(dest)) || total;
+        onProgress?.(bytes, bytes || total);
+        return { method: "server", bytes };
       }
       if (mode === "mount") {
         throw new Error("Kernel server-side copy is not available for these paths");
       }
-      await impl.proxyCopy(src, dest);
-      return { method: "proxy", bytes: await bytesOf(dest) || await bytesOf(src) };
+      await impl.proxyCopy(src, dest, onProgress);
+      const bytes = (await bytesOf(dest)) || total;
+      onProgress?.(bytes, bytes || total);
+      return { method: "proxy", bytes };
     },
 
-    async move(src, dest) {
+    async move(src, dest, onProgress) {
       if (normalizePath(src) === normalizePath(dest)) {
-        return { method: "rename", bytes: await bytesOf(src) };
+        const bytes = await bytesOf(src);
+        onProgress?.(bytes, bytes);
+        return { method: "rename", bytes };
       }
       await ensureParent(dest);
       try {
         await impl.rename(src, dest);
-        return { method: "rename", bytes: await bytesOf(dest) };
+        const bytes = await bytesOf(dest);
+        onProgress?.(bytes, bytes);
+        return { method: "rename", bytes };
       } catch (err) {
         if (!isExdev(err)) throw err;
       }
@@ -249,12 +274,14 @@ export function createStorage(config: StorageConfig, adapters: StorageAdapters =
       if (config.copyMode !== "proxy" && pair && ssh) {
         try {
           await impl.sshMove({ ...ssh, ...pair });
-          return { method: "ssh", bytes: await bytesOf(dest) || await bytesOf(src) };
+          const bytes = (await bytesOf(dest)) || (await bytesOf(src));
+          onProgress?.(bytes, bytes);
+          return { method: "ssh", bytes };
         } catch (sshErr) {
           if (config.copyMode === "ssh") throw sshErr;
         }
       }
-      const copied = await this.copy(src, dest);
+      const copied = await this.copy(src, dest, onProgress);
       await impl.unlink(src);
       return copied;
     },
@@ -300,8 +327,20 @@ async function defaultServerCopy(src: string, dest: string): Promise<boolean> {
   }
 }
 
-async function defaultProxyCopy(src: string, dest: string): Promise<void> {
-  await copyFile(src, dest);
+async function defaultProxyCopy(src: string, dest: string, onProgress?: CopyProgress): Promise<void> {
+  if (!onProgress) {
+    await copyFile(src, dest);
+    return;
+  }
+  const total = Number((await stat(src)).size);
+  let copied = 0;
+  const read = createReadStream(src);
+  read.on("data", (chunk: string | Buffer) => {
+    copied += chunk.length;
+    onProgress(copied, total);
+  });
+  await pipeline(read, createWriteStream(dest));
+  onProgress(total, total);
 }
 
 function sshArgs(req: SshTransfer, remoteCommand: string): string[] {
@@ -322,12 +361,33 @@ function remoteCopyScript(src: string, dest: string): string {
   const destDir = posixQuote(dirname(dest));
   const quotedSrc = posixQuote(src);
   const quotedDest = posixQuote(dest);
-  return `mkdir -p -- ${destDir} && (cp --reflink=auto -- ${quotedSrc} ${quotedDest} || cp -- ${quotedSrc} ${quotedDest})`;
+  return `mkdir -p -- ${destDir} && (cp --reflink=always -- ${quotedSrc} ${quotedDest} && echo OPTIMIZARR_REFLINK || dd if=${quotedSrc} of=${quotedDest} bs=8M status=progress)`;
 }
 
 async function defaultSshCopy(req: SshTransfer): Promise<void> {
-  await execFileAsync("ssh", sshArgs(req, remoteCopyScript(req.remoteSrc, req.remoteDest)), {
-    timeout: 24 * 60 * 60 * 1000,
+  const args = sshArgs(req, remoteCopyScript(req.remoteSrc, req.remoteDest));
+  if (!req.onProgress) {
+    await execFileAsync("ssh", args, { timeout: 24 * 60 * 60 * 1000 });
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("ssh", args);
+    const take = (buf: Buffer) => {
+      const text = buf.toString("utf8");
+      if (text.includes("OPTIMIZARR_REFLINK")) {
+        req.onProgress?.(req.totalBytes ?? 0, req.totalBytes ?? 0);
+        return;
+      }
+      const copied = parseCopiedBytes(text.replace(/\r/g, "\n"));
+      if (copied != null) req.onProgress?.(copied, req.totalBytes ?? copied);
+    };
+    child.stderr?.on("data", take);
+    child.stdout?.on("data", take);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ssh exited ${code}`));
+    });
   });
 }
 

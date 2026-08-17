@@ -103,6 +103,39 @@ describe("transcode must not silently copy", () => {
     expect(output.endsWith(".mkv")).toBe(true);
     expect(output.endsWith(".mkv.tmp")).toBe(false);
     expect(output).toContain(".tmp.mkv");
+    expect(args).toContain("-progress");
+    expect(args).toContain("pipe:1");
+  });
+
+  it("reports remux progress from ffmpeg out_time", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-prog-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    writeFileSync(
+      ffmpeg,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const dest = process.argv[process.argv.length - 1];
+process.stdout.write("out_time_ms=5000\\nprogress=continue\\n");
+fs.mkdirSync(require("node:path").dirname(dest), { recursive: true });
+fs.writeFileSync(dest, "MEDIA");
+`,
+    );
+    chmodSync(ffmpeg, 0o755);
+    const source = join(dir, "movie.mkv");
+    const sidecar = join(dir, "review", "show.1.mkv");
+    writeFileSync(source, "MEDIA");
+    const updates: Array<{ phase: string; progress: number }> = [];
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: source,
+      sidecarPath: sidecar,
+      plan: { actions: ["remux"], keepAudio: ["eng"], keepSubs: [], category: "tv1080p" } as never,
+      report: { durationSec: 10, sizeBytes: 5, videoCodec: "hevc" } as never,
+      onProgress: (update) => updates.push({ phase: update.phase, progress: update.progress }),
+    });
+    expect(updates.some((u) => u.phase === "remuxing" && u.progress === 0.5)).toBe(true);
+    expect(updates.some((u) => u.phase === "finishing")).toBe(true);
+    expect(updates.every((u) => u.phase !== "remuxing" || u.progress < 1)).toBe(true);
   });
 
   it("finishes an encode when ffmpeg writes more than 1MB of decoder warnings", async () => {

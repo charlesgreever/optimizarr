@@ -4,6 +4,7 @@ import type { InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
 import { IntegrityError, reviewPathFor, tempSidecarPath, type Optimizer } from "./optimize.ts";
+import { etaSec, phaseForPlan, type JobPhase, type ProgressUpdate } from "./progress.ts";
 import { reviewPathInsideLibrary } from "./paths.ts";
 import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
 import type { SuggestionPlan } from "./suggest.ts";
@@ -76,7 +77,7 @@ export class JobService {
       if (job.status !== "queued" && job.status !== "held") continue;
       const runNow = Boolean((this.store.getJob(job.id as number) as { runNow?: boolean } | undefined)?.runNow);
       if (!inWindow && !runNow) {
-        this.store.updateJob(job.id as number, { status: "held" });
+        this.store.updateJob(job.id as number, { status: "held", phase: "held", progress: 0, etaSec: null });
         continue;
       }
       slots -= 1;
@@ -88,7 +89,13 @@ export class JobService {
   recoverInterruptedJobs(): void {
     for (const job of this.store.listJobs()) {
       if (job.status === "running") {
-        this.store.updateJob(job.id as number, { status: "queued", error: "Requeued after restart" });
+        this.store.updateJob(job.id as number, {
+          status: "queued",
+          phase: "queued",
+          progress: 0,
+          etaSec: null,
+          error: "Requeued after restart",
+        });
       }
     }
   }
@@ -101,7 +108,7 @@ export class JobService {
       return { ok: false, error: "Only queued, held, or running jobs can be cancelled", status: 409 };
     }
     this.aborts.get(jobId)?.abort();
-    this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
+    this.store.updateJob(jobId, { status: "cancelled", etaSec: null, finishedAt: this.now().toISOString() });
     const item = this.store.getLibraryItem(job.itemId as number);
     if (item) {
       this.store.addHistory(item.id, displayTitle(item), "cancelled");
@@ -125,7 +132,15 @@ export class JobService {
     const sidecarPath = reviewPathFor(settings.reviewPath, item.title, item.id);
     const abort = new AbortController();
     this.aborts.set(jobId, abort);
-    this.store.updateJob(jobId, { status: "running", startedAt: this.now().toISOString(), progress: 0.1 });
+    const startPhase = phaseForPlan(livePlan.actions);
+    this.store.updateJob(jobId, {
+      status: "running",
+      phase: startPhase,
+      progress: 0,
+      etaSec: null,
+      startedAt: this.now().toISOString(),
+    });
+    const clocks = new Map<JobPhase, { started: number; lastDone: number }>();
     try {
       if (this.isCancelled(jobId)) return;
       if (!report) throw new Error("No inspection report");
@@ -143,6 +158,7 @@ export class JobService {
         backends: this.backends,
         sizeCaps: settings.sizeCapsGbPerHour,
         targetCodec: codec,
+        onProgress: (update) => this.recordProgress(jobId, update, clocks),
       });
       if (this.isCancelled(jobId)) {
         await this.fs.unlink(result.sidecarPath).catch(() => undefined);
@@ -153,6 +169,7 @@ export class JobService {
       const cap = settings.sizeCapsGbPerHour[livePlan.category] ?? settings.sizeCapsGbPerHour.movie1080p;
       const flagged =
         result.sizeBytes > report.sizeBytes || (outHour !== null && livePlan.category && outHour > cap);
+      this.store.updateJob(jobId, { phase: "finishing", progress: 0, etaSec: null });
       this.store.createReview({
         itemId: item.id,
         jobId,
@@ -164,19 +181,26 @@ export class JobService {
         },
         flagged,
       });
-      this.store.updateJob(jobId, { status: "succeeded", progress: 1, finishedAt: this.now().toISOString() });
+      this.store.updateJob(jobId, {
+        status: "succeeded",
+        phase: "finishing",
+        progress: 1,
+        etaSec: null,
+        finishedAt: this.now().toISOString(),
+      });
       this.store.addHistory(item.id, displayTitle(item), flagged ? "flagged" : "finished");
     } catch (err) {
       await this.fs.unlink(tempSidecarPath(sidecarPath)).catch(() => undefined);
       await this.fs.unlink(sidecarPath).catch(() => undefined);
       if (this.isCancelled(jobId) || isAbortError(err)) {
-        this.store.updateJob(jobId, { status: "cancelled", finishedAt: this.now().toISOString() });
+        this.store.updateJob(jobId, { status: "cancelled", etaSec: null, finishedAt: this.now().toISOString() });
         return;
       }
       const message = err instanceof IntegrityError || err instanceof Error ? err.message : "Job failed";
       this.store.updateJob(jobId, {
         status: "failed",
         error: message,
+        etaSec: null,
         finishedAt: this.now().toISOString(),
       });
       this.store.addHistory(item.id, displayTitle(item), "failed", message);
@@ -187,6 +211,34 @@ export class JobService {
 
   private isCancelled(jobId: number): boolean {
     return this.store.getJob(jobId)?.status === "cancelled";
+  }
+
+  private recordProgress(
+    jobId: number,
+    update: ProgressUpdate,
+    clocks: Map<JobPhase, { started: number; lastDone: number }>,
+  ): void {
+    if (this.isCancelled(jobId)) return;
+    let clock = clocks.get(update.phase);
+    if (!clock) {
+      clock = { started: Date.now(), lastDone: 0 };
+      clocks.set(update.phase, clock);
+    }
+    const done =
+      update.copiedBytes ??
+      update.outTimeSec ??
+      (update.progress > 0 ? update.progress : 0);
+    const total =
+      update.totalBytes ??
+      update.durationSec ??
+      (update.progress > 0 ? 1 : 0);
+    clock.lastDone = done;
+    const elapsed = (Date.now() - clock.started) / 1000;
+    this.store.updateJob(jobId, {
+      phase: update.phase,
+      progress: update.progress,
+      etaSec: update.etaSec ?? etaSec(done, total, elapsed),
+    });
   }
 
   async keep(

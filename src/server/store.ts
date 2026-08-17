@@ -7,6 +7,7 @@ import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
 import type { ArrInstance, ArrKind, ItemType, LibraryItem, PlayerInstance, PlayerKind } from "./models.ts";
+import { isJobPhase, jobPhaseLabel, type JobPhase } from "./progress.ts";
 
 export class Store {
   readonly db: DatabaseSync;
@@ -150,6 +151,8 @@ export class Store {
     this.ensureColumn("library_items", "series_id", "INTEGER");
     this.ensureColumn("library_items", "poster_remote_url", "TEXT");
     this.ensureColumn("inspections", "source_sig", "TEXT");
+    this.ensureColumn("jobs", "phase", "TEXT");
+    this.ensureColumn("jobs", "eta_sec", "REAL");
   }
 
   private ensureColumn(table: string, column: string, spec: string): void {
@@ -578,24 +581,37 @@ export class Store {
 
   createJob(itemId: number, suggestionId: number | null, plan: unknown, createdAt: string): number {
     this.db
-      .prepare("INSERT INTO jobs (item_id, suggestion_id, status, plan_json, created_at) VALUES (?, ?, 'queued', ?, ?)")
+      .prepare(
+        "INSERT INTO jobs (item_id, suggestion_id, status, phase, plan_json, created_at) VALUES (?, ?, 'queued', 'queued', ?, ?)",
+      )
       .run(itemId, suggestionId, JSON.stringify(plan), createdAt);
     return (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
   }
 
   updateJob(
     id: number,
-    patch: { status?: string; progress?: number; error?: string | null; log?: string; startedAt?: string; finishedAt?: string },
+    patch: {
+      status?: string;
+      phase?: JobPhase;
+      progress?: number;
+      etaSec?: number | null;
+      error?: string | null;
+      log?: string;
+      startedAt?: string;
+      finishedAt?: string;
+    },
   ): void {
     const current = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!current) return;
     this.db
       .prepare(
-        "UPDATE jobs SET status = ?, progress = ?, error = ?, log = ?, started_at = ?, finished_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = ?, phase = ?, progress = ?, eta_sec = ?, error = ?, log = ?, started_at = ?, finished_at = ? WHERE id = ?",
       )
       .run(
         patch.status ?? current.status,
+        patch.phase ?? current.phase ?? phaseFromStatus(String(patch.status ?? current.status)),
         patch.progress ?? current.progress,
+        patch.etaSec === undefined ? current.eta_sec : patch.etaSec,
         patch.error === undefined ? current.error : patch.error,
         patch.log ?? current.log,
         patch.startedAt ?? current.started_at,
@@ -607,16 +623,18 @@ export class Store {
   getJob(id: number): Record<string, unknown> | undefined {
     return this.db
       .prepare(
-        `SELECT id, item_id AS itemId, suggestion_id AS suggestionId, status, plan_json AS planJson,
-                progress, error, log FROM jobs WHERE id = ?`,
+        `SELECT id, item_id AS itemId, suggestion_id AS suggestionId, status, phase, plan_json AS planJson,
+                progress, eta_sec AS etaSec, error, log FROM jobs WHERE id = ?`,
       )
       .get(id) as Record<string, unknown> | undefined;
   }
 
   listJobs(): Array<Record<string, unknown>> {
+    const settings = this.getSettings();
     return this.db
       .prepare(
-        `SELECT j.id, j.item_id AS itemId, j.status, j.progress, j.error, j.log, j.created_at AS createdAt,
+        `SELECT j.id, j.item_id AS itemId, j.status, j.phase, j.progress, j.eta_sec AS etaSec, j.error, j.log,
+                j.created_at AS createdAt,
                 i.title, i.series_title AS seriesTitle, i.season_number AS seasonNumber,
                 i.episode_number AS episodeNumber
          FROM jobs j JOIN library_items i ON i.id = j.item_id ORDER BY j.id DESC`,
@@ -624,8 +642,16 @@ export class Store {
       .all()
       .map((row) => {
         const r = row as Record<string, unknown>;
+        const phase = publicJobPhase(r.status, r.phase);
         return {
           ...r,
+          phase,
+          progress: Number(r.progress ?? 0),
+          etaSec: r.etaSec == null ? null : Number(r.etaSec),
+          phaseLabel: jobPhaseLabel(phase, {
+            targetCodec: settings.targetCodec,
+            copyMode: settings.copyMode,
+          }),
           displayTitle: displayTitle({
             title: String(r.title),
             seriesTitle: (r.seriesTitle as string | null) ?? null,
@@ -850,6 +876,18 @@ function asLibraryItem(row: LibraryItem & { readable: number | boolean }): Libra
     readable: Boolean(row.readable),
     posterRemoteUrl: row.posterRemoteUrl ?? null,
   };
+}
+
+function phaseFromStatus(status: string): JobPhase {
+  if (status === "held") return "held";
+  return "queued";
+}
+
+function publicJobPhase(status: unknown, phase: unknown): JobPhase {
+  if (status === "queued" || status === "held") return status;
+  if (isJobPhase(phase)) return phase;
+  if (status === "running") return "finishing";
+  return "queued";
 }
 
 function normalizeUrl(url: string): string {
