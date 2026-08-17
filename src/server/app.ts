@@ -68,6 +68,9 @@ function pickSettings(body: Record<string, unknown>, current: Settings): Setting
   if (typeof body.concurrency === "number" && Number.isFinite(body.concurrency)) {
     next.concurrency = Math.max(1, Math.floor(body.concurrency));
   }
+  if (body.performanceMode === "shared" || body.performanceMode === "maximum") {
+    next.performanceMode = body.performanceMode;
+  }
   if (typeof body.multiSegment === "boolean") next.multiSegment = body.multiSegment;
   if (typeof body.offPeakEnabled === "boolean") next.offPeakEnabled = body.offPeakEnabled;
   if (typeof body.offPeakStart === "string") next.offPeakStart = body.offPeakStart;

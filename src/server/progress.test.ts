@@ -33,7 +33,7 @@ describe("job phase labels", () => {
 
 describe("progress parsers", () => {
   it("reads ffmpeg out_time and caps a running bar below 100%", () => {
-    expect(parseFfmpegOutTime("out_time_ms=5000\n")).toBe(5);
+    expect(parseFfmpegOutTime("out_time_ms=5000000\n")).toBe(5);
     expect(parseFfmpegOutTime("out_time_us=2500000\n")).toBe(2.5);
     expect(ratioProgress(5, 10)).toBe(0.5);
     expect(ratioProgress(10, 10)).toBe(0.99);

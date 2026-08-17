@@ -7,6 +7,7 @@ export type SizeCaps = {
 };
 
 export type CopyMode = "auto" | "ssh" | "mount" | "proxy";
+export type PerformanceMode = "shared" | "maximum";
 
 export type PathMap = {
   localRoot: string;
@@ -19,6 +20,7 @@ export type Settings = {
   localAuthBypass: boolean;
   targetCodec: "hevc" | "av1";
   concurrency: number;
+  performanceMode: PerformanceMode;
   multiSegment: boolean;
   offPeakEnabled: boolean;
   offPeakStart: string;
@@ -66,6 +68,7 @@ export function defaultSettings(): Settings {
     localAuthBypass: false,
     targetCodec: "hevc",
     concurrency: 1,
+    performanceMode: "shared",
     multiSegment: false,
     offPeakEnabled: false,
     offPeakStart: "01:00",

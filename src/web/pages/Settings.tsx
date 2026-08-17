@@ -67,6 +67,7 @@ export function Settings() {
         reviewPath: settings.reviewPath,
         autoOptimize: settings.autoOptimize,
         concurrency: settings.concurrency,
+        performanceMode: settings.performanceMode,
         offPeakEnabled: settings.offPeakEnabled,
         targetCodec: settings.targetCodec,
         workOnNas: settings.workOnNas,
@@ -381,6 +382,22 @@ export function Settings() {
             value={settings.concurrency}
             onChange={(e) => setSettings({ ...settings, concurrency: Number(e.target.value) })}
           />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1.5 block text-zinc-300">Performance mode</span>
+          <select
+            className="input"
+            value={settings.performanceMode}
+            onChange={(e) =>
+              setSettings({ ...settings, performanceMode: e.target.value as SettingsModel["performanceMode"] })
+            }
+          >
+            <option value="shared">Shared desktop (recommended)</option>
+            <option value="maximum">Maximum encode speed</option>
+          </select>
+          <span className="mt-1.5 block text-xs text-zinc-500">
+            Shared desktop mode lowers FFmpeg CPU priority and limits its worker threads so other apps stay responsive.
+          </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
           <input

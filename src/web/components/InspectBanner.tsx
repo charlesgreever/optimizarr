@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type InspectProgress } from "../api";
+import { startSerialPolling } from "../poll";
 
 export function InspectBanner() {
   const [progress, setProgress] = useState<InspectProgress | null>(null);
@@ -15,11 +16,10 @@ export function InspectBanner() {
         if (!stop) setProgress(null);
       }
     }
-    void tick();
-    const id = window.setInterval(() => void tick(), 1500);
+    const stopPolling = startSerialPolling(tick, 1500);
     return () => {
       stop = true;
-      window.clearInterval(id);
+      stopPolling();
     };
   }, []);
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { startSerialPolling } from "../poll";
 
 type Job = {
   id: number;
@@ -42,11 +43,10 @@ export function Queue() {
   }
 
   useEffect(() => {
-    load().catch((e: Error) => setMessage(e.message));
-    const timer = window.setInterval(() => {
-      void load().catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(timer);
+    return startSerialPolling(
+      () => load().catch((e: Error) => setMessage(e.message)),
+      3000,
+    );
   }, []);
 
   async function cancel(id: number) {

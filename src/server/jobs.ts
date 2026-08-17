@@ -194,6 +194,7 @@ export class JobService {
         backends: this.backends,
         sizeCaps: settings.sizeCapsGbPerHour,
         targetCodec: codec,
+        performanceMode: settings.performanceMode,
         onProgress: (update) => this.recordProgress(jobId, update, clocks),
       });
       if (this.isCancelled(jobId)) {

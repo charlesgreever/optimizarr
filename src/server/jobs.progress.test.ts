@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
 import { cookieHeader, waitForQueue } from "./test-http.ts";
-import type { RemuxRequest } from "./optimize.ts";
+import { ffmpegOptimizer, type RemuxRequest } from "./optimize.ts";
 
 describe("queue phase and progress", () => {
   const dirs: string[] = [];
@@ -119,6 +119,94 @@ describe("queue phase and progress", () => {
     expect(done.items[0].status).toBe("succeeded");
     expect(done.items[0].progress).toBe(1);
     expect(done.items[0].phase).toBe("finishing");
+  });
+
+  it("reports real ffmpeg microsecond progress instead of jumping to 99%", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "optimizarr-progress-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const release = join(dir, "release");
+    writeFileSync(
+      ffmpeg,
+      `#!/bin/sh
+dest=""
+for arg in "$@"; do dest="$arg"; done
+printf 'out_time_ms=1800000000\nprogress=continue\n'
+while [ ! -f "${release}" ]; do sleep 0.01; done
+mkdir -p "$(dirname "$dest")"
+printf 'OUTPUT-MEDIA-FILE-CONTENTS-ARE-HERE-1234' > "$dest"
+`,
+    );
+    chmodSync(ffmpeg, 0o755);
+    const { app, cookie } = await setup(ffmpegOptimizer(ffmpeg));
+    const sid = await suggestionId(app, cookie);
+
+    let running: Array<Record<string, unknown>> = [];
+    try {
+      await app.request("/api/queue", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ suggestionId: sid }),
+      });
+      running = await waitForQueue(app, cookie, (items) => Number(items[0]?.progress) > 0);
+    } finally {
+      writeFileSync(release, "go");
+      await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
+    }
+
+    expect(running[0].progress).toBeCloseTo(0.5);
+  });
+
+  it("keeps enqueue, status pages, and Cancel responsive while optimization is busy", async () => {
+    const { app, cookie } = await setup(
+      (req) =>
+        new Promise((resolve, reject) => {
+          req.onProgress?.({ phase: "transcoding", progress: 0.1, durationSec: 100 });
+          req.signal?.addEventListener("abort", () => reject(req.signal?.reason), { once: true });
+        }),
+    );
+    const sid = await suggestionId(app, cookie);
+    const within = async <T>(promise: Promise<T>): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("request exceeded 500 ms")), 500);
+      });
+      try {
+        return await Promise.race([promise, timeout]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    };
+
+    const queued = await within(
+      app.request("/api/queue", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ suggestionId: sid }),
+      }),
+    );
+    expect(queued.status).toBe(201);
+    const { jobId } = (await queued.json()) as { jobId: number };
+
+    const statusTimes: number[] = [];
+    for (let sample = 0; sample < 20; sample += 1) {
+      const started = performance.now();
+      expect((await within(app.request("/api/jobs", { headers: { cookie } }))).status).toBe(200);
+      statusTimes.push(performance.now() - started);
+    }
+    statusTimes.sort((a, b) => a - b);
+    expect(statusTimes[Math.ceil(statusTimes.length * 0.95) - 1]).toBeLessThan(500);
+
+    for (const path of ["/api/review", "/api/settings", "/api/library/inspect"]) {
+      expect((await within(app.request(path, { headers: { cookie } }))).status).toBe(200);
+    }
+
+    const cancelled = await within(
+      app.request(`/api/queue/${jobId}/cancel`, { method: "POST", headers: { cookie } }),
+    );
+    expect(cancelled.status).toBe(200);
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "cancelled");
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
   });
 
   it("keeps the failed phase and the original file", async () => {

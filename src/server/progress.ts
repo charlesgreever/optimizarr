@@ -65,7 +65,7 @@ export function phaseForPlan(actions: string[] | undefined): WorkPhase {
 
 export function parseFfmpegOutTime(text: string): number | null {
   const ms = /out_time_ms=(\d+)/.exec(text);
-  if (ms) return Number(ms[1]) / 1000;
+  if (ms) return Number(ms[1]) / 1_000_000;
   const us = /out_time_us=(\d+)/.exec(text);
   if (us) return Number(us[1]) / 1_000_000;
   return null;

@@ -19,6 +19,7 @@ export type Settings = {
   localAuthBypass: boolean;
   targetCodec: "hevc" | "av1";
   concurrency: number;
+  performanceMode: "shared" | "maximum";
   multiSegment: boolean;
   offPeakEnabled: boolean;
   offPeakStart: string;

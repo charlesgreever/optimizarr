@@ -7,6 +7,7 @@ import { parseFfmpegOutTime, ratioProgress, type ProgressUpdate } from "./progre
 import { createStorage, type Transfer } from "./storage.ts";
 import { isUntagged, type SuggestionPlan } from "./suggest.ts";
 import { DEFAULT_SIZE_CAPS } from "./types.ts";
+import type { PerformanceMode } from "./types.ts";
 
 export type OptimizeResult = {
   sidecarPath: string;
@@ -23,6 +24,7 @@ export type RemuxRequest = {
   backends?: EncodeBackends;
   sizeCaps?: typeof DEFAULT_SIZE_CAPS;
   targetCodec?: "hevc" | "av1";
+  performanceMode?: PerformanceMode;
   signal?: AbortSignal;
   onProgress?: (update: ProgressUpdate) => void;
 };
@@ -169,10 +171,14 @@ function ffmpegDetail(err: unknown): string {
 function runFfmpeg(
   bin: string,
   args: string[],
-  opts?: { signal?: AbortSignal; onStdout?: (text: string) => void },
+  opts?: { signal?: AbortSignal; onStdout?: (text: string) => void; performanceMode?: PerformanceMode },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { signal: opts?.signal });
+    const shared = (opts?.performanceMode ?? "shared") === "shared";
+    const ffmpegArgs = shared ? ["-threads", "2", "-filter_threads", "2", ...args] : args;
+    const command = shared ? "nice" : bin;
+    const commandArgs = shared ? ["-n", "10", bin, ...ffmpegArgs] : ffmpegArgs;
+    const child = spawn(command, commandArgs, { signal: opts?.signal });
     const chunks: string[] = [];
     let stored = 0;
     const keep = 16 * 1024;
@@ -380,7 +386,11 @@ async function runOptimizePass(
 ): Promise<void> {
   req.onProgress?.({ phase, progress: 0, durationSec: req.report.durationSec });
   try {
-    await runFfmpeg(ffmpeg, args, { signal: req.signal, onStdout: onFfmpegProgress(req, phase) });
+    await runFfmpeg(ffmpeg, args, {
+      signal: req.signal,
+      onStdout: onFfmpegProgress(req, phase),
+      performanceMode: req.performanceMode,
+    });
   } catch (err) {
     await unlink(dest).catch(() => undefined);
     if (err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError") {

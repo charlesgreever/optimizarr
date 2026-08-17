@@ -128,6 +128,29 @@ describe("transcode must not silently copy", () => {
     expect(output).toContain(".tmp.mkv");
     expect(args).toContain("-progress");
     expect(args).toContain("pipe:1");
+    expect(args.slice(0, 4)).toEqual(["-threads", "2", "-filter_threads", "2"]);
+  });
+
+  it("leaves ffmpeg threads unrestricted in maximum-speed mode", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-speed-"));
+    dirs.push(dir);
+    const ffmpeg = join(dir, "ffmpeg");
+    const argsLog = join(dir, "args.txt");
+    writeFileSync(ffmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsLog}"\nexit 1\n`);
+    chmodSync(ffmpeg, 0o755);
+    const source = join(dir, "movie.mkv");
+    writeFileSync(source, "MEDIA");
+
+    await ffmpegOptimizer(ffmpeg)({
+      sourcePath: source,
+      sidecarPath: join(dir, "review", "movie.1.mkv"),
+      plan: plan({ actions: ["transcode"] }),
+      report: inspectReport(),
+      backends: { cuda: true, vaapi: false, av1: false },
+      performanceMode: "maximum",
+    }).catch(() => undefined);
+
+    expect(readFileSync(argsLog, "utf8")).not.toContain("-filter_threads");
   });
 
   it("reports remux progress from ffmpeg out_time", async () => {
@@ -139,7 +162,7 @@ describe("transcode must not silently copy", () => {
       `#!/usr/bin/env node
 const fs = require("node:fs");
 const dest = process.argv[process.argv.length - 1];
-fs.writeSync(1, "out_time_ms=5000\\nprogress=continue\\n");
+fs.writeSync(1, "out_time_ms=5000000\\nprogress=continue\\n");
 fs.mkdirSync(require("node:path").dirname(dest), { recursive: true });
 fs.writeFileSync(dest, "MEDIA");
 `,

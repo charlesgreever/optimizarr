@@ -329,6 +329,20 @@ describe("phase 1 app", () => {
     });
   });
 
+  it("persists the operator's performance mode", async () => {
+    const { app, store } = appWithStore();
+    const cookie = await setup(app);
+    const saved = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ performanceMode: "maximum" }),
+    });
+
+    expect(saved.status).toBe(200);
+    await expect(saved.json()).resolves.toMatchObject({ performanceMode: "maximum" });
+    expect(store.getSettings().performanceMode).toBe("maximum");
+  });
+
   it("reports a copy method when testing storage", async () => {
     const { app, dir } = appWithStore();
     const cookie = await setup(app);
