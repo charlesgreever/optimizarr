@@ -42,6 +42,9 @@ export class JobService {
     if (this.store.pendingReviewForItem(item.id)) {
       return { error: "A sidecar is already pending review for this title", status: 409 };
     }
+    if (this.store.hasActiveJobForItem(item.id)) {
+      return { error: "This title is already queued", status: 409 };
+    }
     const settings = this.store.getSettings();
     if (!settings.reviewPath) return { error: "Set a review path in Settings first", status: 400 };
     const libraries = this.store.listLibraryItems().flatMap((row) => [row.path, row.folderPath ?? ""]);
@@ -64,6 +67,46 @@ export class JobService {
     const jobId = this.store.createJob(item.id, suggestion.id, suggestion.plan, this.now().toISOString());
     void this.processQueue().catch(() => undefined);
     return { jobId };
+  }
+
+  async enqueueSeries(instanceId: number, seriesId: number): Promise<{
+    queued: number;
+    skipped: number;
+    reasons: { noWork: number; pendingReview: number; alreadyQueued: number; errors: number };
+  }> {
+    const episodes = this.store
+      .listLibraryItems("episode")
+      .filter((item) => item.instanceId === instanceId && item.seriesId === seriesId);
+    const suggestions = new Map(
+      this.store
+        .listSuggestions({ type: "episode" })
+        .map((suggestion) => [Number(suggestion.itemId), Number(suggestion.id)]),
+    );
+    const reasons = { noWork: 0, pendingReview: 0, alreadyQueued: 0, errors: 0 };
+    let queued = 0;
+    for (const episode of episodes) {
+      const suggestionId = suggestions.get(episode.id);
+      if (!suggestionId) {
+        reasons.noWork += 1;
+        continue;
+      }
+      if (this.store.pendingReviewForItem(episode.id)) {
+        reasons.pendingReview += 1;
+        continue;
+      }
+      if (this.store.hasActiveJobForItem(episode.id)) {
+        reasons.alreadyQueued += 1;
+        continue;
+      }
+      const result = await this.enqueue(suggestionId);
+      if ("jobId" in result) queued += 1;
+      else reasons.errors += 1;
+    }
+    return {
+      queued,
+      skipped: episodes.length - queued,
+      reasons,
+    };
   }
 
   async processQueue(): Promise<void> {

@@ -8,6 +8,8 @@ type SeasonGroup = { season: number; episodes: LibraryItem[] };
 type SeriesGroup = {
   key: string;
   title: string;
+  instanceId: number;
+  seriesId: number | null;
   instanceName: string;
   posterItem: LibraryItem | undefined;
   seasons: SeasonGroup[];
@@ -21,11 +23,25 @@ function seasonLabel(n: number): string {
   return n === 0 ? "Specials" : `Season ${n}`;
 }
 
+function skippedEpisodes(reasons: {
+  noWork: number;
+  pendingReview: number;
+  alreadyQueued: number;
+  errors: number;
+}): string {
+  const parts: string[] = [];
+  if (reasons.noWork) parts.push(`${reasons.noWork} had no work`);
+  if (reasons.pendingReview) parts.push(`${reasons.pendingReview} waiting in Review`);
+  if (reasons.alreadyQueued) parts.push(`${reasons.alreadyQueued} already queued`);
+  if (reasons.errors) parts.push(`${reasons.errors} could not be queued`);
+  return parts.length ? ` Skipped: ${parts.join(", ")}.` : "";
+}
+
 function groupSeries(items: LibraryItem[]): SeriesGroup[] {
   const bySeries = new Map<string, LibraryItem[]>();
   for (const item of items) {
     const title = item.seriesTitle || item.title;
-    const key = `${item.instanceName}::${title}`;
+    const key = `${item.instanceId}:${item.seriesId ?? title}`;
     const list = bySeries.get(key) ?? [];
     list.push(item);
     bySeries.set(key, list);
@@ -43,6 +59,8 @@ function groupSeries(items: LibraryItem[]): SeriesGroup[] {
       return {
         key,
         title,
+        instanceId: eps[0].instanceId,
+        seriesId: eps[0].seriesId,
         instanceName: eps[0].instanceName,
         posterItem: eps.find((ep) => ep.hasPoster) ?? eps[0],
         seasons: [...seasons.entries()]
@@ -61,6 +79,8 @@ export function Series() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busySeries, setBusySeries] = useState<string | null>(null);
+  const [seriesStatus, setSeriesStatus] = useState<Record<string, string>>({});
   const [openSeries, setOpenSeries] = useState<Record<string, boolean>>({});
   const [openSeason, setOpenSeason] = useState<Record<string, boolean>>({});
 
@@ -93,6 +113,31 @@ export function Series() {
     }
   }
 
+  async function optimizeSeries(show: SeriesGroup) {
+    if (show.seriesId == null) {
+      setSeriesStatus((current) => ({ ...current, [show.key]: "This show is missing its Sonarr series ID." }));
+      return;
+    }
+    setBusySeries(show.key);
+    setError(null);
+    try {
+      const result = await api.enqueueSeries(show.instanceId, show.seriesId);
+      const queued = result.queued === 1 ? "1 episode was added to Queue." : `${result.queued} episodes were added to Queue.`;
+      const skipped = skippedEpisodes(result.reasons);
+      setSeriesStatus((current) => ({
+        ...current,
+        [show.key]: result.queued > 0 ? `${queued}${skipped}` : "No episodes need work right now.",
+      }));
+    } catch (cause) {
+      setSeriesStatus((current) => ({
+        ...current,
+        [show.key]: cause instanceof Error ? cause.message : "Could not add this show to Queue.",
+      }));
+    } finally {
+      setBusySeries(null);
+    }
+  }
+
   return (
     <section>
       <div className="page-header">
@@ -116,27 +161,40 @@ export function Series() {
             const seriesOpen = openSeries[show.key] ?? true;
             return (
               <article key={show.key} className="panel overflow-hidden">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-4 bg-gradient-to-r from-white/[0.045] to-transparent px-4 py-3.5 text-left transition hover:bg-white/[0.055]"
-                  onClick={() => setOpenSeries((s) => ({ ...s, [show.key]: !seriesOpen }))}
-                >
-                  {show.posterItem && (
-                    <Poster
-                      itemId={show.posterItem.id}
-                      hasPoster={show.posterItem.hasPoster}
-                      alt=""
-                      className="h-16 w-11 rounded-lg shadow-md shadow-black/30"
-                    />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="font-semibold tracking-[-0.01em]">{show.title}</span>
-                    <span className="mt-1 block text-[0.68rem] font-medium uppercase tracking-wider text-zinc-600">{show.instanceName}</span>
-                  </span>
-                  <span className="meta-pill">
-                    {show.seasons.reduce((n, s) => n + s.episodes.length, 0)} episodes
-                  </span>
-                </button>
+                <div className="flex items-center gap-3 bg-gradient-to-r from-white/[0.045] to-transparent px-4 py-3.5">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                    onClick={() => setOpenSeries((s) => ({ ...s, [show.key]: !seriesOpen }))}
+                  >
+                    {show.posterItem && (
+                      <Poster
+                        itemId={show.posterItem.id}
+                        hasPoster={show.posterItem.hasPoster}
+                        alt=""
+                        className="h-16 w-11 rounded-lg shadow-md shadow-black/30"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="font-semibold tracking-[-0.01em]">{show.title}</span>
+                      <span className="mt-1 block text-[0.68rem] font-medium uppercase tracking-wider text-zinc-600">{show.instanceName}</span>
+                    </span>
+                    <span className="meta-pill">
+                      {show.seasons.reduce((n, s) => n + s.episodes.length, 0)} episodes
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn !w-auto shrink-0"
+                    disabled={busySeries !== null}
+                    onClick={() => void optimizeSeries(show)}
+                  >
+                    {busySeries === show.key ? "Adding…" : "Optimize all episodes"}
+                  </button>
+                </div>
+                {seriesStatus[show.key] && (
+                  <p className="border-t border-white/[0.06] px-5 py-2 text-xs text-zinc-400">{seriesStatus[show.key]}</p>
+                )}
                 {seriesOpen && (
                   <div className="border-t border-white/[0.07]">
                     {show.seasons.map((season) => {

@@ -619,6 +619,16 @@ export class Store {
     return { id: row.id, itemId: row.itemId, plan: JSON.parse(row.planJson), actions: JSON.parse(row.actionsJson) };
   }
 
+  hasActiveJobForItem(itemId: number): boolean {
+    return Boolean(
+      this.db
+        .prepare(
+          "SELECT id FROM jobs WHERE item_id = ? AND status IN ('queued', 'held', 'running') LIMIT 1",
+        )
+        .get(itemId),
+    );
+  }
+
   pendingReviewForItem(itemId: number): { id: number; sidecarPath: string; sourcePath: string } | undefined {
     const row = this.db
       .prepare(

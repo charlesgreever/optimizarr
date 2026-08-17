@@ -75,6 +75,7 @@ export type ArrInstance = {
 export type LibraryItem = {
   id: number;
   instanceId: number;
+  seriesId: number | null;
   instanceName: string;
   instanceKind: "radarr" | "sonarr";
   title: string;
@@ -174,6 +175,12 @@ export const api = {
   queue: () => request<EmptyList>("/api/queue"),
   enqueue: (suggestionId: number) =>
     request("/api/queue", { method: "POST", body: JSON.stringify({ suggestionId }) }),
+  enqueueSeries: (instanceId: number, seriesId: number) =>
+    request<{
+      queued: number;
+      skipped: number;
+      reasons: { noWork: number; pendingReview: number; alreadyQueued: number; errors: number };
+    }>("/api/queue/series", { method: "POST", body: JSON.stringify({ instanceId, seriesId }) }),
   cancelJob: (id: number) => request(`/api/queue/${id}/cancel`, { method: "POST" }),
   review: () => request<EmptyList>("/api/review"),
   keepReview: (id: number) => request(`/api/review/${id}/keep`, { method: "POST" }),

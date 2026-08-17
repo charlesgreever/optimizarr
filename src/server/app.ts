@@ -555,6 +555,13 @@ export function createApp(store: Store, opts?: AppOpts): App {
     const items = store.listJobs();
     return c.json({ items, message: items.length ? undefined : "Jobs you approve from Suggestions appear here." });
   });
+  app.post("/api/queue/series", requireReady, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { instanceId?: number; seriesId?: number };
+    if (!Number.isInteger(body.instanceId) || !Number.isInteger(body.seriesId)) {
+      return c.json({ error: "instanceId and seriesId are required" }, 400);
+    }
+    return c.json(await jobs.enqueueSeries(Number(body.instanceId), Number(body.seriesId)));
+  });
   app.post("/api/queue", requireReady, async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { suggestionId?: number };
     if (!body.suggestionId) return c.json({ error: "suggestionId is required" }, 400);
