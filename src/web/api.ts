@@ -164,8 +164,10 @@ export const api = {
   suggestions: (params?: URLSearchParams, signal?: AbortSignal) =>
     request<EmptyList>(`/api/suggestions${params && [...params].length ? `?${params}` : ""}`, { signal }),
   dismissSuggestion: (id: number) => request(`/api/suggestions/${id}/dismiss`, { method: "POST" }),
-  forceItem: (id: number) => request(`/api/library/items/${id}/force`, { method: "POST" }),
-  addStereo: (id: number) => request(`/api/library/items/${id}/stereo`, { method: "POST" }),
+  forceItem: (id: number) =>
+    request<{ ok: boolean; onSuggestions?: boolean }>(`/api/library/items/${id}/force`, { method: "POST" }),
+  addStereo: (id: number) =>
+    request<{ ok: boolean; onSuggestions?: boolean }>(`/api/library/items/${id}/stereo`, { method: "POST" }),
   hardware: () => request<{ cuda: boolean; vaapi: boolean; av1: boolean }>("/api/hardware"),
   queue: () => request<EmptyList>("/api/queue"),
   enqueue: (suggestionId: number) =>

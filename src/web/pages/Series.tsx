@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type LibraryItem } from "../api";
+import { LibraryActions } from "../components/LibraryActions";
 import { Poster } from "../components/Poster";
 import { formatSize } from "../format";
 
@@ -168,6 +169,12 @@ export function Series() {
                                   {!ep.readable && ep.pathError && (
                                     <div className="text-xs text-amber-400">{ep.pathError}</div>
                                   )}
+                                  <LibraryActions
+                                    itemId={ep.id}
+                                    readable={ep.readable}
+                                    pathError={ep.pathError}
+                                    titleQuery={ep.seriesTitle || ep.title}
+                                  />
                                 </li>
                               ))}
                             </ul>

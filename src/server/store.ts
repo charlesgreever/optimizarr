@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
+import { sizePerHourGb, type InspectionReport } from "./inspect.ts";
+import { explainSuggestion } from "./suggest.ts";
 import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
@@ -517,12 +519,30 @@ export class Store {
          ORDER BY i.series_title COLLATE NOCASE, i.season_number, i.episode_number, i.title COLLATE NOCASE`,
       )
       .all() as Array<Record<string, unknown> & { actionsJson: string; planJson: string; dismissed: number; forced: number; overCap: number; extraTracks: number }>;
+    const settings = this.getSettings();
     return rows
       .map((r) => {
         const { posterRemoteUrl, actionsJson, planJson, ...rest } = r;
+        const actions = JSON.parse(actionsJson) as string[];
+        const inspection = this.getInspection(Number(r.itemId)) as InspectionReport | undefined;
+        const explained = explainSuggestion(
+          {
+            actions,
+            overCap: Boolean(r.overCap),
+            videoCodec: (r.videoCodec as string | null) || inspection?.videoCodec || null,
+            size: (r.size as number | null) ?? inspection?.sizeBytes ?? null,
+            sizePerHourGb:
+              (r.sizePerHourGb as number | null) ?? (inspection ? sizePerHourGb(inspection) : null),
+            extraTracks: Boolean(r.extraTracks),
+            estimatedSavingsBytes: r.estimatedSavingsBytes as number | null,
+            category: r.category as string | null,
+            quality: (r.quality as string | null) ?? null,
+          },
+          settings,
+        );
         return {
           ...rest,
-          actions: JSON.parse(actionsJson) as string[],
+          actions,
           plan: JSON.parse(planJson),
           dismissed: Boolean(r.dismissed),
           forced: Boolean(r.forced),
@@ -535,6 +555,9 @@ export class Store {
             episodeNumber: (r.episodeNumber as number | null) ?? null,
           }),
           hasPoster: Boolean(posterRemoteUrl),
+          reasons: explained.reasons,
+          now: explained.now,
+          after: explained.after,
         };
       })
       .filter((r) => {

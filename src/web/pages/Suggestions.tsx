@@ -24,6 +24,9 @@ type Row = {
   hasPoster?: boolean;
   quality?: string | null;
   size?: number | null;
+  reasons?: string[];
+  now?: { codec: string | null; sizeBytes: number | null; sizePerHourGb: number | null; quality?: string | null };
+  after?: { codec: string | null; sizeBytes: number | null; sizePerHourGb: number | null; quality?: string | null };
 };
 
 function savings(bytes: number | null): string {
@@ -212,14 +215,40 @@ export function Suggestions() {
                   />
                   <span className="min-w-0">
                     <span className="block font-medium">{item.displayTitle || item.title}</span>
-                    <span className="block text-xs text-zinc-500">
-                      {item.instanceName}
-                      {item.quality ? ` · ${item.quality}` : ""} · {item.videoCodec || "unknown codec"}
-                      {item.size ? ` · ${formatSize(item.size)}` : ""} · {item.category}
-                      {item.sizePerHourGb ? ` · ${item.sizePerHourGb.toFixed(2)} GB/hr` : ""}
-                      {item.estimatedSavingsBytes ? ` · save ~${savings(item.estimatedSavingsBytes)}` : ""}
-                    </span>
-                    <span className="mt-1 block text-sm text-zinc-300">Plan: {item.actions.join(", ") || "none"}</span>
+                    <span className="block text-xs text-zinc-500">{item.instanceName}</span>
+                    {item.reasons && item.reasons.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5 text-sm text-zinc-300">
+                        {item.reasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="mt-1 block text-sm text-zinc-300">
+                        Plan: {item.actions.join(", ") || "none"}
+                      </span>
+                    )}
+                    <div className="mt-2 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+                      <div>
+                        <div className="font-medium text-zinc-400">Now</div>
+                        <div>
+                          {item.now?.codec || item.videoCodec || "unknown codec"}
+                          {item.now?.quality || item.quality ? ` · ${item.now?.quality || item.quality}` : ""}
+                          {item.now?.sizeBytes || item.size ? ` · ${formatSize(item.now?.sizeBytes ?? item.size)}` : ""}
+                          {item.now?.sizePerHourGb != null || item.sizePerHourGb
+                            ? ` · ${(item.now?.sizePerHourGb ?? item.sizePerHourGb)?.toFixed(2)} GB/hr`
+                            : ""}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-zinc-400">After</div>
+                        <div>
+                          {item.after?.codec || "—"}
+                          {item.after?.sizeBytes != null ? ` · ${formatSize(item.after.sizeBytes)}` : ""}
+                          {item.after?.sizePerHourGb != null ? ` · ${item.after.sizePerHourGb.toFixed(2)} GB/hr` : ""}
+                          {item.estimatedSavingsBytes ? ` · save ~${savings(item.estimatedSavingsBytes)}` : ""}
+                        </div>
+                      </div>
+                    </div>
                     {item.warning && <span className="mt-1 block text-xs text-amber-400">{item.warning}</span>}
                   </span>
                 </label>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type LibraryItem } from "../api";
+import { LibraryActions } from "../components/LibraryActions";
 import { Poster } from "../components/Poster";
 import { formatSize } from "../format";
 
@@ -78,34 +79,18 @@ export function Movies() {
                 {!item.readable && item.pathError && (
                   <div className="mt-1 text-xs text-amber-400">{item.pathError}</div>
                 )}
-                <MovieActions itemId={item.id} />
+                <LibraryActions
+                  itemId={item.id}
+                  readable={item.readable}
+                  pathError={item.pathError}
+                  titleQuery={item.title}
+                />
               </div>
             </li>
           ))}
         </ul>
       )}
     </section>
-  );
-}
-
-function MovieActions({ itemId }: { itemId: number }) {
-  return (
-    <div className="mt-2">
-      <button
-        className="text-xs text-amber-400 hover:text-amber-300"
-        type="button"
-        onClick={() => void api.forceItem(itemId)}
-      >
-        Force suggestion
-      </button>
-      <button
-        className="ml-3 text-xs text-amber-400 hover:text-amber-300"
-        type="button"
-        onClick={() => void api.addStereo(itemId)}
-      >
-        Add stereo
-      </button>
-    </div>
   );
 }
 
@@ -138,7 +123,12 @@ function MovieTable({ items }: { items: LibraryItem[] }) {
                 {!item.readable && item.pathError && (
                   <div className="mt-1 text-xs text-amber-400">{item.pathError}</div>
                 )}
-                <MovieActions itemId={item.id} />
+                <LibraryActions
+                  itemId={item.id}
+                  readable={item.readable}
+                  pathError={item.pathError}
+                  titleQuery={item.title}
+                />
               </td>
             </tr>
           ))}

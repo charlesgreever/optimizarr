@@ -76,6 +76,9 @@ describe("phase 3 catalog", () => {
     expect(body.items.map((i: { title: string }) => i.title)).toEqual(["Giant AVC"]);
     expect(body.items[0].actions).toContain("transcode");
     expect(body.items[0].estimatedSavingsBytes).toBeGreaterThan(0);
+    expect(body.items[0].reasons.some((line: string) => /H\.264/.test(line) && /HEVC/.test(line))).toBe(true);
+    expect(body.items[0].now.codec).toBe("h264");
+    expect(body.items[0].after.codec).toBe("hevc");
   });
 
   it("shows show, season, and episode title on a series suggestion", async () => {
@@ -130,9 +133,15 @@ describe("phase 3 catalog", () => {
     expect(after.items).toHaveLength(0);
 
     const healthy = store.listLibraryItems("movie").find((i) => i.title === "Healthy");
-    await app.request(`/api/library/items/${healthy!.id}/force`, { method: "POST", headers: { cookie } });
+    const forceRes = await app.request(`/api/library/items/${healthy!.id}/force`, { method: "POST", headers: { cookie } });
+    expect(forceRes.status).toBe(200);
+    expect((await forceRes.json()).onSuggestions).toBe(true);
     const forced = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
     expect(forced.items.some((i: { title: string }) => i.title === "Healthy")).toBe(true);
+
+    const stereo = await app.request(`/api/library/items/${healthy!.id}/stereo`, { method: "POST", headers: { cookie } });
+    expect(stereo.status).toBe(400);
+    expect((await stereo.json()).error).toMatch(/stereo/i);
   });
 
   it("returns refresh before probes finish and lists movies immediately", async () => {

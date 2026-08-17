@@ -508,12 +508,10 @@ export function createApp(store: Store, opts?: AppOpts): App {
   });
 
   app.post("/api/library/items/:id/force", requireAuth, async (c) => {
-    await catalog.inspectItem(Number(c.req.param("id")), { force: true });
-    return c.json({ ok: true });
+    return inspectActionResponse(c, await catalog.inspectItem(Number(c.req.param("id")), { force: true }));
   });
   app.post("/api/library/items/:id/stereo", requireAuth, async (c) => {
-    await catalog.inspectItem(Number(c.req.param("id")), { addStereo: true });
-    return c.json({ ok: true });
+    return inspectActionResponse(c, await catalog.inspectItem(Number(c.req.param("id")), { addStereo: true }));
   });
   app.get("/api/review", requireAuth, (c) => {
     const items = store.listReviews("pending");
@@ -626,6 +624,18 @@ export function createApp(store: Store, opts?: AppOpts): App {
   }
 
   return app;
+}
+
+function inspectActionResponse(
+  c: { json: (body: unknown, status?: 200 | 400 | 404) => Response },
+  result: { onSuggestions: boolean; error?: string },
+) {
+  if (result.error === "Title not found") return c.json({ error: result.error }, 404);
+  if (result.error) return c.json({ error: result.error, onSuggestions: false }, 400);
+  if (!result.onSuggestions) {
+    return c.json({ error: "No suggestion was created.", onSuggestions: false }, 400);
+  }
+  return c.json({ ok: true, onSuggestions: true });
 }
 
 function settingsPayload(store: Store) {

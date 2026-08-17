@@ -44,15 +44,23 @@ export class Catalog {
     void this.inspectPending().catch(() => undefined);
   }
 
-  async inspectItem(itemId: number, opts?: { force?: boolean; addStereo?: boolean }): Promise<void> {
+  async inspectItem(
+    itemId: number,
+    opts?: { force?: boolean; addStereo?: boolean },
+  ): Promise<{ onSuggestions: boolean; error?: string }> {
     const item = this.store.getLibraryItem(itemId);
-    if (!item || !item.path) return;
-    if (this.store.isExcluded(item) && !opts?.force) return;
+    if (!item) return { onSuggestions: false, error: "Title not found" };
+    if (!item.path) return { onSuggestions: false, error: "No file to inspect" };
+    if (this.store.isExcluded(item) && !opts?.force) {
+      return { onSuggestions: false, error: "This title is excluded" };
+    }
     const sourceSig = this.sourceSig(item.path, item.size);
     if (!opts?.force && !opts?.addStereo && this.store.getInspectionSig(itemId) === sourceSig) {
-      return;
+      return { onSuggestions: false };
     }
-    if (!item.readable && !opts?.force) return;
+    if (!item.readable && !opts?.force) {
+      return { onSuggestions: false, error: item.pathError || "This file is not readable yet." };
+    }
     let report: InspectionReport;
     try {
       report = await this.probe(item.path);
@@ -62,9 +70,9 @@ export class Catalog {
       try {
         existing = this.store.getInspection(itemId) as InspectionReport | undefined;
       } catch {
-        return;
+        return { onSuggestions: false, error: "Could not inspect this file." };
       }
-      if (!existing) return;
+      if (!existing) return { onSuggestions: false, error: "Could not inspect this file." };
       report = existing;
     }
     this.store.saveInspection(itemId, report, new Date().toISOString(), sourceSig);
@@ -73,6 +81,9 @@ export class Catalog {
       addStereo: opts?.addStereo,
     });
     if (plan.healthy && !opts?.force) {
+      if (opts?.addStereo) {
+        return { onSuggestions: false, error: "This file already has a stereo track." };
+      }
       this.store.saveSuggestion({
         itemId,
         actions: [],
@@ -87,7 +98,7 @@ export class Catalog {
         forced: false,
       });
       if (this.onInspected) await this.onInspected(itemId);
-      return;
+      return { onSuggestions: false };
     }
     this.store.saveSuggestion({
       itemId,
@@ -103,6 +114,7 @@ export class Catalog {
       dismissed: false,
     });
     if (this.onInspected) await this.onInspected(itemId);
+    return { onSuggestions: plan.actions.length > 0 || Boolean(opts?.force) };
   }
 
   async inspectAll(opts?: { force?: boolean }): Promise<number> {

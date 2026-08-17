@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFfprobe } from "./inspect.ts";
-import { buildSuggestion } from "./suggest.ts";
+import { buildSuggestion, explainSuggestion } from "./suggest.ts";
 import { defaultSettings } from "./types.ts";
 
 function report(streams: Record<string, unknown>[], extra: Record<string, unknown> = {}) {
@@ -149,5 +149,85 @@ describe("suggestion engine", () => {
     ]);
     expect(buildSuggestion(healthy, settings, "movie").healthy).toBe(true);
     expect(buildSuggestion(healthy, settings, "movie", { force: true }).actions).toEqual(["remux"]);
+  });
+});
+
+describe("suggestion reasons and targets", () => {
+  it.each([
+    {
+      name: "h264 under the cap converts to HEVC and does not invent a smaller size",
+      actions: ["transcode"],
+      overCap: false,
+      extraTracks: false,
+      videoCodec: "h264",
+      size: 2 * 1024 ** 3,
+      sizePerHourGb: 2,
+      estimatedSavingsBytes: null,
+      category: "movie1080p",
+      quality: "Bluray-1080p",
+      wantReasons: ["Video is H.264. Convert to HEVC."],
+      wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
+    },
+    {
+      name: "already-HEVC over the cap shows current vs allowed GB/hr",
+      actions: ["transcode"],
+      overCap: true,
+      extraTracks: false,
+      videoCodec: "hevc",
+      size: 8 * 1024 ** 3,
+      sizePerHourGb: 8,
+      estimatedSavingsBytes: 5.5 * 1024 ** 3,
+      category: "movie1080p",
+      wantReasons: ["Over the size cap: 8.00 GB/hr now, 2.50 GB/hr allowed."],
+      wantAfter: { codec: "hevc", sizeBytes: 2.5 * 1024 ** 3, sizePerHourGb: 2.5 },
+    },
+    {
+      name: "remux with extra tracks explains cleanup and does not invent a size",
+      actions: ["remux"],
+      overCap: false,
+      extraTracks: true,
+      videoCodec: "hevc",
+      size: 3 * 1024 ** 3,
+      sizePerHourGb: 1.2,
+      estimatedSavingsBytes: null,
+      category: "movie1080p",
+      wantReasons: ["Keep the video; drop extra audio and subtitle tracks."],
+      wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
+    },
+    {
+      name: "forced remux without extra tracks does not claim track cleanup",
+      actions: ["remux"],
+      overCap: false,
+      extraTracks: false,
+      videoCodec: "hevc",
+      size: 3 * 1024 ** 3,
+      sizePerHourGb: 1.2,
+      estimatedSavingsBytes: null,
+      category: "movie1080p",
+      wantReasons: [] as string[],
+      wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
+    },
+    {
+      name: "add stereo explains the AAC track",
+      actions: ["add_stereo"],
+      overCap: false,
+      extraTracks: false,
+      videoCodec: "hevc",
+      size: 2 * 1024 ** 3,
+      sizePerHourGb: 1,
+      estimatedSavingsBytes: null,
+      category: "movie1080p",
+      wantReasons: ["Add a stereo AAC track."],
+      wantAfter: { codec: "hevc", sizeBytes: null, sizePerHourGb: null },
+    },
+  ])("$name", ({ wantReasons, wantAfter, ...input }) => {
+    const explained = explainSuggestion(input, settings);
+    expect(explained.reasons).toEqual(wantReasons);
+    expect(explained.after.codec).toBe(wantAfter.codec);
+    expect(explained.after.sizePerHourGb).toBe(wantAfter.sizePerHourGb);
+    if (wantAfter.sizeBytes == null) expect(explained.after.sizeBytes).toBeNull();
+    else expect(explained.after.sizeBytes).toBeCloseTo(wantAfter.sizeBytes);
+    expect(explained.now.codec).toBe(input.videoCodec);
+    if ("quality" in input && input.quality) expect(explained.now.quality).toBe(input.quality);
   });
 });

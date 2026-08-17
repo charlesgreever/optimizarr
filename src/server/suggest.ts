@@ -18,6 +18,19 @@ export type SuggestionPlan = {
   healthy: boolean;
 };
 
+export type SuggestionNowAfter = {
+  codec: string | null;
+  sizeBytes: number | null;
+  sizePerHourGb: number | null;
+  quality: string | null;
+};
+
+export type ExplainedSuggestion = {
+  reasons: string[];
+  now: SuggestionNowAfter;
+  after: SuggestionNowAfter;
+};
+
 const UNTAGGED = new Set(["", "und", "unk", "unknown"]);
 
 export function isPreferredLang(lang: string | undefined, preferred: string): boolean {
@@ -110,5 +123,93 @@ export function buildSuggestion(
     keepSubs,
     stripSubs,
     healthy,
+  };
+}
+
+export function codecLabel(codec: string | null | undefined): string {
+  if (!codec) return "unknown codec";
+  const c = codec.toLowerCase();
+  if (c === "hevc" || c === "h265") return "HEVC";
+  if (c === "av1") return "AV1";
+  if (c === "h264" || c === "avc") return "H.264";
+  return codec;
+}
+
+export function isTargetCodec(codec: string | null | undefined, target: Settings["targetCodec"]): boolean {
+  if (!codec) return false;
+  const c = codec.toLowerCase();
+  if (target === "av1") return c === "av1";
+  return c === "hevc" || c === "h265";
+}
+
+const SIZE_CATEGORIES = new Set<SizeCategory>(["movie1080p", "movie4kSdr", "movie4kHdr", "tv1080p", "tv4k"]);
+
+export function asSuggestionActions(actions: string[]): SuggestionAction[] {
+  return actions.filter((action): action is SuggestionAction =>
+    action === "transcode" || action === "remux" || action === "add_stereo",
+  );
+}
+
+export function asSizeCategory(value: string | null | undefined): SizeCategory | null {
+  if (value && SIZE_CATEGORIES.has(value as SizeCategory)) return value as SizeCategory;
+  return null;
+}
+
+export function explainSuggestion(
+  input: {
+    actions: SuggestionAction[] | string[];
+    overCap: boolean;
+    extraTracks?: boolean;
+    videoCodec: string | null | undefined;
+    size: number | null | undefined;
+    sizePerHourGb: number | null | undefined;
+    estimatedSavingsBytes: number | null | undefined;
+    category: SizeCategory | string | null | undefined;
+    quality?: string | null;
+  },
+  settings: Settings,
+): ExplainedSuggestion {
+  const actions = asSuggestionActions(input.actions);
+  const category = asSizeCategory(typeof input.category === "string" ? input.category : null);
+  const cap = category ? settings.sizeCapsGbPerHour[category] : null;
+  const reasons: string[] = [];
+  const changingCodec = actions.includes("transcode") && !isTargetCodec(input.videoCodec, settings.targetCodec);
+
+  if (changingCodec) {
+    reasons.push(`Video is ${codecLabel(input.videoCodec)}. Convert to ${codecLabel(settings.targetCodec)}.`);
+  }
+  if (input.overCap && input.sizePerHourGb != null && cap != null) {
+    reasons.push(
+      `Over the size cap: ${input.sizePerHourGb.toFixed(2)} GB/hr now, ${cap.toFixed(2)} GB/hr allowed.`,
+    );
+  }
+  if (actions.includes("remux") && input.extraTracks) {
+    reasons.push("Keep the video; drop extra audio and subtitle tracks.");
+  }
+  if (actions.includes("add_stereo")) {
+    reasons.push("Add a stereo AAC track.");
+  }
+
+  const afterCodec = actions.includes("transcode") ? settings.targetCodec : (input.videoCodec ?? null);
+  const afterSize =
+    input.estimatedSavingsBytes != null && input.size
+      ? Math.max(0, input.size - input.estimatedSavingsBytes)
+      : null;
+  const afterHour = input.overCap && cap != null ? cap : null;
+
+  return {
+    reasons,
+    now: {
+      codec: input.videoCodec ?? null,
+      sizeBytes: input.size ?? null,
+      sizePerHourGb: input.sizePerHourGb ?? null,
+      quality: input.quality ?? null,
+    },
+    after: {
+      codec: afterCodec,
+      sizeBytes: afterSize,
+      sizePerHourGb: afterHour,
+      quality: null,
+    },
   };
 }
