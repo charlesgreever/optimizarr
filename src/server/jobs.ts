@@ -16,7 +16,7 @@ import type { Settings } from "./types.ts";
 
 export class JobService {
   private aborts = new Map<number, AbortController>();
-  private pumping = false;
+  private starting = false;
 
   constructor(
     private store: Store,
@@ -67,20 +67,32 @@ export class JobService {
   }
 
   async processQueue(): Promise<void> {
-    if (this.pumping) return;
-    this.pumping = true;
+    if (this.starting) return;
+    this.starting = true;
+    let started: Array<Promise<void>> = [];
     try {
-      for (;;) {
-        const started = this.startReadyJobs();
-        if (started.length === 0) break;
-        await Promise.all(started);
-      }
+      started = this.startReadyJobs();
     } finally {
-      this.pumping = false;
+      this.starting = false;
     }
+    for (const run of started) {
+      void run.finally(() => {
+        void this.processQueue().catch(() => undefined);
+      });
+    }
+    if (started.length) await Promise.all(started);
   }
 
   private startReadyJobs(): Array<Promise<void>> {
+    try {
+      return this.collectReadyJobs();
+    } catch (err) {
+      if (isClosedStore(err)) return [];
+      throw err;
+    }
+  }
+
+  private collectReadyJobs(): Array<Promise<void>> {
     const settings = this.store.getSettings();
     const jobs = this.store.listJobs();
     const running = jobs.filter((j) => j.status === "running").length;
@@ -225,7 +237,12 @@ export class JobService {
   }
 
   private isCancelled(jobId: number): boolean {
-    return this.store.getJob(jobId)?.status === "cancelled";
+    try {
+      return this.store.getJob(jobId)?.status === "cancelled";
+    } catch (err) {
+      if (isClosedStore(err)) return true;
+      throw err;
+    }
   }
 
   private recordProgress(
@@ -304,6 +321,12 @@ export class JobService {
     this.store.addHistory(review.itemId, item ? displayTitle(item) : "item", "discarded");
     return { ok: true };
   }
+}
+
+function isClosedStore(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const rec = err as { code?: string; message?: string };
+  return rec.code === "ERR_INVALID_STATE" || Boolean(rec.message?.includes("not open"));
 }
 
 function isAbortError(err: unknown): boolean {

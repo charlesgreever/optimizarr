@@ -243,6 +243,81 @@ describe("phase 4 remux review keep", () => {
     await jobs.processQueue();
   });
 
+  it("starts more jobs when concurrency is raised while one is running", async () => {
+    const { store } = await setup();
+    const firstItem = store.listLibraryItems("movie")[0];
+    const plan = store.listSuggestions()[0].plan;
+    for (const [externalId, title] of [
+      [10, "The Tagger"],
+      [11, "The Slump"],
+    ] as const) {
+      const item = store.upsertLibraryItem({
+        instanceId: firstItem.instanceId,
+        externalId,
+        seriesId: null,
+        type: "movie",
+        title,
+        seriesTitle: "Brooklyn Nine-Nine",
+        seasonNumber: 1,
+        episodeNumber: externalId - 8,
+        path: firstItem.path,
+        folderPath: firstItem.folderPath,
+        quality: firstItem.quality,
+        videoCodec: firstItem.videoCodec,
+        resolution: firstItem.resolution,
+        hdr: firstItem.hdr,
+        size: firstItem.size,
+        readable: true,
+        pathError: null,
+        updatedAt: new Date().toISOString(),
+      });
+      store.saveInspection(item.id, store.getInspection(firstItem.id), new Date().toISOString(), `sig-${externalId}`);
+      store.saveSuggestion({
+        itemId: item.id,
+        actions: ["transcode"],
+        warning: null,
+        estimatedSavingsBytes: 1,
+        overCap: true,
+        extraTracks: false,
+        category: "tv1080p",
+        sizePerHourGb: 3,
+        plan,
+      });
+    }
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { JobService } = await import("./jobs.ts");
+    const jobs = new JobService(store, async (req) => {
+      await gate;
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { dirname } = await import("node:path");
+      await mkdir(dirname(req.sidecarPath), { recursive: true });
+      await writeFile(req.sidecarPath, "SIDECAR");
+      return { sidecarPath: req.sidecarPath, durationSec: 3600, sizeBytes: 40 };
+    });
+    store.saveSettings({ ...store.getSettings(), concurrency: 1 });
+    for (const sug of store.listSuggestions()) {
+      await jobs.enqueue(sug.id as number);
+    }
+    for (let i = 0; i < 50 && store.listJobs().filter((j) => j.status === "running").length !== 1; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(store.listJobs().filter((j) => j.status === "running")).toHaveLength(1);
+    expect(store.listJobs().filter((j) => j.status === "queued").length).toBeGreaterThanOrEqual(2);
+    store.saveSettings({ ...store.getSettings(), concurrency: 4 });
+    void jobs.processQueue();
+    for (let i = 0; i < 50 && store.listJobs().filter((j) => j.status === "running").length < 3; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(store.listJobs().filter((j) => j.status === "running")).toHaveLength(3);
+    release();
+    for (let i = 0; i < 50 && store.listJobs().some((j) => j.status === "running"); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  });
+
   it("blocks a second job while a sidecar is pending", async () => {
     const { app, cookie } = await setup();
     const sid = (await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;

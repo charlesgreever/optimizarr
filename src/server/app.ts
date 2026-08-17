@@ -300,6 +300,7 @@ export function createApp(store: Store, opts?: AppOpts): App {
       }
     }
     store.saveSettings(next);
+    void jobs.processQueue().catch(() => undefined);
     return c.json(settingsPayload(store));
   });
 
