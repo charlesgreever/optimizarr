@@ -16,6 +16,7 @@ import type { Settings } from "./types.ts";
 
 export class JobService {
   private aborts = new Map<number, AbortController>();
+  private pumping = false;
 
   constructor(
     private store: Store,
@@ -61,11 +62,25 @@ export class JobService {
       return { error: message, status: 400 };
     }
     const jobId = this.store.createJob(item.id, suggestion.id, suggestion.plan, this.now().toISOString());
-    await this.processQueue();
+    void this.processQueue().catch(() => undefined);
     return { jobId };
   }
 
   async processQueue(): Promise<void> {
+    if (this.pumping) return;
+    this.pumping = true;
+    try {
+      for (;;) {
+        const started = this.startReadyJobs();
+        if (started.length === 0) break;
+        await Promise.all(started);
+      }
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  private startReadyJobs(): Array<Promise<void>> {
     const settings = this.store.getSettings();
     const jobs = this.store.listJobs();
     const running = jobs.filter((j) => j.status === "running").length;
@@ -83,7 +98,7 @@ export class JobService {
       slots -= 1;
       runningJobs.push(this.runJob(job.id as number));
     }
-    await Promise.all(runningJobs);
+    return runningJobs;
   }
 
   recoverInterruptedJobs(): void {

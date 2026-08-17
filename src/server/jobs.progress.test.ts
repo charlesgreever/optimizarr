@@ -8,7 +8,7 @@ import { Catalog } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-import { cookieHeader } from "./test-http.ts";
+import { cookieHeader, waitForQueue } from "./test-http.ts";
 import type { RemuxRequest } from "./optimize.ts";
 
 describe("queue phase and progress", () => {
@@ -114,7 +114,8 @@ describe("queue phase and progress", () => {
     expect(row?.progress).not.toBe(1);
     release();
     expect((await pending).status).toBe(201);
-    const done = await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json());
+    const doneItems = await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
+    const done = { items: doneItems };
     expect(done.items[0].status).toBe("succeeded");
     expect(done.items[0].progress).toBe(1);
     expect(done.items[0].phase).toBe("finishing");
@@ -131,7 +132,8 @@ describe("queue phase and progress", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
-    const listed = await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json());
+    const listedItems = await waitForQueue(app, cookie, (items) => items[0]?.status === "failed");
+    const listed = { items: listedItems };
     expect(listed.items[0]).toMatchObject({
       status: "failed",
       phase: "transcoding",
@@ -155,6 +157,7 @@ describe("queue phase and progress", () => {
     jobs.now = () => noon;
     const sid = store.listSuggestions()[0].id as number;
     await jobs.enqueue(sid);
+    await jobs.processQueue();
     const listed = await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json());
     expect(listed.items[0]).toMatchObject({
       status: "held",
@@ -222,6 +225,9 @@ describe("queue phase and progress", () => {
       return { sidecarPath: req.sidecarPath, durationSec: 10, sizeBytes: 100 };
     });
     await jobs.enqueue(sugId);
+    for (let i = 0; i < 50 && store.listJobs()[0]?.status !== "succeeded"; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     expect(seen[0]).toBe(0.5);
     expect(store.listJobs()[0].phase).toBe("finishing");
     expect(store.listJobs()[0].progress).toBe(1);

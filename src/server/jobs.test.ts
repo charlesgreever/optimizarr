@@ -9,7 +9,7 @@ import { parseFfprobe } from "./inspect.ts";
 import { IntegrityError } from "./optimize.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-import { cookieHeader } from "./test-http.ts";
+import { cookieHeader, waitForQueue } from "./test-http.ts";
 
 describe("phase 4 remux review keep", () => {
   const dirs: string[] = [];
@@ -126,6 +126,7 @@ describe("phase 4 remux review keep", () => {
       body: JSON.stringify({ suggestionId: suggestions.items[0].id }),
     });
     expect(queued.status).toBe(201);
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
     const reviews = await app.request("/api/review", { headers: { cookie } }).then((r) => r.json());
     expect(reviews.items).toHaveLength(1);
@@ -141,6 +142,7 @@ describe("phase 4 remux review keep", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
     expect(keep.status).toBe(200);
@@ -161,12 +163,84 @@ describe("phase 4 remux review keep", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const keep = await app.request(`/api/review/${review.id}/keep`, { method: "POST", headers: { cookie } });
     const body = await keep.json();
     expect(keep.status).toBe(200);
     expect(body.error).toMatch(/HTTP 503/);
     expect(readFileSync(source, "utf8")).toBeTruthy();
+  });
+
+  it("keeps later titles in the queue while one job is running", async () => {
+    const { store } = await setup();
+    const firstItem = store.listLibraryItems("movie")[0];
+    const second = store.upsertLibraryItem({
+      instanceId: firstItem.instanceId,
+      externalId: 10,
+      seriesId: null,
+      type: "movie",
+      title: "Biscuits",
+      seriesTitle: "Ted Lasso",
+      seasonNumber: 1,
+      episodeNumber: 2,
+      path: firstItem.path,
+      folderPath: firstItem.folderPath,
+      quality: firstItem.quality,
+      videoCodec: firstItem.videoCodec,
+      resolution: firstItem.resolution,
+      hdr: firstItem.hdr,
+      size: firstItem.size,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    store.saveInspection(second.id, store.getInspection(firstItem.id), new Date().toISOString(), "sig");
+    const plan = store.listSuggestions()[0].plan;
+    store.saveSuggestion({
+      itemId: second.id,
+      actions: ["transcode"],
+      warning: null,
+      estimatedSavingsBytes: 1,
+      overCap: true,
+      extraTracks: false,
+      category: "tv1080p",
+      sizePerHourGb: 3,
+      plan,
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    const { JobService } = await import("./jobs.ts");
+    const jobs = new JobService(store, async (req) => {
+      started += 1;
+      if (started === 1) await gate;
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { dirname } = await import("node:path");
+      await mkdir(dirname(req.sidecarPath), { recursive: true });
+      await writeFile(req.sidecarPath, "SIDECAR");
+      return { sidecarPath: req.sidecarPath, durationSec: 3600, sizeBytes: 40 };
+    });
+    const sugs = store.listSuggestions();
+    const first = jobs.enqueue(sugs[0].id as number);
+    for (let i = 0; i < 50 && !store.listJobs().some((j) => j.status === "running"); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const firstResult = await first;
+    expect("jobId" in firstResult).toBe(true);
+    expect(store.listJobs().some((j) => j.status === "running")).toBe(true);
+    const secondResult = await jobs.enqueue(sugs[1].id as number);
+    expect("jobId" in secondResult).toBe(true);
+    const statuses = store
+      .listJobs()
+      .map((j) => j.status)
+      .sort();
+    expect(statuses).toContain("queued");
+    expect(statuses).toContain("running");
+    release();
+    await jobs.processQueue();
   });
 
   it("blocks a second job while a sidecar is pending", async () => {
@@ -178,6 +252,7 @@ describe("phase 4 remux review keep", () => {
       body: JSON.stringify({ suggestionId: sid }),
     });
     expect(first.status).toBe(201);
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const second = await app.request("/api/queue", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
@@ -245,6 +320,7 @@ describe("phase 4 remux review keep", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const jobId = (await app.request("/api/queue", { headers: { cookie } }).then((r) => r.json())).items[0].id;
     const res = await app.request(`/api/queue/${jobId}/cancel`, { method: "POST", headers: { cookie } });
     expect(res.status).toBe(409);
@@ -260,6 +336,7 @@ describe("phase 4 remux review keep", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "failed");
     expect(readFileSync(source, "utf8")).toContain("ORIGINAL");
     const jobs = await app.request("/api/jobs", { headers: { cookie } }).then((r) => r.json());
     expect(jobs.items[0].status).toBe("failed");
@@ -349,6 +426,7 @@ describe("phase 4 remux review keep", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ suggestionId: sid }),
     });
+    await waitForQueue(app, cookie, (items) => items[0]?.status === "succeeded");
     const review = (await app.request("/api/review", { headers: { cookie } }).then((r) => r.json())).items[0];
     const disc = await app.request(`/api/review/${review.id}/discard`, { method: "POST", headers: { cookie } });
     expect(disc.status).toBe(200);

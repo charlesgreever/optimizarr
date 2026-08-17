@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ArrClient } from "./arr.ts";
+import { cookieHeader, waitForQueue } from "./test-http.ts";
 import { createApp } from "./app.ts";
 import { Catalog } from "./catalog.ts";
 import { parseFfprobe } from "./inspect.ts";
 import { Store } from "./store.ts";
 import { LibrarySync } from "./sync.ts";
-import { cookieHeader } from "./test-http.ts";
 
 describe("phases 5-10", () => {
   const dirs: string[] = [];
@@ -91,6 +91,7 @@ describe("phases 5-10", () => {
       body: JSON.stringify({ suggestionId: sid }),
     });
     expect(queued.status).toBe(201);
+    await waitForQueue(app2, cookie, (items) => items[0]?.status === "failed");
     const jobs = await app2.request("/api/jobs", { headers: { cookie } }).then((r) => r.json());
     expect(jobs.items[0].status).toBe("failed");
     expect(jobs.items[0].error).toMatch(/Hardware encode failed/i);

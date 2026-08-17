@@ -72,7 +72,13 @@ export function Queue() {
         </div>
       ) : (
         <ul className="mt-6 space-y-2">
-          {items.map((job) => {
+          {[...items]
+            .sort((a, b) => {
+              const rank = (status: string) =>
+                status === "running" ? 0 : status === "queued" || status === "held" ? 1 : 2;
+              return rank(String(a.status)) - rank(String(b.status)) || Number(b.id) - Number(a.id);
+            })
+            .map((job) => {
             const status = String(job.status ?? "");
             const waiting = WAITING.has(status);
             const showBar = status === "running" && !waiting;
