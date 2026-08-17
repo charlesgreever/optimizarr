@@ -6,6 +6,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ArrClient, ArrError } from "./arr.ts";
+import { loadOrFetchPoster, sniffImageType } from "./art.ts";
 import type { ArrKind } from "./models.ts";
 import { clientIp, isPrivateIp } from "./net.ts";
 import { Store, publicSettings } from "./store.ts";
@@ -418,10 +419,25 @@ export function createApp(store: Store, opts?: AppOpts): App {
     return c.json({
       ...result,
       lastSyncAt: sync.lastSyncAt,
+      inspect: catalog.progress(),
       suggestedReviewPath: suggestReviewPath(
         store.listLibraryItems().flatMap((i) => [i.path, i.folderPath ?? ""]),
       ),
     });
+  });
+
+  app.get("/api/library/inspect", requireAuth, (c) => c.json(catalog.progress()));
+
+  app.get("/api/library/items/:id/poster", requireAuth, async (c) => {
+    const item = store.getLibraryItem(Number(c.req.param("id")));
+    if (!item?.posterRemoteUrl) return c.body(null, 404);
+    const instance = store.getArrInstance(item.instanceId);
+    if (!instance) return c.body(null, 404);
+    const bytes = await loadOrFetchPoster(store.dataDir, item, instance.apiKey, opts?.fetchImpl ?? fetch);
+    if (!bytes) return c.body(null, 404);
+    c.header("Content-Type", sniffImageType(bytes));
+    c.header("Cache-Control", "private, max-age=86400");
+    return c.body(new Uint8Array(bytes));
   });
 
   app.get("/api/library/movies", requireAuth, (c) => {

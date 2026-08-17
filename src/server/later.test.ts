@@ -32,7 +32,11 @@ describe("phases 5-10", () => {
       pathReadable: () => true,
       sync,
       catalog,
-      probe: extra?.probe as never,
+      probe:
+        (extra?.probe as never) ??
+        (async () => {
+          throw new Error("unused probe");
+        }),
       backends: extra?.backends as never,
       optimize: extra?.optimize as never,
     });
@@ -70,13 +74,16 @@ describe("phases 5-10", () => {
       backends: { cuda: false, vaapi: false, av1: false },
     });
     store.createArrInstance({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" });
+    const catalog = new Catalog(store, probe);
     const app2 = createApp(store, {
       fetchImpl,
       pathReadable: () => true,
       probe,
+      catalog,
       backends: { cuda: false, vaapi: false, av1: false },
     });
     await app2.request("/api/library/refresh", { method: "POST", headers: { cookie } });
+    await catalog.inspectPending();
     const sid = (await app2.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json())).items[0].id;
     const queued = await app2.request("/api/queue", {
       method: "POST",

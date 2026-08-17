@@ -17,9 +17,20 @@ export function displayTitle(item: TitleParts): string {
   return `${show} / ${seasonLabel(item.seasonNumber)} / ${item.title}`;
 }
 
-export function matchesTitleSearch(item: TitleParts, q: string): boolean {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return true;
-  const hay = [item.title, item.seriesTitle ?? "", displayTitle(item)].join(" ").toLowerCase();
-  return hay.includes(needle);
+export function episodeCodes(item: TitleParts): string[] {
+  const season = item.seasonNumber;
+  const episode = item.episodeNumber;
+  if (season == null || episode == null || Number.isNaN(season) || Number.isNaN(episode)) return [];
+  const s = String(season).padStart(2, "0");
+  const e = String(episode).padStart(2, "0");
+  return [`s${s}e${e}`, `${season}x${e}`, `${season}x${episode}`];
+}
+
+export function matchesTitleSearch(item: TitleParts, q: string, extra: string[] = []): boolean {
+  const tokens = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const hay = [item.title, item.seriesTitle ?? "", displayTitle(item), ...episodeCodes(item), ...extra]
+    .join(" ")
+    .toLowerCase();
+  return tokens.every((token) => hay.includes(token));
 }

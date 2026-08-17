@@ -42,7 +42,14 @@ export type Settings = {
   };
 };
 
-export type EmptyList = { items: unknown[]; message?: string; lastSyncAt?: string | null };
+export type EmptyList = { items: unknown[]; message?: string; lastSyncAt?: string | null; inspect?: InspectProgress };
+
+export type InspectProgress = {
+  pending: number;
+  inspected: number;
+  errors: number;
+  walking: boolean;
+};
 
 export type Player = {
   id: number;
@@ -79,6 +86,7 @@ export type LibraryItem = {
   size: number | null;
   readable: boolean;
   pathError: string | null;
+  hasPoster?: boolean;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -140,14 +148,18 @@ export const api = {
   testInstance: (id: number) =>
     request<{ ok: boolean; version?: string; error?: string }>(`/api/instances/${id}/test`, { method: "POST" }),
   refreshLibrary: (opts?: { inspect?: "none" | "pending" }) =>
-    request<{ movies: number; errors: string[]; lastSyncAt: string | null; suggestedReviewPath?: string | null }>(
-      "/api/library/refresh",
-      { method: "POST", body: JSON.stringify(opts ?? {}) },
-    ),
+    request<{
+      movies: number;
+      errors: string[];
+      lastSyncAt: string | null;
+      suggestedReviewPath?: string | null;
+      inspect?: InspectProgress;
+    }>("/api/library/refresh", { method: "POST", body: JSON.stringify(opts ?? {}) }),
+  inspectProgress: () => request<InspectProgress>("/api/library/inspect"),
   movies: () => request<EmptyList & { items: LibraryItem[] }>("/api/library/movies"),
   series: () => request<EmptyList>("/api/library/series"),
-  suggestions: (params?: URLSearchParams) =>
-    request<EmptyList>(`/api/suggestions${params && [...params].length ? `?${params}` : ""}`),
+  suggestions: (params?: URLSearchParams, signal?: AbortSignal) =>
+    request<EmptyList>(`/api/suggestions${params && [...params].length ? `?${params}` : ""}`, { signal }),
   dismissSuggestion: (id: number) => request(`/api/suggestions/${id}/dismiss`, { method: "POST" }),
   forceItem: (id: number) => request(`/api/library/items/${id}/force`, { method: "POST" }),
   addStereo: (id: number) => request(`/api/library/items/${id}/stereo`, { method: "POST" }),

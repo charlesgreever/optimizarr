@@ -39,7 +39,14 @@ describe("phase 2 radarr sync", () => {
     const pathReadable = (p: string) => (readable ? readable.has(p) : true);
     const sync = new LibrarySync(store, new ArrClient(fetchImpl), pathReadable);
     syncs.push(sync);
-    const app = createApp(store, { fetchImpl, pathReadable, sync });
+    const app = createApp(store, {
+      fetchImpl,
+      pathReadable,
+      sync,
+      probe: async () => {
+        throw new Error("unused probe");
+      },
+    });
     const first = await app.request("/api/setup/first-run", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -136,6 +143,7 @@ describe("phase 2 radarr sync", () => {
             quality: { quality: { name: "Bluray-1080p", resolution: 1080 } },
             mediaInfo: { videoCodec: "x264" },
           },
+          images: [{ coverType: "poster", url: "/MediaCover/42/poster.jpg" }],
         },
       ],
       { readable: new Set([path]) },
@@ -165,6 +173,66 @@ describe("phase 2 radarr sync", () => {
       pathError: null,
     });
     expect(payload.items[0].path).toBe(path);
+    expect(payload.items[0].hasPoster).toBe(true);
+    expect(payload.items[0].posterRemoteUrl).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain("secret-key");
+  });
+
+  it("stores Arr poster URLs and proxies bytes without the API key", async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x01, 0x02, 0x03]);
+    const posterUrl = "http://radarr.local:7878/MediaCover/8/poster.jpg";
+    const dir = mkdtempSync(join(tmpdir(), "optimizarr-"));
+    dirs.push(dir);
+    const store = new Store(dir);
+    stores.push(store);
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith("/api/v3/system/status")) return Response.json({ version: "5" });
+      if (url.endsWith("/api/v3/movie")) {
+        return Response.json([
+          {
+            id: 8,
+            title: "Poster Movie",
+            movieFile: { path: "/mnt/nas/Movies/Poster/file.mkv", size: 10 },
+            images: [{ coverType: "poster", url: "/MediaCover/8/poster.jpg" }],
+          },
+        ]);
+      }
+      if (url === posterUrl) {
+        return new Response(jpeg, { headers: { "content-type": "image/jpeg" } });
+      }
+      return new Response("missing", { status: 404 });
+    };
+    const sync = new LibrarySync(store, new ArrClient(fetchImpl), () => true);
+    syncs.push(sync);
+    const app = createApp(store, { fetchImpl, pathReadable: () => true, sync });
+    const first = await app.request("/api/setup/first-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "correct-horse", preferredLanguage: "eng" }),
+    });
+    const cookie = cookieHeader(first);
+    await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        kind: "radarr",
+        name: "Radarr",
+        url: "http://radarr.local:7878",
+        apiKey: "secret-key",
+      }),
+    });
+    await app.request("/api/library/refresh", { method: "POST", headers: { cookie } });
+    const item = store.listLibraryItems("movie")[0];
+    expect(item.posterRemoteUrl).toBe(posterUrl);
+    const poster = await app.request(`/api/library/items/${item.id}/poster`, { headers: { cookie } });
+    expect(poster.status).toBe(200);
+    expect(poster.headers.get("content-type")).toBe("image/jpeg");
+    expect(Buffer.from(await poster.arrayBuffer()).equals(jpeg)).toBe(true);
+    expect(poster.headers.get("x-api-key")).toBeNull();
+    const listed = await app.request("/api/library/movies", { headers: { cookie } }).then((r) => r.json());
+    expect(listed.items[0].hasPoster).toBe(true);
+    expect(JSON.stringify(listed)).not.toContain("secret-key");
+    expect(JSON.stringify(listed)).not.toContain(posterUrl);
   });
 
   it("marks an unreadable path as a volume/mount problem", async () => {

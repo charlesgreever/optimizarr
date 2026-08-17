@@ -30,4 +30,18 @@ describe("series display titles", () => {
     expect(matchesTitleSearch(item, "chelsea")).toBe(true);
     expect(matchesTitleSearch(item, "underdog")).toBe(false);
   });
+
+  it("requires every token and matches SxxExx", () => {
+    const item = {
+      title: "Spark of Rebellion",
+      seriesTitle: "Star Wars Rebels",
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    expect(matchesTitleSearch(item, "rebels s01e01")).toBe(true);
+    expect(matchesTitleSearch(item, "rebels 1x01")).toBe(true);
+    expect(matchesTitleSearch(item, "rebels s02e01")).toBe(false);
+    expect(matchesTitleSearch(item, "ted lasso chelsea", ["Radarr"])).toBe(false);
+    expect(matchesTitleSearch(item, "rebels h264", ["Sonarr", "h264"])).toBe(true);
+  });
 });

@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { ArrClient, ArrError } from "./arr.ts";
 import type { Catalog } from "./catalog.ts";
 import type { JobService } from "./jobs.ts";
-import type { ArrInstance, LibraryItem } from "./models.ts";
+import { publicLibraryItem, type ArrInstance, type LibraryItem } from "./models.ts";
 import type { Store } from "./store.ts";
 
 export type PathCheck = (path: string) => boolean;
@@ -72,20 +72,16 @@ export class LibrarySync {
           errors.push(`${instance.name}: ${message}`);
         }
       }
-      const inspect = opts?.inspect ?? "pending";
-      if (this.catalog && inspect !== "none") {
-        try {
-          await this.catalog.inspectPending();
-        } catch (err) {
-          this.lastError = err instanceof Error ? err.message : String(err);
-        }
-      }
-      if (this.jobs && this.store.getSettings().autoOptimize) {
-        for (const suggestion of this.store.listSuggestions()) {
-          if (autoIds.has(suggestion.itemId as number)) {
+      if (this.catalog && (opts?.inspect ?? "pending") !== "none") {
+        this.catalog.onInspected = async (itemId) => {
+          if (!this.jobs || !this.store.getSettings().autoOptimize) return;
+          if (!autoIds.has(itemId)) return;
+          const suggestion = this.store.listSuggestions().find((row) => row.itemId === itemId);
+          if (suggestion && (suggestion.actions as string[]).length > 0) {
             await this.jobs.enqueue(suggestion.id as number);
           }
-        }
+        };
+        this.catalog.startBackgroundInspect();
       }
       this.lastSyncAt = this.now().toISOString();
       this.lastError = errors[0] ?? this.lastError;
@@ -124,6 +120,7 @@ export class LibrarySync {
         resolution: movie.resolution,
         hdr: movie.hdr,
         size: movie.size,
+        posterRemoteUrl: movie.posterRemoteUrl,
         readable,
         pathError: hasPath ? (readable ? null : UNREADABLE) : noFileMessage(instance.kind),
         updatedAt,
@@ -140,8 +137,9 @@ export class LibrarySync {
 }
 
 export function libraryListPayload(items: LibraryItem[], lastSyncAt: string | null, empty: string) {
-  if (items.length === 0) {
-    return { items, lastSyncAt, message: empty };
+  const publicItems = items.map(publicLibraryItem);
+  if (publicItems.length === 0) {
+    return { items: publicItems, lastSyncAt, message: empty };
   }
-  return { items, lastSyncAt };
+  return { items: publicItems, lastSyncAt };
 }

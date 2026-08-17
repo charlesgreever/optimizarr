@@ -94,7 +94,8 @@ describe("phase 4 remux review keep", () => {
       body: JSON.stringify({ kind: "jellyfin", name: "JF", url: "http://jf", token: "jt" }),
     });
     await app.request("/api/library/refresh", { method: "POST", headers: { cookie } });
-    return { app, store, cookie, source, review, library, calls, dir };
+    await catalog.inspectPending();
+    return { app, store, cookie, source, review, library, calls, dir, catalog };
   }
 
   it("keeps both a Plex and a Jellyfin player in the list", async () => {

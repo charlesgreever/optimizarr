@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ArrClient, parseEpisode } from "./arr.ts";
+import { ArrClient, parseEpisode, posterUrlFromImages, resolveArrAssetUrl } from "./arr.ts";
 
 describe("sonarr episode parse", () => {
   it("keeps series, season, and episode as separate fields", () => {
@@ -70,5 +70,51 @@ describe("sonarr episode parse", () => {
     expect(items[0].seriesTitle).toBe("Star Wars Rebels");
     expect(items[0].seriesId).toBe(3);
     expect(urls.some((u) => u.includes("includeEpisodeFile=true") || u.includes("/episodefile"))).toBe(true);
+  });
+
+  it("picks a poster from Arr images and inherits the series poster on episodes", async () => {
+    expect(
+      posterUrlFromImages([
+        { coverType: "fanart", url: "/MediaCover/3/fanart.jpg" },
+        { coverType: "poster", url: "/MediaCover/3/poster.jpg" },
+      ]),
+    ).toBe("/MediaCover/3/poster.jpg");
+    expect(resolveArrAssetUrl("http://sonarr:8989/", "/MediaCover/3/poster.jpg")).toBe(
+      "http://sonarr:8989/MediaCover/3/poster.jpg",
+    );
+
+    const client = new ArrClient(async (url) => {
+      if (url.includes("/series") && !url.includes("episode")) {
+        return Response.json([
+          {
+            id: 3,
+            title: "Andor",
+            images: [{ coverType: "poster", url: "/MediaCover/3/poster.jpg" }],
+          },
+        ]);
+      }
+      if (url.includes("/episode")) {
+        return Response.json([
+          {
+            id: 11,
+            title: "Kassa",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            hasFile: true,
+            episodeFile: { path: "/tv/andor.mkv", size: 1 },
+          },
+        ]);
+      }
+      return new Response("no", { status: 404 });
+    });
+    const items = await client.listEpisodes({
+      id: 1,
+      kind: "sonarr",
+      name: "Sonarr",
+      url: "http://sonarr:8989",
+      apiKey: "k",
+      enabled: true,
+    });
+    expect(items[0].posterRemoteUrl).toBe("http://sonarr:8989/MediaCover/3/poster.jpg");
   });
 });

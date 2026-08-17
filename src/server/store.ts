@@ -148,6 +148,7 @@ export class Store {
     this.ensureColumn("library_items", "season_number", "INTEGER");
     this.ensureColumn("library_items", "episode_number", "INTEGER");
     this.ensureColumn("library_items", "series_id", "INTEGER");
+    this.ensureColumn("library_items", "poster_remote_url", "TEXT");
     this.ensureColumn("inspections", "source_sig", "TEXT");
   }
 
@@ -329,8 +330,8 @@ export class Store {
         `INSERT INTO library_items (
           instance_id, external_id, type, title, series_title, path, folder_path,
           quality, video_codec, resolution, hdr, size, readable, path_error, updated_at,
-          season_number, episode_number, series_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season_number, episode_number, series_id, poster_remote_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id, type, external_id) DO UPDATE SET
           title = excluded.title,
           series_title = excluded.series_title,
@@ -346,7 +347,8 @@ export class Store {
           updated_at = excluded.updated_at,
           season_number = excluded.season_number,
           episode_number = excluded.episode_number,
-          series_id = excluded.series_id`,
+          series_id = excluded.series_id,
+          poster_remote_url = excluded.poster_remote_url`,
       )
       .run(
         item.instanceId,
@@ -367,6 +369,7 @@ export class Store {
         item.seasonNumber,
         item.episodeNumber,
         item.seriesId,
+        item.posterRemoteUrl ?? null,
       );
     const saved = this.getLibraryItemByExternal(item.instanceId, item.type, item.externalId);
     if (!saved) throw new Error("failed to upsert library item");
@@ -376,53 +379,38 @@ export class Store {
   getLibraryItemByExternal(instanceId: number, type: ItemType, externalId: number): LibraryItem | undefined {
     const row = this.db
       .prepare(
-        `SELECT
-          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
-          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
-          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
-          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+        `SELECT ${LIBRARY_ITEM_SQL}
          FROM library_items i
          JOIN arr_instances a ON a.id = i.instance_id
          WHERE i.instance_id = ? AND i.type = ? AND i.external_id = ?`,
       )
       .get(instanceId, type, externalId) as (LibraryItem & { readable: number | boolean }) | undefined;
-    return row ? { ...row, readable: Boolean(row.readable) } : undefined;
+    return row ? asLibraryItem(row) : undefined;
   }
 
   listLibraryItems(type?: ItemType): LibraryItem[] {
     const rows = this.db
       .prepare(
-        `SELECT
-          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
-          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
-          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
-          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+        `SELECT ${LIBRARY_ITEM_SQL}
          FROM library_items i
          JOIN arr_instances a ON a.id = i.instance_id
          ${type ? "WHERE i.type = ?" : ""}
          ORDER BY i.series_title COLLATE NOCASE, i.season_number, i.episode_number, i.title COLLATE NOCASE`,
       )
       .all(...(type ? [type] : [])) as Array<LibraryItem & { readable: number | boolean }>;
-    return rows.map((r) => ({ ...r, readable: Boolean(r.readable) }));
+    return rows.map(asLibraryItem);
   }
 
   getLibraryItem(id: number): LibraryItem | undefined {
     const row = this.db
       .prepare(
-        `SELECT
-          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
-          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
-          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
-          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
-          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt
+        `SELECT ${LIBRARY_ITEM_SQL}
          FROM library_items i
          JOIN arr_instances a ON a.id = i.instance_id
          WHERE i.id = ?`,
       )
       .get(id) as (LibraryItem & { readable: number | boolean }) | undefined;
-    return row ? { ...row, readable: Boolean(row.readable) } : undefined;
+    return row ? asLibraryItem(row) : undefined;
   }
 
   saveInspection(itemId: number, report: unknown, inspectedAt: string, sourceSig?: string): void {
@@ -518,7 +506,8 @@ export class Store {
                 s.size_per_hour AS sizePerHourGb, s.plan_json AS planJson,
                 i.title, i.series_title AS seriesTitle, i.season_number AS seasonNumber,
                 i.episode_number AS episodeNumber, i.type, i.path, i.video_codec AS videoCodec,
-                i.resolution, i.hdr, i.instance_id AS instanceId, a.name AS instanceName
+                i.resolution, i.hdr, i.instance_id AS instanceId, a.name AS instanceName,
+                i.poster_remote_url AS posterRemoteUrl, i.size, i.quality
          FROM suggestions s
          JOIN library_items i ON i.id = s.item_id
          JOIN arr_instances a ON a.id = i.instance_id
@@ -526,21 +515,25 @@ export class Store {
       )
       .all() as Array<Record<string, unknown> & { actionsJson: string; planJson: string; dismissed: number; forced: number; overCap: number; extraTracks: number }>;
     return rows
-      .map((r) => ({
-        ...r,
-        actions: JSON.parse(r.actionsJson) as string[],
-        plan: JSON.parse(r.planJson),
-        dismissed: Boolean(r.dismissed),
-        forced: Boolean(r.forced),
-        overCap: Boolean(r.overCap),
-        extraTracks: Boolean(r.extraTracks),
-        displayTitle: displayTitle({
-          title: String(r.title),
-          seriesTitle: (r.seriesTitle as string | null) ?? null,
-          seasonNumber: (r.seasonNumber as number | null) ?? null,
-          episodeNumber: (r.episodeNumber as number | null) ?? null,
-        }),
-      }))
+      .map((r) => {
+        const { posterRemoteUrl, actionsJson, planJson, ...rest } = r;
+        return {
+          ...rest,
+          actions: JSON.parse(actionsJson) as string[],
+          plan: JSON.parse(planJson),
+          dismissed: Boolean(r.dismissed),
+          forced: Boolean(r.forced),
+          overCap: Boolean(r.overCap),
+          extraTracks: Boolean(r.extraTracks),
+          displayTitle: displayTitle({
+            title: String(r.title),
+            seriesTitle: (r.seriesTitle as string | null) ?? null,
+            seasonNumber: (r.seasonNumber as number | null) ?? null,
+            episodeNumber: (r.episodeNumber as number | null) ?? null,
+          }),
+          hasPoster: Boolean(posterRemoteUrl),
+        };
+      })
       .filter((r) => {
         const actions = r.actions as string[];
         if (!r.forced && actions.length === 0) return false;
@@ -556,8 +549,10 @@ export class Store {
               title: String(r.title),
               seriesTitle: (r.seriesTitle as string | null) ?? null,
               seasonNumber: (r.seasonNumber as number | null) ?? null,
+              episodeNumber: (r.episodeNumber as number | null) ?? null,
             },
             filters.q,
+            [String(r.instanceName ?? ""), String(r.videoCodec ?? "")],
           )
         ) {
           return false;
@@ -839,6 +834,22 @@ export class Store {
       )
       .run(instanceId, type, ...keepExternalIds);
   }
+}
+
+const LIBRARY_ITEM_SQL = `
+          i.id, i.instance_id AS instanceId, a.name AS instanceName, a.kind AS instanceKind,
+          i.external_id AS externalId, i.series_id AS seriesId, i.type, i.title, i.series_title AS seriesTitle,
+          i.season_number AS seasonNumber, i.episode_number AS episodeNumber,
+          i.path, i.folder_path AS folderPath, i.quality, i.video_codec AS videoCodec,
+          i.resolution, i.hdr, i.size, i.readable, i.path_error AS pathError, i.updated_at AS updatedAt,
+          i.poster_remote_url AS posterRemoteUrl`;
+
+function asLibraryItem(row: LibraryItem & { readable: number | boolean }): LibraryItem {
+  return {
+    ...row,
+    readable: Boolean(row.readable),
+    posterRemoteUrl: row.posterRemoteUrl ?? null,
+  };
 }
 
 function normalizeUrl(url: string): string {

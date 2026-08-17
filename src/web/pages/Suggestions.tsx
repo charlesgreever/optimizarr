@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import { Poster } from "../components/Poster";
+import { formatSize } from "../format";
 
 type Row = {
   id: number;
@@ -19,6 +21,9 @@ type Row = {
   sizePerHourGb: number | null;
   videoCodec: string | null;
   instanceName: string;
+  hasPoster?: boolean;
+  quality?: string | null;
+  size?: number | null;
 };
 
 function savings(bytes: number | null): string {
@@ -26,30 +31,51 @@ function savings(bytes: number | null): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
+function isAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 export function Suggestions() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const qParam = searchParams.get("q") ?? "";
   const [items, setItems] = useState<Row[]>([]);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(qParam);
   const [overCap, setOverCap] = useState(false);
   const [extraTracks, setExtraTracks] = useState(false);
+  const [view, setView] = useState<"cards" | "list">("cards");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | "all" | null>(null);
   const [selected, setSelected] = useState<Record<number, boolean>>({});
 
-  async function load(nextQ = q) {
-    const params = new URLSearchParams();
-    if (nextQ) params.set("q", nextQ);
-    if (overCap) params.set("overCap", "1");
-    if (extraTracks) params.set("extraTracks", "1");
-    const data = await api.suggestions(params);
-    setItems((data.items as Row[]) ?? []);
-    setMessage(data.message || "");
-  }
+  useEffect(() => {
+    setQ(qParam);
+  }, [qParam]);
 
   useEffect(() => {
-    void load();
-  }, [overCap, extraTracks]);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      if (q !== qParam) setSearchParams(q ? { q } : {}, { replace: true });
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (overCap) params.set("overCap", "1");
+      if (extraTracks) params.set("extraTracks", "1");
+      void api
+        .suggestions(params, controller.signal)
+        .then((data) => {
+          setItems((data.items as Row[]) ?? []);
+          setMessage(data.message || "");
+        })
+        .catch((e: unknown) => {
+          if (!isAbort(e)) setError(e instanceof Error ? e.message : "Search failed");
+        });
+    }, 280);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [q, qParam, overCap, extraTracks, setSearchParams]);
 
   async function queueOne(id: number) {
     setBusyId(id);
@@ -59,7 +85,7 @@ export function Suggestions() {
       await api.enqueue(id);
       setStatus("Added to the queue.");
       setSelected((s) => ({ ...s, [id]: false }));
-      await load();
+      await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add to the queue");
     } finally {
@@ -85,8 +111,18 @@ export function Suggestions() {
     setStatus(ok ? `Added ${ok} item${ok === 1 ? "" : "s"} to the queue.` : null);
     if (failed.length) setError(failed[0]);
     setSelected({});
-    await load();
+    await reload();
     setBusyId(null);
+  }
+
+  async function reload() {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (overCap) params.set("overCap", "1");
+    if (extraTracks) params.set("extraTracks", "1");
+    const data = await api.suggestions(params);
+    setItems((data.items as Row[]) ?? []);
+    setMessage(data.message || "");
   }
 
   const selectedIds = items.filter((i) => selected[i.id]).map((i) => i.id);
@@ -130,12 +166,9 @@ export function Suggestions() {
       <div className="flex flex-wrap gap-3">
         <input
           className="input max-w-xs"
-          placeholder="Search show or title"
+          placeholder="Search show, episode, or codec"
           value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            void load(e.target.value);
-          }}
+          onChange={(e) => setQ(e.target.value)}
         />
         <label className="flex items-center gap-2 text-sm text-zinc-300">
           <input type="checkbox" checked={overCap} onChange={(e) => setOverCap(e.target.checked)} />
@@ -145,6 +178,13 @@ export function Suggestions() {
           <input type="checkbox" checked={extraTracks} onChange={(e) => setExtraTracks(e.target.checked)} />
           Extra tracks
         </label>
+        <button
+          className="text-xs text-zinc-400 hover:text-zinc-200"
+          type="button"
+          onClick={() => setView((v) => (v === "cards" ? "list" : "cards"))}
+        >
+          {view === "cards" ? "Compact list" : "Cards"}
+        </button>
       </div>
       {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
       {status && <p className="mt-4 text-sm text-emerald-400">{status}</p>}
@@ -153,7 +193,7 @@ export function Suggestions() {
           <p className="text-sm text-zinc-400">{message || "No suggestions."}</p>
         </div>
       ) : (
-        <ul className="mt-6 space-y-3">
+        <ul className={view === "cards" ? "mt-6 grid gap-3 sm:grid-cols-1 xl:grid-cols-2" : "mt-6 space-y-3"}>
           {items.map((item) => (
             <li key={item.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -164,10 +204,18 @@ export function Suggestions() {
                     checked={Boolean(selected[item.id])}
                     onChange={(e) => setSelected((s) => ({ ...s, [item.id]: e.target.checked }))}
                   />
+                  <Poster
+                    itemId={item.itemId}
+                    hasPoster={item.hasPoster}
+                    alt=""
+                    className="h-20 w-[3.35rem] rounded-md"
+                  />
                   <span className="min-w-0">
                     <span className="block font-medium">{item.displayTitle || item.title}</span>
                     <span className="block text-xs text-zinc-500">
-                      {item.instanceName} · {item.videoCodec || "unknown codec"} · {item.category}
+                      {item.instanceName}
+                      {item.quality ? ` · ${item.quality}` : ""} · {item.videoCodec || "unknown codec"}
+                      {item.size ? ` · ${formatSize(item.size)}` : ""} · {item.category}
                       {item.sizePerHourGb ? ` · ${item.sizePerHourGb.toFixed(2)} GB/hr` : ""}
                       {item.estimatedSavingsBytes ? ` · save ~${savings(item.estimatedSavingsBytes)}` : ""}
                     </span>
@@ -191,7 +239,7 @@ export function Suggestions() {
                     onClick={() => {
                       void api
                         .dismissSuggestion(item.id)
-                        .then(() => load())
+                        .then(() => reload())
                         .catch((e: Error) => setError(e.message));
                     }}
                   >

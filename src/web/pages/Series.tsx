@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type LibraryItem } from "../api";
+import { Poster } from "../components/Poster";
+import { formatSize } from "../format";
 
 type SeasonGroup = { season: number; episodes: LibraryItem[] };
-type SeriesGroup = { key: string; title: string; instanceName: string; seasons: SeasonGroup[] };
+type SeriesGroup = {
+  key: string;
+  title: string;
+  instanceName: string;
+  posterItem: LibraryItem | undefined;
+  seasons: SeasonGroup[];
+};
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -35,6 +43,7 @@ function groupSeries(items: LibraryItem[]): SeriesGroup[] {
         key,
         title,
         instanceName: eps[0].instanceName,
+        posterItem: eps.find((ep) => ep.hasPoster) ?? eps[0],
         seasons: [...seasons.entries()]
           .sort((a, b) => a[0] - b[0])
           .map(([season, episodes]) => ({
@@ -104,10 +113,18 @@ export function Series() {
               <article key={show.key} className="overflow-hidden rounded-xl border border-zinc-800">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between bg-zinc-900 px-4 py-3 text-left"
+                  className="flex w-full items-center gap-3 bg-zinc-900 px-4 py-3 text-left"
                   onClick={() => setOpenSeries((s) => ({ ...s, [show.key]: !seriesOpen }))}
                 >
-                  <span>
+                  {show.posterItem && (
+                    <Poster
+                      itemId={show.posterItem.id}
+                      hasPoster={show.posterItem.hasPoster}
+                      alt=""
+                      className="h-14 w-10 rounded"
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
                     <span className="font-medium">{show.title}</span>
                     <span className="ml-2 text-xs text-zinc-500">{show.instanceName}</span>
                   </span>
@@ -139,7 +156,11 @@ export function Series() {
                                       S{pad(ep.seasonNumber ?? 0)}E{pad(ep.episodeNumber ?? 0)}
                                     </span>
                                     <span>{ep.title}</span>
-                                    <span className="text-xs text-zinc-500">{ep.videoCodec ?? "—"}</span>
+                                    <span className="text-xs text-zinc-500">
+                                      {ep.videoCodec ?? "—"}
+                                      {ep.quality ? ` · ${ep.quality}` : ""}
+                                      {ep.size ? ` · ${formatSize(ep.size)}` : ""}
+                                    </span>
                                   </div>
                                   <div className="truncate text-xs text-zinc-500" title={ep.path}>
                                     {ep.path || "No file"}

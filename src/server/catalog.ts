@@ -4,21 +4,51 @@ import type { Store } from "./store.ts";
 
 export type ProbeFn = (path: string) => Promise<InspectionReport> | InspectionReport;
 
+export type InspectProgress = {
+  pending: number;
+  inspected: number;
+  errors: number;
+  walking: boolean;
+};
+
 export async function defaultProbe(path: string): Promise<InspectionReport> {
   return ffprobeFile(path);
 }
 
 export class Catalog {
+  private walk: Promise<number> | null = null;
+  probeErrors = 0;
+  onInspected: ((itemId: number) => Promise<void>) | undefined;
+
   constructor(
     private store: Store,
     private probe: ProbeFn = defaultProbe,
   ) {}
 
+  sourceSig(path: string, size: number | null): string {
+    return `${path}|${size ?? 0}`;
+  }
+
+  progress(): InspectProgress {
+    let pending = 0;
+    let inspected = 0;
+    for (const item of this.store.listLibraryItems()) {
+      if (!item.path || !item.readable) continue;
+      if (this.store.getInspectionSig(item.id) === this.sourceSig(item.path, item.size)) inspected += 1;
+      else pending += 1;
+    }
+    return { pending, inspected, errors: this.probeErrors, walking: this.walk !== null };
+  }
+
+  startBackgroundInspect(): void {
+    void this.inspectPending().catch(() => undefined);
+  }
+
   async inspectItem(itemId: number, opts?: { force?: boolean; addStereo?: boolean }): Promise<void> {
     const item = this.store.getLibraryItem(itemId);
     if (!item || !item.path) return;
     if (this.store.isExcluded(item) && !opts?.force) return;
-    const sourceSig = `${item.path}|${item.size ?? 0}`;
+    const sourceSig = this.sourceSig(item.path, item.size);
     if (!opts?.force && !opts?.addStereo && this.store.getInspectionSig(itemId) === sourceSig) {
       return;
     }
@@ -27,7 +57,13 @@ export class Catalog {
     try {
       report = await this.probe(item.path);
     } catch {
-      const existing = this.store.getInspection(itemId) as InspectionReport | undefined;
+      this.probeErrors += 1;
+      let existing: InspectionReport | undefined;
+      try {
+        existing = this.store.getInspection(itemId) as InspectionReport | undefined;
+      } catch {
+        return;
+      }
       if (!existing) return;
       report = existing;
     }
@@ -50,6 +86,7 @@ export class Catalog {
         dismissed: false,
         forced: false,
       });
+      if (this.onInspected) await this.onInspected(itemId);
       return;
     }
     this.store.saveSuggestion({
@@ -65,6 +102,7 @@ export class Catalog {
       forced: Boolean(opts?.force),
       dismissed: false,
     });
+    if (this.onInspected) await this.onInspected(itemId);
   }
 
   async inspectAll(opts?: { force?: boolean }): Promise<number> {
@@ -72,16 +110,45 @@ export class Catalog {
   }
 
   async inspectPending(opts?: { force?: boolean }): Promise<number> {
+    if (this.walk) return this.walk;
+    this.walk = this.walkPending(opts).finally(() => {
+      this.walk = null;
+    });
+    return this.walk;
+  }
+
+  private async walkPending(opts?: { force?: boolean }): Promise<number> {
     let n = 0;
-    for (const item of this.store.listLibraryItems()) {
-      const sig = `${item.path}|${item.size ?? 0}`;
-      if (!opts?.force && this.store.getInspectionSig(item.id) === sig) continue;
-      await this.inspectItem(item.id, opts);
+    if (opts?.force) {
+      for (const item of this.store.listLibraryItems()) {
+        await this.inspectItem(item.id, opts);
+        n += 1;
+        if (n % 3 === 0) await yieldWalk();
+      }
+      return n;
+    }
+    let item = this.nextPending();
+    while (item) {
+      await this.inspectItem(item.id);
       n += 1;
-      if (n % 3 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+      if (n % 3 === 0) await yieldWalk();
+      item = this.nextPending();
     }
     return n;
   }
+
+  private nextPending() {
+    for (const item of this.store.listLibraryItems()) {
+      if (!item.path || !item.readable) continue;
+      if (this.store.getInspectionSig(item.id) === this.sourceSig(item.path, item.size)) continue;
+      return item;
+    }
+    return undefined;
+  }
+}
+
+function yieldWalk(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 export function reportFromFixture(path: string, fixture: Record<string, unknown>): InspectionReport {

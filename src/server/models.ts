@@ -46,7 +46,15 @@ export type LibraryItem = {
   readable: boolean;
   pathError: string | null;
   updatedAt: string;
+  posterRemoteUrl?: string | null;
 };
+
+export type PublicLibraryItem = Omit<LibraryItem, "posterRemoteUrl"> & { hasPoster: boolean };
+
+export function publicLibraryItem(item: LibraryItem): PublicLibraryItem {
+  const { posterRemoteUrl, ...rest } = item;
+  return { ...rest, hasPoster: Boolean(posterRemoteUrl) };
+}
 
 export function publicArrInstance(row: ArrInstance): PublicArrInstance {
   return {

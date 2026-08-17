@@ -16,6 +16,7 @@ export type RemoteItem = {
   resolution: string | null;
   hdr: string | null;
   size: number | null;
+  posterRemoteUrl: string | null;
 };
 
 export class ArrError extends Error {
@@ -39,7 +40,7 @@ export class ArrClient {
 
   async listMovies(instance: ArrInstance): Promise<RemoteItem[]> {
     const rows = await this.getJsonArray(`${instance.url}/api/v3/movie`, instance.apiKey);
-    return rows.map(parseMovie);
+    return rows.map((raw) => withResolvedPoster(parseMovie(raw), instance.url));
   }
 
   async listEpisodes(instance: ArrInstance): Promise<RemoteItem[]> {
@@ -49,6 +50,7 @@ export class ArrClient {
       const seriesId = Number(show.id);
       const title = String(show.title ?? "Series");
       const folderPath = typeof show.path === "string" ? show.path : null;
+      const seriesPoster = posterUrlFromImages(show.images);
       const episodes = await this.getJsonArray(
         `${instance.url}/api/v3/episode?seriesId=${seriesId}&includeEpisodeFile=true`,
         instance.apiKey,
@@ -66,10 +68,10 @@ export class ArrClient {
         const attached = episodeFilePath(ep)
           ? ep
           : { ...ep, episodeFile: filesById.get(Number(ep.episodeFileId)) ?? ep.episodeFile };
-        const parsed = parseEpisode(attached, title, seriesId);
+        const parsed = parseEpisode(attached, title, seriesId, seriesPoster);
         if (parsed) {
           if (!parsed.folderPath) parsed.folderPath = folderPath;
-          out.push(parsed);
+          out.push(withResolvedPoster(parsed, instance.url));
         }
       }
     }
@@ -120,7 +122,31 @@ export function parseMovie(raw: Record<string, unknown>): RemoteItem {
     resolution: resolutionOf(q, mediaInfo, filePath),
     hdr: hdrOf(mediaInfo),
     size: typeof movieFile.size === "number" ? movieFile.size : null,
+    posterRemoteUrl: posterUrlFromImages(raw.images),
   };
+}
+
+export function posterUrlFromImages(raw: unknown): string | null {
+  if (!Array.isArray(raw)) return null;
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const image = entry as Record<string, unknown>;
+    if (image.coverType !== "poster") continue;
+    if (typeof image.url === "string" && image.url.trim()) return image.url.trim();
+    if (typeof image.remoteUrl === "string" && image.remoteUrl.trim()) return image.remoteUrl.trim();
+  }
+  return null;
+}
+
+export function resolveArrAssetUrl(instanceUrl: string, imageUrl: string): string {
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  const base = instanceUrl.replace(/\/+$/, "");
+  return imageUrl.startsWith("/") ? `${base}${imageUrl}` : `${base}/${imageUrl}`;
+}
+
+function withResolvedPoster(item: RemoteItem, instanceUrl: string): RemoteItem {
+  if (!item.posterRemoteUrl) return item;
+  return { ...item, posterRemoteUrl: resolveArrAssetUrl(instanceUrl, item.posterRemoteUrl) };
 }
 
 function resolutionOf(
@@ -153,6 +179,7 @@ export function parseEpisode(
   raw: Record<string, unknown>,
   seriesTitle: string,
   seriesId: number | null = null,
+  seriesPoster: string | null = null,
 ): RemoteItem | null {
   const episodeFile = (raw.episodeFile ?? {}) as Record<string, unknown>;
   const filePath = typeof episodeFile.path === "string" ? episodeFile.path : "";
@@ -178,6 +205,7 @@ export function parseEpisode(
     resolution: resolutionOf(q, mediaInfo, filePath),
     hdr: hdrOf(mediaInfo),
     size: typeof episodeFile.size === "number" ? episodeFile.size : null,
+    posterRemoteUrl: seriesPoster ?? posterUrlFromImages(raw.images),
   };
 }
 

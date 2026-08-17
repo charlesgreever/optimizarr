@@ -65,7 +65,8 @@ describe("phase 3 catalog", () => {
       body: JSON.stringify({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" }),
     });
     await app.request("/api/library/refresh", { method: "POST", headers: { cookie: cookieHeader(first) } });
-    return { app, store, cookie: cookieHeader(first) };
+    await catalog.inspectPending();
+    return { app, store, catalog, cookie: cookieHeader(first) };
   }
 
   it("lists only items with work and hides healthy files", async () => {
@@ -109,6 +110,8 @@ describe("phase 3 catalog", () => {
     expect(row.displayTitle).toBe("Ted Lasso / Season 3 / (I Don’t Want to Go to) Chelsea");
     const byShow = await app.request("/api/suggestions?q=ted%20lasso", { headers: { cookie } }).then((r) => r.json());
     expect(byShow.items.some((i: { displayTitle: string }) => i.displayTitle.includes("Chelsea"))).toBe(true);
+    const byEp = await app.request("/api/suggestions?q=lasso%20s03e02", { headers: { cookie } }).then((r) => r.json());
+    expect(byEp.items.some((i: { title: string }) => i.title.includes("Chelsea"))).toBe(true);
   });
 
   it("filters by title search", async () => {
@@ -130,5 +133,83 @@ describe("phase 3 catalog", () => {
     await app.request(`/api/library/items/${healthy!.id}/force`, { method: "POST", headers: { cookie } });
     const forced = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
     expect(forced.items.some((i: { title: string }) => i.title === "Healthy")).toBe(true);
+  });
+
+  it("returns refresh before probes finish and lists movies immediately", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "optimizarr-"));
+    dirs.push(dir);
+    const store = new Store(dir);
+    stores.push(store);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const probed: string[] = [];
+    const probe = async (path: string) => {
+      probed.push(path);
+      await gate;
+      return parseFfprobe(path, probes[path]);
+    };
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith("/status")) return Response.json({ version: "1" });
+      return Response.json([
+        { id: 1, title: "Healthy", movieFile: { path: "/ok.mkv", size: 1 } },
+        { id: 2, title: "Giant AVC", movieFile: { path: "/big.mkv", size: 10 } },
+      ]);
+    };
+    const catalog = new Catalog(store, probe);
+    const sync = new LibrarySync(store, new ArrClient(fetchImpl), () => true);
+    const app = createApp(store, { fetchImpl, pathReadable: () => true, sync, catalog, probe });
+    const first = await app.request("/api/setup/first-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "correct-horse", preferredLanguage: "eng" }),
+    });
+    const cookie = cookieHeader(first);
+    await app.request("/api/instances", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "radarr", name: "R", url: "http://r", apiKey: "k" }),
+    });
+    const refresh = await app.request("/api/library/refresh", { method: "POST", headers: { cookie } });
+    expect(refresh.status).toBe(200);
+    const refreshBody = await refresh.json();
+    expect(refreshBody.movies).toBe(2);
+    expect(refreshBody.inspect.walking).toBe(true);
+    const movies = await app.request("/api/library/movies", { headers: { cookie } }).then((r) => r.json());
+    expect(movies.items).toHaveLength(2);
+    expect(movies.items.map((i: { title: string }) => i.title).sort()).toEqual(["Giant AVC", "Healthy"]);
+    const before = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    expect(before.items).toHaveLength(0);
+    release();
+    await catalog.inspectPending();
+    const after = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    expect(after.items.map((i: { title: string }) => i.title)).toEqual(["Giant AVC"]);
+    expect(probed.sort()).toEqual(["/big.mkv", "/ok.mkv"]);
+  });
+
+  it("skips ffprobe when path and size are unchanged and re-probes a size change", async () => {
+    const { store, catalog } = await setup();
+    const probed: string[] = [];
+    const counting = new Catalog(store, (path) => {
+      probed.push(path);
+      return parseFfprobe(path, probes[path]);
+    });
+    expect(await counting.inspectPending()).toBe(0);
+    expect(probed).toEqual([]);
+
+    const item = store.listLibraryItems("movie").find((row) => row.title === "Giant AVC");
+    store.upsertLibraryItem({ ...item!, size: 99 });
+    expect(await counting.inspectPending()).toBe(1);
+    expect(probed).toEqual(["/big.mkv"]);
+  });
+
+  it("reports inspect progress on GET /api/library/inspect", async () => {
+    const { app, cookie, catalog } = await setup();
+    const progress = await app.request("/api/library/inspect", { headers: { cookie } }).then((r) => r.json());
+    expect(progress.pending).toBe(0);
+    expect(progress.inspected).toBeGreaterThan(0);
+    expect(progress.walking).toBe(false);
+    expect(catalog.progress().errors).toBe(0);
   });
 });
