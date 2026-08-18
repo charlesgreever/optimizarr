@@ -104,14 +104,20 @@ export class CancelledError extends Error {
   }
 }
 
-function muxArgs(source: string, dest: string, suggestion: Suggestion, stereo?: string): string[] {
-  const args = ["-o", dest, source];
-  const audio = suggestion.keepAudio;
-  const subs = suggestion.keepSubs;
-  if (audio.length) args.push("--audio-tracks", audio.join(","));
-  if (subs.length) args.push("--subtitle-tracks", subs.join(","));
+export function muxArgs(source: string, dest: string, suggestion: Suggestion, stereo?: string): string[] {
+  const args = ["-o", dest];
+  if (suggestion.keepAudio.length) args.push("--audio-tracks", suggestion.keepAudio.join(","));
+  if (suggestion.keepSubs.length) args.push("--subtitle-tracks", suggestion.keepSubs.join(","));
+  args.push(source);
   if (stereo) args.push(stereo);
   return args;
+}
+
+export function formatToolError(bin: string, error: { message?: string; stderr?: string }): string {
+  const stderr = error.stderr?.trim();
+  const detail = stderr || "The tool exited without a useful message.";
+  const first = detail.split("\n").find((line) => line.trim().length > 0) ?? detail;
+  return `${bin} failed. ${first}`;
 }
 
 function encodeArgs(source: string, dest: string, req: OptimizeRequest): string[] {
@@ -128,7 +134,12 @@ function encodeArgs(source: string, dest: string, req: OptimizeRequest): string[
 }
 
 async function run(bin: string, args: string[]): Promise<void> {
-  await execFileAsync(bin, args, { timeout: 0, maxBuffer: 1024 * 256 });
+  try {
+    await execFileAsync(bin, args, { timeout: 0, maxBuffer: 1024 * 256 });
+  } catch (error) {
+    const err = error as { message?: string; stderr?: string };
+    throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr }));
+  }
 }
 
 async function probeOutput(ffprobe: string, path: string): Promise<InspectionReport> {
