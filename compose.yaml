@@ -1,0 +1,21 @@
+services:
+  optimizarr:
+    build: .
+    ports:
+      - "7373:7373"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/New_York
+      CONFIG_DIR: /config
+    volumes:
+      - /home/cgreever/appdata/arr/optimizarr/config:/config
+      - /mnt/nas:/mnt/nas
+    networks:
+      - arr_net
+    # Uncomment to pass an NVIDIA GPU:
+    # runtime: nvidia
+
+networks:
+  arr_net:
+    external: true
