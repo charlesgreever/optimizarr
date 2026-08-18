@@ -42,7 +42,7 @@ docker compose up -d --build
 
 Open `http://192.168.1.10:7373`. In Settings, add Radarr at `http://radarr:7878` and Sonarr at `http://sonarr:8989`, set a review folder outside the library roots, and confirm your preferred language.
 
-To use the NVIDIA GPU, uncomment `runtime: nvidia` in `compose.yaml`.
+The shipped `compose.yaml` passes the host NVIDIA GPU the same way Frigate does: `runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES=all`, and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. Recreate the container after changing those values.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
