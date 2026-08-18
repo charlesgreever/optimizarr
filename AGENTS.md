@@ -4,7 +4,7 @@ Optimizarr has three sources of truth. Read the file that matches the work. Do n
 
 ## Steps
 
-1. **Spec.** Open `plans/optimizarr.md`. If the change is a product request, also open GitHub issue #1. Done when you can name the user-facing outcome the change is allowed to produce.
+1. **Spec.** Open GitHub issue #20 (the rewrite PRD). Done when you can name the user-facing outcome the change is allowed to produce.
 
 2. **Code.** Before you edit TypeScript, tests, Docker, or compose, read `ENGINEERING_STANDARDS.md` and apply every `ENG` rule the diff can touch. Done when each applicable item on the ENG-14 checklist is satisfied.
 

@@ -1,6 +1,6 @@
 # Engineering Standards
 
-This file is the **code** standard for Optimizarr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [plans/optimizarr.md](plans/optimizarr.md) is the **product** spec.
+This file is the **code** standard for Optimizarr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [Issue #20](https://github.com/charlesgreever/optimizarr/issues/20) is the **product** spec.
 
 A change can pass one and fail another. Review them as separate axes. Cite a rule by id (`ENG-04`) in review comments.
 
@@ -103,7 +103,7 @@ Failed login uses one generic error. Do not say whether the username exists.
 
 **Source:** Node.js security best practices. CWE-78.
 
-ffmpeg, ffprobe, and ssh get argument arrays (`execFile`), never a shell string. Paths from Arrs are used as file operands, not as shell fragments.
+ffmpeg, ffprobe, and `mkvmerge` get argument arrays (`execFile`), never a shell string. Paths from Arrs are used as file operands, not as shell fragments.
 
 - BAD: `exec(\`${ffmpeg} -i ${sourcePath}\`)`
 - GOOD: `execFile(ffmpeg, ["-i", sourcePath, ...])`
@@ -150,11 +150,11 @@ A commit subject is an imperative clause: `Fail transcode when ffprobe cannot re
 
 Use this on every change. Skip a line only if the diff cannot touch it.
 
-1. Does this match the spec (`plans/optimizarr.md` / the issue)? (Spec axis)
+1. Does this match the spec ([issue #20](https://github.com/charlesgreever/optimizarr/issues/20))? (Spec axis)
 2. Would a junior engineer reading README understand the user-facing strings? (CODING_STANDARDS.md)
 3. Types: no new `any`; unions for closed sets (ENG-02, ENG-03)
 4. Tests: public behavior; failure path keeps the original (ENG-04, ENG-09)
 5. Secrets and auth still hold (ENG-06, ENG-07)
-6. ffmpeg/ssh still `execFile` (ENG-08)
+6. ffmpeg / ffprobe / `mkvmerge` still `execFile` (ENG-08)
 7. Hardware miss still fails the job (ENG-05, plan execution policy)
 8. Names and module boundaries still match the domain (ENG-10, ENG-11)
