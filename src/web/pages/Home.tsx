@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatSize, type HomePayload } from "../api";
 import { Help } from "../components/Shell";
+import { RefreshLibrary } from "../components/RefreshLibrary";
 
 export function HomePage() {
   const [data, setData] = useState<HomePayload | null>(null);
@@ -11,7 +12,10 @@ export function HomePage() {
   if (!data) return <p className="text-slate-400">Loading dashboard…</p>;
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Home</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Home</h1>
+        <RefreshLibrary onDone={() => void api.home().then(setData)} />
+      </div>
       <Help>
         Home is the landing page after sign-in. Files optimized and space saved only count after you Keep a sidecar. A sidecar is the new file waiting in Review; Keep replaces the library file with it.
       </Help>
@@ -26,7 +30,7 @@ export function HomePage() {
       </div>
       {data.filesOptimized === 0 && data.suggestions === 0 && (
         <div className="glass mt-6 p-5 text-sm text-slate-300">
-          Nothing has been kept yet. Open Settings, connect Radarr or Sonarr, set a review folder, confirm your preferred language, then refresh the library.
+          Nothing has been kept yet. Refresh the library to pull titles, then work Suggestions and Review.
         </div>
       )}
       <h2 className="mt-8 text-lg font-semibold">Recent activity</h2>

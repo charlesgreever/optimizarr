@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, formatSize, type LibraryRow } from "../api";
 import { Help } from "../components/Shell";
+import { RefreshLibrary } from "../components/RefreshLibrary";
 import { RowActions } from "../components/RowActions";
 
 export function MoviesPage() {
@@ -10,7 +11,13 @@ export function MoviesPage() {
 
   const load = () => void api.movies().then((r) => setItems(r.items)).catch((e: Error) => setError(e.message));
   useEffect(() => {
-    load();
+    void api
+      .refresh()
+      .then(load)
+      .catch((e: Error) => {
+        setError(e.message);
+        load();
+      });
   }, []);
 
   const rows = useMemo(() => {
@@ -23,11 +30,17 @@ export function MoviesPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Movies</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Movies</h1>
+        <RefreshLibrary onDone={load} />
+      </div>
       <Help>Each row is one movie from Radarr. The plan column is what Optimizarr would do. You can queue work here without opening Suggestions.</Help>
       {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
       {rows.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">No movies yet. Connect Radarr in Settings and refresh the library.</div>
+        <div className="glass mt-6 space-y-3 p-5 text-sm text-slate-300">
+          <p>No movies loaded yet. Refresh pulls titles from the Radarr connections in Settings.</p>
+          <RefreshLibrary onDone={load} />
+        </div>
       ) : (
         <div className="glass mt-5 overflow-x-auto">
           <table>

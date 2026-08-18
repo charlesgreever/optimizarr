@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, formatSize, type LibraryRow } from "../api";
 import { Help } from "../components/Shell";
+import { RefreshLibrary } from "../components/RefreshLibrary";
 import { RowActions } from "../components/RowActions";
 
 export function SeriesPage() {
   const [items, setItems] = useState<LibraryRow[]>([]);
   const [msg, setMsg] = useState("");
-  const load = () => void api.series().then((r) => setItems(r.items));
+  const load = () => void api.series().then((r) => setItems(r.items)).catch((e: Error) => setMsg(e.message));
   useEffect(() => {
-    load();
+    void api
+      .refresh()
+      .then(load)
+      .catch((e: Error) => {
+        setMsg(e.message);
+        load();
+      });
   }, []);
 
   const groups = useMemo(() => {
@@ -22,10 +29,16 @@ export function SeriesPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Series</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Series</h1>
+        <RefreshLibrary onDone={load} />
+      </div>
       <Help>Episode rows use the same actions as movies. Optimize all episodes queues every episode of that show that already has open work.</Help>
       {groups.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">No series yet. Connect Sonarr in Settings and refresh the library.</div>
+        <div className="glass mt-6 space-y-3 p-5 text-sm text-slate-300">
+          <p>No series loaded yet. Refresh pulls episodes from the Sonarr connections in Settings.</p>
+          <RefreshLibrary onDone={load} />
+        </div>
       ) : (
         groups.map(([key, eps]) => {
           const head = eps[0];

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type FirstRun, type Hardware, type SettingsPayload } from "../api";
 import { Help } from "../components/Shell";
+import { RefreshLibrary } from "../components/RefreshLibrary";
 
 export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onChange: () => void }) {
   const [data, setData] = useState<SettingsPayload | null>(null);
@@ -119,10 +120,14 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           onClick={() =>
             void api
               .saveInstance(inst)
-              .then(() => {
+              .then(async () => {
                 setInst({ ...inst, name: "", url: "", apiKey: "" });
                 load();
                 onChange();
+                if (inst.kind === "radarr" || inst.kind === "sonarr") {
+                  const result = await api.refresh();
+                  setMsg(result.errors.length ? result.errors.join(" ") : `${inst.name} saved. Library lists updated.`);
+                }
               })
               .catch((e: Error) => setMsg(e.message))
           }
@@ -146,9 +151,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             </li>
           ))}
         </ul>
-        <button className="btn" type="button" onClick={() => void api.refresh().then((r) => setMsg(r.errors[0] || "Library refresh started."))}>
-          Refresh library
-        </button>
+        <RefreshLibrary />
       </div>
       {msg && <p className="text-sm text-[#01b574]">{msg}</p>}
     </section>
