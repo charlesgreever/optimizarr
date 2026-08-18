@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { keepSelected, selectedPendingReviewIds } from "./keep-selected";
+import { keepSelected, pendingReviewIds, selectedPendingReviewIds } from "./keep-selected";
 
 describe("keepSelected", () => {
   it("accepts two pending reviews without starting a third review that is already keeping", async () => {
@@ -36,5 +36,15 @@ describe("keepSelected", () => {
 
     await expect(keepSelected([], keep)).resolves.toEqual({ acceptedIds: [], failures: [] });
     expect(keep).not.toHaveBeenCalled();
+  });
+
+  it("keeps all pending reviews without restarting active Keeps", () => {
+    expect(
+      pendingReviewIds([
+        { id: 1, status: "pending" },
+        { id: 2, status: "keeping" },
+        { id: 3, status: "pending" },
+      ]),
+    ).toEqual([1, 3]);
   });
 });

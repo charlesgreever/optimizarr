@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { keepSelected, selectedPendingReviewIds, type SelectableReviewStatus } from "../keep-selected";
+import {
+  keepSelected,
+  pendingReviewIds,
+  selectedPendingReviewIds,
+  type SelectableReviewStatus,
+} from "../keep-selected";
 
 type ReviewRow = {
   id: number;
@@ -21,7 +26,7 @@ export function Review() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<{ id: number; kind: "keep" | "discard" } | null>(null);
-  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkAction, setBulkAction] = useState<"selected" | "all" | null>(null);
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
   const [bulkErrors, setBulkErrors] = useState<Record<number, string>>({});
@@ -38,6 +43,8 @@ export function Review() {
 
   const hasActive = items.some((item) => item.status === "keeping");
   const selectedIds = selectedPendingReviewIds(items, selected);
+  const pendingIds = pendingReviewIds(items);
+  const bulkBusy = bulkAction !== null;
   useEffect(() => {
     if (!hasActive) return;
     const timer = window.setInterval(() => {
@@ -48,14 +55,14 @@ export function Review() {
     return () => window.clearInterval(timer);
   }, [hasActive]);
 
-  async function keepSelectedReviews() {
-    if (selectedIds.length === 0) return;
-    setBulkBusy(true);
+  async function startKeeps(reviewIds: number[], action: "selected" | "all") {
+    if (reviewIds.length === 0) return;
+    setBulkAction(action);
     setError(null);
     setBulkStatus(null);
     setBulkErrors({});
     try {
-      const result = await keepSelected(selectedIds, api.keepReview);
+      const result = await keepSelected(reviewIds, api.keepReview);
       const accepted = `${result.acceptedIds.length} Keep${result.acceptedIds.length === 1 ? " was" : "s were"} accepted.`;
       const skipped = result.failures.length ? ` ${result.failures.length} could not be started.` : "";
       setBulkStatus(`${accepted}${skipped}`);
@@ -63,9 +70,9 @@ export function Review() {
       setSelected({});
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not keep the selected sidecars.");
+      setError(cause instanceof Error ? cause.message : "Could not start the Keeps.");
     } finally {
-      setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -77,14 +84,24 @@ export function Review() {
           <h1 className="page-title">Review</h1>
           <p className="page-description">Compare the original with its sidecar. The library changes only after you choose Keep.</p>
         </div>
-        <button
-          className="btn !w-auto"
-          type="button"
-          disabled={bulkBusy || selectedIds.length === 0}
-          onClick={() => void keepSelectedReviews()}
-        >
-          {bulkBusy ? "Starting Keeps…" : `Keep selected (${selectedIds.length})`}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn-secondary"
+            type="button"
+            disabled={bulkBusy || selectedIds.length === 0}
+            onClick={() => void startKeeps(selectedIds, "selected")}
+          >
+            {bulkAction === "selected" ? "Starting Keeps…" : `Keep selected (${selectedIds.length})`}
+          </button>
+          <button
+            className="btn !w-auto"
+            type="button"
+            disabled={bulkBusy || pendingIds.length === 0}
+            onClick={() => void startKeeps(pendingIds, "all")}
+          >
+            {bulkAction === "all" ? "Starting Keeps…" : `Keep all (${pendingIds.length})`}
+          </button>
+        </div>
       </div>
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       {bulkStatus && <p className="mt-3 text-sm text-emerald-400">{bulkStatus}</p>}

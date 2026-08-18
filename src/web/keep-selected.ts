@@ -21,9 +21,13 @@ export async function keepSelected(
 
 export type SelectableReviewStatus = "pending" | "keeping";
 
+export function pendingReviewIds(reviews: Array<{ id: number; status?: SelectableReviewStatus }>): number[] {
+  return reviews.filter((review) => review.status !== "keeping").map((review) => review.id);
+}
+
 export function selectedPendingReviewIds(
   reviews: Array<{ id: number; status?: SelectableReviewStatus }>,
   selected: Record<number, boolean>,
 ): number[] {
-  return reviews.filter((review) => review.status !== "keeping" && selected[review.id]).map((review) => review.id);
+  return pendingReviewIds(reviews).filter((reviewId) => selected[reviewId]);
 }
