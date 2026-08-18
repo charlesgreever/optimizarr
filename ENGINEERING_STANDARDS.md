@@ -1,6 +1,6 @@
 # Engineering Standards
 
-This file is the **code** standard for Optimizarr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [Issue #20](https://github.com/charlesgreever/optimizarr/issues/20) is the **product** spec.
+This file is the **code** standard for Optimizarr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [docs/prd.md](docs/prd.md) is the **product** spec.
 
 A change can pass one and fail another. Review them as separate axes. Cite a rule by id (`ENG-04`) in review comments.
 
@@ -150,7 +150,7 @@ A commit subject is an imperative clause: `Fail transcode when ffprobe cannot re
 
 Use this on every change. Skip a line only if the diff cannot touch it.
 
-1. Does this match the spec ([issue #20](https://github.com/charlesgreever/optimizarr/issues/20))? (Spec axis)
+1. Does this match the spec ([docs/prd.md](docs/prd.md))? (Spec axis)
 2. Would a junior engineer reading README understand the user-facing strings? (CODING_STANDARDS.md)
 3. Types: no new `any`; unions for closed sets (ENG-02, ENG-03)
 4. Tests: public behavior; failure path keeps the original (ENG-04, ENG-09)

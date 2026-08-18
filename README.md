@@ -4,8 +4,8 @@ Optimizarr is a companion container for Radarr and Sonarr. It inspects the same 
 
 This tree is a greenfield rewrite. Do not import the previous application code.
 
-**PRD:** [issue #20](https://github.com/charlesgreever/optimizarr/issues/20)
+**PRD:** [docs/prd.md](docs/prd.md)
 **Engineering standard:** [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md)
 **Prose standard:** [CODING_STANDARDS.md](CODING_STANDARDS.md) (The Elements of Agent Style)
 
-An implementation plan is not in this repo yet. Write it from issue #20.
+An implementation plan is not in this repo yet. Write it from [docs/prd.md](docs/prd.md).
