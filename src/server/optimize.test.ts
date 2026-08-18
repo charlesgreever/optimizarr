@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatToolError, muxArgs } from "./optimize.ts";
-import type { Suggestion } from "./types.ts";
+import { encodeArgs, formatToolError, muxArgs } from "./optimize.ts";
+import type { OptimizeRequest } from "./optimize.ts";
+import type { InspectionReport, Suggestion } from "./types.ts";
 
 const suggestion: Suggestion = {
   id: "s1",
@@ -46,5 +47,57 @@ describe("mkvmerge arguments", () => {
     expect(message).toContain("mkvmerge failed");
     expect(message).toContain("The file could not be opened.");
     expect(message).not.toContain("Command failed:");
+  });
+
+  it("skips the ffmpeg version banner and keeps the encoder error", () => {
+    const message = formatToolError("ffmpeg", {
+      stderr: [
+        "ffmpeg version 5.1.9-0+deb12u1 Copyright (c) 2000-2026 the FFmpeg developers",
+        "built with gcc 12 (Debian 12.2.0-14)",
+        "configuration: --enable-gpl",
+        "libavutil      57. 28.100 / 57. 28.100",
+        "Cannot load libnvidia-encode.so.1",
+        "Error initializing output stream 0:0 -- Error while opening encoder for output stream #0:0 - maybe incorrect parameters such as bit_rate, rate, width or height",
+      ].join("\n"),
+    });
+    expect(message).toContain("ffmpeg failed");
+    expect(message).not.toMatch(/ffmpeg version 5\.1\.9/);
+    expect(message).toMatch(/libnvidia-encode|opening encoder/i);
+  });
+});
+
+describe("ffmpeg encode arguments", () => {
+  it("hides the banner and uses a 10-bit NVENC profile", () => {
+    const req = {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      suggestion,
+      report: {
+        sourceSig: "p|1",
+        durationSec: 6000,
+        sizeBytes: 20_000_000_000,
+        sizePerHourGb: 12,
+        videoCodec: "hevc",
+        width: 3840,
+        height: 2160,
+        bitDepth: 10,
+        hdr: "hdr10",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      } satisfies InspectionReport,
+      target: "hevc",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    } satisfies OptimizeRequest;
+    const args = encodeArgs(source, "/tmp/out.mkv", req);
+    expect(args.slice(0, 4)).toEqual(["-hide_banner", "-nostdin", "-loglevel", "error"]);
+    expect(args).toContain("hevc_nvenc");
+    expect(args).toContain("main10");
+    expect(args).toContain("p010le");
   });
 });

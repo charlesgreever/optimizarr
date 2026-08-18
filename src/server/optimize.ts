@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, stat, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { InspectionReport, Suggestion } from "./types.ts";
 import { parseFfprobe } from "./inspect.ts";
@@ -47,6 +47,10 @@ export function ffmpegOptimizer(): Optimizer {
           const stereo = join(workDir, `${Date.now()}-stereo.aac`);
           temps.push(stereo);
           await run(req.ffmpeg, [
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "error",
             "-y",
             "-i",
             current,
@@ -113,29 +117,40 @@ export function muxArgs(source: string, dest: string, suggestion: Suggestion, st
   return args;
 }
 
-export function formatToolError(bin: string, error: { message?: string; stderr?: string }): string {
-  const stderr = error.stderr?.trim();
-  const detail = stderr || "The tool exited without a useful message.";
-  const first = detail.split("\n").find((line) => line.trim().length > 0) ?? detail;
-  return `${bin} failed. ${first}`;
+const BANNER = /^(ffmpeg version|copyright|built with|configuration:|libav)/i;
+
+export function formatToolError(bin: string, error: { message?: string; stderr?: string | Buffer }): string {
+  const stderr = String(error.stderr ?? "").trim();
+  const lines = stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !BANNER.test(line));
+  const useful =
+    lines.find((line) => /error|cannot|failed|invalid|not found|no nvenc|unknown encoder/i.test(line)) ??
+    lines.at(-1) ??
+    "The tool exited without a useful message.";
+  return `${bin} failed. ${useful}`;
 }
 
-function encodeArgs(source: string, dest: string, req: OptimizeRequest): string[] {
+export function encodeArgs(source: string, dest: string, req: OptimizeRequest): string[] {
   const encoder = req.target === "av1"
     ? req.backend === "vaapi" ? "av1_vaapi" : "av1_nvenc"
     : req.backend === "vaapi" ? "hevc_vaapi" : "hevc_nvenc";
   const hours = req.report.durationSec / 3600 || 1;
   const targetBytes = (req.suggestion.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3;
   const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / Math.max(req.report.durationSec, 1)));
-  const args = ["-y", "-i", source];
+  const tenBit = req.report.bitDepth >= 10;
+  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source];
   if (req.backend === "vaapi") args.push("-vaapi_device", "/dev/dri/renderD128");
-  args.push("-c:v", encoder, "-b:v", String(bitrate), "-pix_fmt", req.report.bitDepth >= 10 ? "p010le" : "yuv420p", "-c:a", "copy", "-c:s", "copy", dest);
+  args.push("-c:v", encoder);
+  if (tenBit && encoder.includes("nvenc")) args.push("-profile:v", "main10");
+  args.push("-b:v", String(bitrate), "-pix_fmt", tenBit ? "p010le" : "yuv420p", "-c:a", "copy", "-c:s", "copy", dest);
   return args;
 }
 
 async function run(bin: string, args: string[]): Promise<void> {
   try {
-    await execFileAsync(bin, args, { timeout: 0, maxBuffer: 1024 * 256 });
+    await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024 });
   } catch (error) {
     const err = error as { message?: string; stderr?: string };
     throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr }));
