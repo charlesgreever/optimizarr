@@ -76,16 +76,20 @@ export function buildSuggestion(
   report: InspectionReport,
   settings: Settings,
   itemType: "movie" | "episode",
-  opts?: { force?: boolean; addStereo?: boolean },
+  opts?: { force?: boolean; addStereo?: boolean; resolution?: string | null; quality?: string | null; hdr?: string | null },
 ): SuggestionPlan {
   const preferred = settings.preferredLanguage;
-  const category = sizeCategory(itemType, report);
+  const category = sizeCategory(itemType, report, {
+    resolution: opts?.resolution,
+    quality: opts?.quality,
+    hdr: opts?.hdr,
+  });
   const sph = sizePerHourGb(report);
   const cap = settings.sizeCapsGbPerHour[category];
   const overCap = sph !== null && sph > cap;
 
-  const audio = partitionTracks(report.audio, preferred, { keepPrimary: true });
-  const subs = partitionTracks(report.subtitles, preferred, { keepPrimary: false });
+  const audio = partitionTracks(report.audio ?? [], preferred, { keepPrimary: true });
+  const subs = partitionTracks(report.subtitles ?? [], preferred, { keepPrimary: false });
   const keepAudio = audio.keep;
   const stripAudio = audio.strip;
   const keepSubs = subs.keep;

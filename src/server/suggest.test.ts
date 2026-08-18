@@ -210,6 +210,29 @@ describe("suggestion engine", () => {
     expect(buildSuggestion(healthy, settings, "movie").healthy).toBe(true);
     expect(buildSuggestion(healthy, settings, "movie", { force: true }).actions).toEqual(["remux"]);
   });
+
+  it("does not apply the 1080p cap to a 2160p movie when the probe looks 1080p", () => {
+    const probed1080 = report(
+      [
+        { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+        { codec_type: "audio", codec_name: "eac3", channels: 6, tags: { language: "eng" } },
+      ],
+      { format: { duration: "3600", size: String(9.78 * 1024 ** 3) } },
+    );
+    const wrong = buildSuggestion(probed1080, settings, "movie");
+    expect(wrong.category).toBe("movie1080p");
+    expect(wrong.overCap).toBe(true);
+
+    const labeled = buildSuggestion(probed1080, settings, "movie", {
+      quality: "WEBDL-2160p",
+      resolution: "2160",
+      hdr: "dolby_vision",
+    });
+    expect(labeled.category).toBe("movie4kHdr");
+    expect(labeled.sizePerHourGb).toBeCloseTo(9.78, 2);
+    expect(labeled.overCap).toBe(true);
+    expect(labeled.estimatedSavingsBytes).toBeLessThan(wrong.estimatedSavingsBytes ?? 0);
+  });
 });
 
 describe("suggestion reasons and targets", () => {

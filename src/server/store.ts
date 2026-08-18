@@ -3,8 +3,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
-import { sizePerHourGb, type InspectionReport } from "./inspect.ts";
-import { explainSuggestion } from "./suggest.ts";
+import { isInspectionReport, sizeCategory, sizePerHourGb, type InspectionReport } from "./inspect.ts";
+import { buildSuggestion, explainSuggestion } from "./suggest.ts";
 import { defaultSettings, type Settings, type User } from "./types.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { decryptSecret, encryptSecret, loadSecretKey } from "./secrets.ts";
@@ -548,30 +548,51 @@ export class Store {
       .map((r) => {
         const { posterRemoteUrl, actionsJson, planJson, ...rest } = r;
         const actions = JSON.parse(actionsJson) as string[];
-        const inspection = this.getInspection(Number(r.itemId)) as InspectionReport | undefined;
+        const inspection = this.getInspection(Number(r.itemId));
+        const report = isInspectionReport(inspection) ? inspection : undefined;
+        const live = report
+          ? buildSuggestion(report, settings, r.type as ItemType, {
+              quality: (r.quality as string | null) ?? null,
+              resolution: (r.resolution as string | null) ?? null,
+              hdr: (r.hdr as string | null) ?? null,
+            })
+          : null;
+        const category =
+          live?.category ??
+          sizeCategory(
+            r.type as ItemType,
+            report ?? { width: 0, height: 0, hdr: "sdr" },
+            {
+              quality: (r.quality as string | null) ?? null,
+              resolution: (r.resolution as string | null) ?? null,
+              hdr: (r.hdr as string | null) ?? null,
+            },
+          );
         const explained = explainSuggestion(
           {
-            actions,
-            overCap: Boolean(r.overCap),
-            videoCodec: (r.videoCodec as string | null) || inspection?.videoCodec || null,
-            size: (r.size as number | null) ?? inspection?.sizeBytes ?? null,
-            sizePerHourGb:
-              (r.sizePerHourGb as number | null) ?? (inspection ? sizePerHourGb(inspection) : null),
-            extraTracks: Boolean(r.extraTracks),
-            estimatedSavingsBytes: r.estimatedSavingsBytes as number | null,
-            category: r.category as string | null,
+            actions: live?.actions ?? actions,
+            overCap: live?.overCap ?? Boolean(r.overCap),
+            videoCodec: (r.videoCodec as string | null) || report?.videoCodec || null,
+            size: (r.size as number | null) ?? report?.sizeBytes ?? null,
+            sizePerHourGb: live?.sizePerHourGb ?? (r.sizePerHourGb as number | null) ?? (report ? sizePerHourGb(report) : null),
+            extraTracks: live?.extraTracks ?? Boolean(r.extraTracks),
+            estimatedSavingsBytes: live?.estimatedSavingsBytes ?? (r.estimatedSavingsBytes as number | null),
+            category,
             quality: (r.quality as string | null) ?? null,
           },
           settings,
         );
         return {
           ...rest,
-          actions,
-          plan: JSON.parse(planJson),
+          actions: live?.actions ?? actions,
+          plan: live ?? JSON.parse(planJson),
           dismissed: Boolean(r.dismissed),
           forced: Boolean(r.forced),
-          overCap: Boolean(r.overCap),
-          extraTracks: Boolean(r.extraTracks),
+          overCap: live?.overCap ?? Boolean(r.overCap),
+          extraTracks: live?.extraTracks ?? Boolean(r.extraTracks),
+          category,
+          sizePerHourGb: live?.sizePerHourGb ?? r.sizePerHourGb,
+          estimatedSavingsBytes: live?.estimatedSavingsBytes ?? r.estimatedSavingsBytes,
           displayTitle: displayTitle({
             title: String(r.title),
             seriesTitle: (r.seriesTitle as string | null) ?? null,

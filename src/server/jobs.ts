@@ -1,16 +1,15 @@
 import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { InspectionReport } from "./inspect.ts";
+import { isInspectionReport, sizePerHourGb, type InspectionReport } from "./inspect.ts";
 import { notifyArrRename, notifyPlayer } from "./notify.ts";
 import { assertHardware, detectBackends, type EncodeBackends } from "./hardware.ts";
 import { IntegrityError, remuxSidecarPath, reviewPathFor, tempSidecarPath, type Optimizer } from "./optimize.ts";
 import { etaSec, phaseForPlan, type JobPhase, type ProgressUpdate } from "./progress.ts";
 import { reviewPathInsideLibrary } from "./paths.ts";
 import { createStorage, storageConfigFromSettings, type Transfer } from "./storage.ts";
-import type { SuggestionPlan } from "./suggest.ts";
+import { buildSuggestion, type SuggestionPlan } from "./suggest.ts";
 import type { Store } from "./store.ts";
 import type { FetchLike } from "./arr.ts";
-import { sizePerHourGb } from "./inspect.ts";
 import { displayTitle } from "./titles.ts";
 import type { Settings } from "./types.ts";
 
@@ -64,7 +63,15 @@ export class JobService {
       const message = err instanceof Error ? err.message : "Could not write to the review path";
       return { error: message, status: 400 };
     }
-    const jobId = this.store.createJob(item.id, suggestion.id, suggestion.plan, this.now().toISOString());
+    const report = this.store.getInspection(item.id);
+    const plan = isInspectionReport(report)
+      ? buildSuggestion(report, settings, item.type, {
+          quality: item.quality,
+          resolution: item.resolution,
+          hdr: item.hdr,
+        })
+      : suggestion.plan;
+    const jobId = this.store.createJob(item.id, suggestion.id, plan, this.now().toISOString());
     void this.processQueue().catch(() => undefined);
     return { jobId };
   }

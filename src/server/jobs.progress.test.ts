@@ -287,7 +287,19 @@ printf 'OUTPUT-MEDIA-FILE-CONTENTS-ARE-HERE-1234' > "$dest"
     writeFileSync(item.path, "x".repeat(100));
     store.saveInspection(
       item.id,
-      { durationSec: 10, sizeBytes: 100, videoCodec: "hevc", width: 1920, height: 1080, audio: [], subs: [] },
+      {
+        path: item.path,
+        durationSec: 10,
+        sizeBytes: 100,
+        videoCodec: "hevc",
+        bitDepth: 8,
+        width: 1920,
+        height: 1080,
+        hdr: "sdr",
+        audio: [{ type: "audio", language: "eng" }, { type: "audio", language: "spa" }],
+        subtitles: [],
+        attachments: 0,
+      },
       new Date().toISOString(),
       `${item.path}|100`,
     );

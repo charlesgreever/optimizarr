@@ -235,6 +235,55 @@ describe("phase 3 catalog", () => {
     expect(catalog.progress().errors).toBe(0);
   });
 
+  it("uses the 4K HDR cap for a WEBDL-2160p movie even if the first stream is a cover", async () => {
+    const { app, store, cookie } = await setup();
+    const inst = store.listArrInstances()[0];
+    store.upsertLibraryItem({
+      instanceId: inst.id,
+      externalId: 77,
+      seriesId: null,
+      type: "movie",
+      title: "Avatar Aang: The Last Airbender",
+      seriesTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
+      path: "/aang.mkv",
+      folderPath: null,
+      quality: "WEBDL-2160p",
+      videoCodec: "h265",
+      resolution: "2160",
+      hdr: "dolby_vision",
+      size: 10 * 1024 ** 3,
+      readable: true,
+      pathError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    const catalog = new Catalog(store, (path) =>
+      parseFfprobe(path, {
+        format: { duration: "3600", size: String(10 * 1024 ** 3) },
+        streams: [
+          { codec_type: "video", codec_name: "mjpeg", width: 600, height: 900, disposition: { attached_pic: 1 } },
+          {
+            codec_type: "video",
+            codec_name: "hevc",
+            width: 3840,
+            height: 2160,
+            side_data_list: [{ side_data_type: "DOVI configuration record" }],
+          },
+          { codec_type: "audio", codec_name: "eac3", channels: 6, tags: { language: "eng" } },
+        ],
+      }),
+    );
+    const item = store.listLibraryItems().find((row) => row.title.includes("Aang"));
+    await catalog.inspectItem(item!.id);
+    const listed = await app.request("/api/suggestions", { headers: { cookie } }).then((r) => r.json());
+    const row = listed.items.find((i: { title: string }) => i.title.includes("Aang"));
+    expect(row.category).toBe("movie4kHdr");
+    expect(row.reasons.some((line: string) => line.includes("8.00 GB/hr allowed"))).toBe(true);
+    expect(row.reasons.some((line: string) => line.includes("2.50 GB/hr allowed"))).toBe(false);
+    expect(row.after.sizePerHourGb).toBe(8);
+  });
+
   it("records a failed probe once and ends the walk", async () => {
     const { store } = await setup();
     store.createArrInstance({ kind: "radarr", name: "R2", url: "http://r2", apiKey: "k" });

@@ -78,6 +78,9 @@ export class Catalog {
     const plan = buildSuggestion(report, this.store.getSettings(), item.type, {
       force: opts?.force,
       addStereo: opts?.addStereo,
+      quality: item.quality,
+      resolution: item.resolution,
+      hdr: item.hdr,
     });
     if (plan.healthy && !opts?.force) {
       if (opts?.addStereo) {
