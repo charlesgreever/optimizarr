@@ -134,6 +134,21 @@ export class Store {
       );
       INSERT OR IGNORE INTO inspect_state (id, walking, pending, inspected, failed) VALUES (1, 0, 0, 0, 0);
     `);
+    this.ensureColumn("jobs", "position", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("jobs", "phase", "TEXT NOT NULL DEFAULT 'queued'");
+    this.ensureColumn("jobs", "progress", "REAL NOT NULL DEFAULT 0");
+    this.ensureColumn("jobs", "warning", "TEXT");
+    this.ensureColumn("jobs", "run_now", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("jobs", "plan", "TEXT NOT NULL DEFAULT '{}'");
+    this.ensureColumn("jobs", "suggestion_id", "TEXT");
+    this.ensureColumn("jobs", "error", "TEXT");
+    this.ensureColumn("jobs", "created_at", "INTEGER NOT NULL DEFAULT 0");
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (columns.some((row) => row.name === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 
   probeWrite(value: string): void {

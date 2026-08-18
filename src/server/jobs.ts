@@ -73,15 +73,20 @@ export class JobService {
   }
 
   private async tick(): Promise<void> {
-    const settings = this.opts.store.getSettings();
-    this.applySchedule(settings);
-    const capacity = Math.max(1, settings.concurrency) - this.running.size;
-    if (capacity <= 0) return;
-    const next = this.opts.store
-      .listJobs()
-      .filter((j) => j.status === "queued")
-      .slice(0, capacity);
-    for (const job of next) void this.run(job.id, settings);
+    try {
+      const settings = this.opts.store.getSettings();
+      this.applySchedule(settings);
+      const capacity = Math.max(1, settings.concurrency) - this.running.size;
+      if (capacity <= 0) return;
+      const next = this.opts.store
+        .listJobs()
+        .filter((j) => j.status === "queued")
+        .slice(0, capacity);
+      for (const job of next) void this.run(job.id, settings);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.error(`The job runner skipped a tick because ${message}`);
+    }
   }
 
   private applySchedule(settings: Settings): void {
