@@ -26,7 +26,9 @@ import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService, withTitles } from "./jobs.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
-import type { ArrKind, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
+import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
+import { validateCustomPlan } from "./custom-plan.ts";
+import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
@@ -185,7 +187,26 @@ export function createApp(opts: AppOptions) {
       ...settings,
       instances: publicInstances(),
       firstRun: firstRunState(),
+      profilePreviews: profilePreviews(settings.sizeCaps),
     });
+  });
+
+  app.post("/api/settings/profiles/sync", async (c) => {
+    const settings = store.getSettings();
+    const results = [];
+    for (const inst of store.listInstances()) {
+      if (!inst.enabled || (inst.kind !== "radarr" && inst.kind !== "sonarr")) continue;
+      const full = store.getInstance(inst.id);
+      if (!full?.secret) continue;
+      results.push(await syncProfiles({
+        instanceId: inst.id,
+        url: inst.url,
+        apiKey: decryptSecret(secret, full.secret),
+        caps: settings.sizeCaps,
+        fetch: httpFetch,
+      }));
+    }
+    return c.json({ results });
   });
 
   app.put("/api/settings", async (c) => {
@@ -494,6 +515,54 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true, item: presentItem(store.getItem(c.req.param("id"))!) });
   });
 
+  app.get("/api/library/items/:id", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    return c.json({
+      item: presentItem(item),
+      hardware: lastHardware,
+      settings: { writeMode: store.getSettings().writeMode, videoTarget: store.getSettings().videoTarget },
+    });
+  });
+
+  app.post("/api/library/items/:id/plan", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ draft?: CustomPlanDraft }>();
+    const result = validateCustomPlan({
+      item,
+      report,
+      settings: store.getSettings(),
+      hardware: lastHardware,
+      draft: body.draft ?? {},
+    });
+    if (!result.ok) return c.json({ ok: false, errors: result.errors }, 400);
+    return c.json({ ok: true, plan: result.plan });
+  });
+
+  app.post("/api/library/items/:id/queue", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ draft?: CustomPlanDraft; runNow?: boolean }>();
+    const result = validateCustomPlan({
+      item,
+      report,
+      settings: store.getSettings(),
+      hardware: lastHardware,
+      draft: body.draft ?? {},
+    });
+    if (!result.ok) return c.json({ ok: false, errors: result.errors }, 400);
+    const queued = jobs.enqueueCustom(item.id, result.plan, Boolean(body.runNow));
+    if ("error" in queued) return c.json({ error: queued.error }, queued.status as 400 | 404 | 409);
+    return c.json({ ok: true, id: queued.id, plan: result.plan });
+  });
+
   app.post("/api/library/series/:instanceId/:show/optimize", async (c) => {
     const blocked = gateOptimize();
     if (blocked) return c.json({ error: blocked }, 403);
@@ -641,7 +710,7 @@ export function createApp(opts: AppOptions) {
         type: item.type,
         displayTitle: displayTitle(item),
         instanceName: item.instanceName,
-        href: item.type === "movie" ? `/movies?focus=${item.id}` : `/series?focus=${item.id}`,
+        href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
       }));
     return c.json({ items: hits });
   });
@@ -719,6 +788,13 @@ export function createApp(opts: AppOptions) {
       suggestion,
       error: error?.reason ?? null,
       reasons: suggestion?.reasons ?? [],
+      href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
+      listingState: report?.listingState ?? null,
+      sourceMethod: report?.sourceMethod ?? null,
+      videoLabel: report ? `${report.videoCodec} · ${report.width}x${report.height}` : null,
+      audioLabels: report?.audio.map((t) => `${t.language} ${t.codec} ${t.channels}ch`) ?? [],
+      subtitleLabels: report?.subtitles.map((t) => `${t.language} ${t.codec}`) ?? [],
+      trackEditingAvailable: report?.listingState === "complete",
     };
   }
 

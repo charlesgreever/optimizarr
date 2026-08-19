@@ -238,4 +238,53 @@ describe("public HTTP behavior", () => {
     expect(report?.listingState).toBe("complete");
     expect(created.store.listErrors()).toHaveLength(0);
   });
+
+  it("returns profile previews and sends search to title pages", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    const settings = (await (await ctx.app.app.request("/api/settings", { headers })).json()) as { profilePreviews?: Array<{ name: string }>; writeMode?: string };
+    expect(settings.writeMode).toBe("sidecar");
+    expect(settings.profilePreviews?.[0]?.name).toMatch(/^Optimizarr /);
+    const search = (await (await ctx.app.app.request("/api/search?q=underdog", { headers })).json()) as { items: Array<{ href: string }> };
+    expect(search.items[0]?.href).toMatch(/^\/movies\//);
+  });
+
+  it("rejects a do-nothing custom plan with a field error", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as { items: Array<{ id: string; videoLabel?: string }> };
+    const id = movies.items[0]?.id ?? "";
+    expect(movies.items[0]?.videoLabel).toMatch(/h264/i);
+    const empty = await ctx.app.app.request(`/api/library/items/${id}/plan`, { method: "POST", headers, body: JSON.stringify({ draft: {} }) });
+    expect(empty.status).toBe(400);
+    const body = (await empty.json()) as { errors?: Array<{ field: string }> };
+    expect(body.errors?.[0]?.field).toBe("plan");
+  });
 });

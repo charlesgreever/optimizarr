@@ -6,6 +6,8 @@ import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, resolvePlan } from "./optimize.ts";
 import { promote } from "./promote.ts";
+import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
+import { planHasVideoTranscode } from "./types.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -54,6 +56,35 @@ export class JobService {
       runNow,
       createdAt: this.now(),
       plan: suggestion,
+    });
+    void this.tick();
+    return { id };
+  }
+
+  enqueueCustom(itemId: string, plan: import("./types.ts").ExecutablePlan, runNow = false): { id: string } | { error: string; status: number } {
+    const item = this.opts.store.getItem(itemId);
+    if (!item) return { error: "That title is not in the library.", status: 404 };
+    if (this.opts.store.pendingReviewForItem(itemId)) {
+      return { error: "This title already has a sidecar waiting in Review.", status: 409 };
+    }
+    if (this.opts.store.activeJobForItem(itemId)) {
+      return { error: "This title already has an active job.", status: 409 };
+    }
+    const id = randomUUID();
+    this.opts.store.insertJob({
+      id,
+      itemId,
+      suggestionId: null,
+      status: "queued",
+      phase: "queued",
+      progress: 0,
+      error: null,
+      warning: plan.warning,
+      runNow,
+      createdAt: this.now(),
+      writeMode: plan.writeMode,
+      promoteError: null,
+      plan,
     });
     void this.tick();
     return { id };
@@ -239,7 +270,7 @@ export class JobService {
         url: p.url,
         token: this.opts.decrypt(p.secret ?? ""),
       }));
-    return promote({
+    const outcome = await promote({
       item,
       outputPath,
       sourceSize,
@@ -250,6 +281,19 @@ export class JobService {
       instance,
       players,
     });
+    if (outcome.replaced && plan && planHasVideoTranscode(plan) && instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
+      const extra = await assignProfile({
+        kind: instance.kind,
+        url: instance.url,
+        apiKey: this.opts.decrypt(instance.secret),
+        movieId: instance.kind === "radarr" ? item.arrId : undefined,
+        seriesId: instance.kind === "sonarr" ? (item.arrSeriesId ?? undefined) : undefined,
+        profileName: PROFILE_NAMES[plan.category],
+        fetch: this.opts.fetch,
+      });
+      if (extra) outcome.warning = outcome.warning ? `${outcome.warning} ${extra}` : extra;
+    }
+    return outcome;
   }
 
   async discard(reviewId: string): Promise<{ accepted: true } | { error: string; status: number }> {
