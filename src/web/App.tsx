@@ -11,6 +11,7 @@ import { ReviewPage } from "./pages/Review";
 import { ErrorsPage } from "./pages/Errors";
 import { HistoryPage } from "./pages/History";
 import { SettingsPage } from "./pages/Settings";
+import { TitlePage } from "./pages/Title";
 import { LoginPage } from "./pages/Login";
 
 export function App() {
@@ -30,7 +31,9 @@ export function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/movies" element={<MoviesPage />} />
+        <Route path="/movies/:id" element={<TitlePage />} />
         <Route path="/series" element={<SeriesPage />} />
+        <Route path="/series/episodes/:id" element={<TitlePage />} />
         <Route path="/suggestions" element={<SuggestionsPage />} />
         <Route path="/queue" element={<QueuePage />} />
         <Route path="/review" element={<ReviewPage />} />

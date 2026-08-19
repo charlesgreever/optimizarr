@@ -213,9 +213,19 @@ export function createApp(opts: AppOptions) {
     const body = await c.req.json<Partial<Settings>>();
     const current = store.getSettings();
     const next: Settings = {
-      ...current,
-      ...body,
+      preferredLanguage: body.preferredLanguage ?? current.preferredLanguage,
+      languageConfirmed: body.languageConfirmed ?? current.languageConfirmed,
+      reviewPath: body.reviewPath ?? current.reviewPath,
       sizeCaps: { ...current.sizeCaps, ...(body.sizeCaps ?? {}) },
+      videoTarget: body.videoTarget === "av1" ? "av1" : body.videoTarget === "hevc" ? "hevc" : current.videoTarget,
+      concurrency: body.concurrency ?? current.concurrency,
+      conservativeMode: body.conservativeMode ?? current.conservativeMode,
+      offPeakEnabled: body.offPeakEnabled ?? current.offPeakEnabled,
+      offPeakStart: body.offPeakStart ?? current.offPeakStart,
+      offPeakEnd: body.offPeakEnd ?? current.offPeakEnd,
+      localAuthBypass: body.localAuthBypass ?? current.localAuthBypass,
+      inspectConcurrency: body.inspectConcurrency ?? current.inspectConcurrency,
+      writeMode: body.writeMode === "direct" ? "direct" : body.writeMode === "sidecar" ? "sidecar" : current.writeMode,
     };
     if (next.reviewPath && unsafeReviewPath(next.reviewPath, store.listItems().map((i) => i.path))) {
       return c.json({ error: "The review folder cannot sit inside an Arr library folder." }, 400);

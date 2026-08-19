@@ -379,6 +379,17 @@ th {
   cursor: pointer;
 }
 
+table.dense th,
+table.dense td {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+table.dense a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
 tr:last-child td {
   border-bottom: 0;
 }

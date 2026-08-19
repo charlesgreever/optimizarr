@@ -51,6 +51,14 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           <input type="checkbox" checked={data.localAuthBypass} onChange={(e) => setData({ ...data, localAuthBypass: e.target.checked })} />
           Allow local addresses without a password
         </label>
+        <label className="block text-sm">
+          Write finished files
+          <select className="ml-2" value={data.writeMode ?? "sidecar"} onChange={(e) => setData({ ...data, writeMode: e.target.value as "sidecar" | "direct" })}>
+            <option value="sidecar">Sidecar for Review (default)</option>
+            <option value="direct">Direct write after integrity check</option>
+          </select>
+        </label>
+        <p className="help">Direct write replaces the library file only after the new file passes an integrity check. Arr refresh failures stay as a warning.</p>
         <button
           className="btn"
           type="button"
@@ -72,6 +80,15 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             <input className="ml-2 w-20" type="number" step="0.1" value={value} onChange={(e) => setData({ ...data, sizeCaps: { ...data.sizeCaps, [key]: Number(e.target.value) } })} />
           </label>
         ))}
+        <div className="space-y-1 text-sm">
+          {(data.profilePreviews ?? []).map((p) => (
+            <div key={p.category}>{p.name}: {p.gbPerHour.toFixed(2)} GB/hr · {p.mbPerMin.toFixed(1)} MB/min</div>
+          ))}
+        </div>
+        <button className="btn" type="button" onClick={() => void api.syncProfiles().then((r) => setMsg(r.results.map((x) => `${x.created.length} created, ${x.updated.length} updated`).join(" · ") || "Profiles synced.")).catch((e: Error) => setMsg(e.message))}>
+          Sync quality profiles
+        </button>
+        <p className="help">Sync creates or updates only Optimizarr-named profiles. It never starts a search.</p>
       </div>
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Encode</h2>

@@ -23,6 +23,18 @@ export const api = {
   refresh: () => req<{ errors: string[] }>("/api/library/refresh", { method: "POST" }),
   movies: () => req<{ items: LibraryRow[] }>("/api/library/movies"),
   series: () => req<{ items: LibraryRow[] }>("/api/library/series"),
+  title: (id: string) => req<{ item: LibraryRow; hardware: Hardware; settings: { writeMode: string; videoTarget: string } }>(`/api/library/items/${id}`),
+  previewPlan: async (id: string, draft: Record<string, unknown>) => {
+    const res = await fetch(`/api/library/items/${id}/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft }),
+    });
+    return (await res.json()) as { ok?: boolean; plan?: ExecutablePlan; errors?: Array<{ field: string; message: string }>; error?: string };
+  },
+  queueCustom: (id: string, draft: Record<string, unknown>, runNow = false) =>
+    req(`/api/library/items/${id}/queue`, { method: "POST", body: JSON.stringify({ draft, runNow }) }),
+  syncProfiles: () => req<{ results: Array<{ created: string[]; updated: string[]; failed: string[] }> }>("/api/settings/profiles/sync", { method: "POST" }),
   inspect: () => req<InspectState>("/api/inspect/status"),
   errors: () => req<{ items: FileError[] }>("/api/errors"),
   suggestions: (q = "") => req<{ items: SuggestionRow[] }>(`/api/suggestions?q=${encodeURIComponent(q)}`),
@@ -59,8 +71,10 @@ export type SettingsPayload = {
   offPeakStart: string;
   offPeakEnd: string;
   localAuthBypass: boolean;
+  writeMode: "sidecar" | "direct";
   instances: Array<{ id: string; kind: string; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
+  profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;
 };
 export type LibraryRow = {
   id: string;
@@ -78,6 +92,17 @@ export type LibraryRow = {
   error: string | null;
   reasons: string[];
   suggestion: { id: string; actions: string[]; reasons: string[] } | null;
+  href?: string;
+  listingState?: string | null;
+  sourceMethod?: string | null;
+  videoLabel?: string | null;
+  audioLabels?: string[];
+  subtitleLabels?: string[];
+  trackEditingAvailable?: boolean;
+  report?: InspectionReport | null;
+  width?: number;
+  height?: number;
+  resolution?: string;
 };
 export type SuggestionRow = {
   id: string;
@@ -115,6 +140,25 @@ export type HomePayload = {
 export type FileError = { itemId: string | null; path: string; fileName: string; displayTitle: string; reason: string };
 export type InspectState = { walking: boolean; pending: number; inspected: number; failed: number };
 export type SearchHit = { itemId: string; type: string; displayTitle: string; instanceName: string; href: string };
+export type InspectionReport = {
+  listingState: string;
+  sourceMethod: string;
+  videoCodec: string;
+  width: number;
+  height: number;
+  bitDepth: number;
+  hdr: string;
+  sizeBytes: number;
+  durationSec: number;
+  audio: Array<{ index: number; language: string; channels: number; codec: string; title: string }>;
+  subtitles: Array<{ index: number; language: string; codec: string; title: string }>;
+};
+export type ExecutablePlan = {
+  reasons: string[];
+  warning: string | null;
+  estimatedOutputBytes: number | null;
+  video: { kind: string };
+};
 
 export function formatSize(bytes: number | null | undefined): string {
   if (bytes == null) return "—";
