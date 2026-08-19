@@ -44,14 +44,6 @@ Open `http://192.168.1.10:7373`. In Settings, add Radarr at `http://radarr:7878`
 
 The shipped `compose.yaml` passes the host NVIDIA GPU the same way Frigate does: `runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES=all`, and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. Recreate the container after changing those values.
 
-Optimizarr listens on port **7373**. Do not publish **7878**; that is Radarr.
-
-Put secrets in a sibling `.env` (see `.env.example`). Compose reads `OPTIMIZARR_WIDGET_KEY` from there. The AES key for Arr API keys is generated at `/config/.secret` and is not set in compose.
-
-The review share is mounted at `/review`. In Settings, set the review folder to `/review`.
-
-If you already onboarded with `/home/cgreever/appdata/arr/optimizarr/config`, copy that directory to `./config` before the first start, or change the compose volume back to the appdata path.
-
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PUID` / `PGID` | `1000` | Owner of `/config` and files Optimizarr writes |
