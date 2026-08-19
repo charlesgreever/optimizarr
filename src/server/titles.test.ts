@@ -7,6 +7,8 @@ const episode: LibraryItem = {
   instanceId: "sonarr",
   instanceName: "TV",
   arrId: 2,
+  arrSeriesId: 9,
+  arrEpisodeFileId: 77,
   type: "episode",
   title: "Ted Lasso",
   showTitle: "Ted Lasso",

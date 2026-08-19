@@ -12,6 +12,7 @@ export type ArrMovie = {
 
 export type ArrEpisode = ArrMovie & {
   seriesId: number;
+  episodeFileId: number | null;
   seriesTitle: string;
   season: number;
   episode: number;
@@ -82,6 +83,7 @@ export function parseSonarrEpisodes(payload: unknown, seriesTitle: string, poste
       return {
         id: num(row.id),
         seriesId: num(row.seriesId),
+        episodeFileId: file.id == null ? null : num(file.id),
         title: seriesTitle,
         seriesTitle,
         season: num(row.seasonNumber),

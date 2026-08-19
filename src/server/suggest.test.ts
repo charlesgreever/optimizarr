@@ -8,6 +8,8 @@ const movie: LibraryItem = {
   instanceId: "radarr",
   instanceName: "Radarr 4K",
   arrId: 1,
+  arrSeriesId: null,
+  arrEpisodeFileId: null,
   type: "movie",
   title: "Avatar",
   showTitle: null,

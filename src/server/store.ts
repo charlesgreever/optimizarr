@@ -146,6 +146,8 @@ export class Store {
     this.ensureColumn("jobs", "created_at", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("jobs", "write_mode", "TEXT NOT NULL DEFAULT 'sidecar'");
     this.ensureColumn("jobs", "promote_error", "TEXT");
+    this.ensureColumn("library_items", "arr_series_id", "INTEGER");
+    this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -264,13 +266,14 @@ export class Store {
   upsertItem(item: Omit<LibraryItem, "hasPoster" | "instanceName"> & { posterBytes?: Buffer | null }): string {
     this.db
       .prepare(
-        `INSERT INTO library_items (id, instance_id, arr_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
-         VALUES (@id, @instanceId, @arrId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt)
+        `INSERT INTO library_items (id, instance_id, arr_id, arr_series_id, arr_episode_file_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
+         VALUES (@id, @instanceId, @arrId, @arrSeriesId, @arrEpisodeFileId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt)
          ON CONFLICT(instance_id, type, arr_id) DO UPDATE SET
            title=excluded.title, show_title=excluded.show_title, season=excluded.season, episode=excluded.episode,
            episode_title=excluded.episode_title, path=excluded.path, size_bytes=excluded.size_bytes, quality=excluded.quality,
            resolution=excluded.resolution, profile=excluded.profile, tags=excluded.tags, poster_remote=excluded.poster_remote,
-           poster_bytes=COALESCE(excluded.poster_bytes, poster_bytes)`,
+           poster_bytes=COALESCE(excluded.poster_bytes, poster_bytes),
+           arr_series_id=excluded.arr_series_id, arr_episode_file_id=excluded.arr_episode_file_id`,
       )
       .run({
         ...item,
@@ -560,6 +563,8 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     instanceId: String(row.instance_id),
     instanceName: String(row.instance_name ?? ""),
     arrId: Number(row.arr_id),
+    arrSeriesId: row.arr_series_id == null ? null : Number(row.arr_series_id),
+    arrEpisodeFileId: row.arr_episode_file_id == null ? null : Number(row.arr_episode_file_id),
     type: row.type === "episode" ? "episode" : "movie",
     title: String(row.title),
     showTitle: row.show_title == null ? null : String(row.show_title),

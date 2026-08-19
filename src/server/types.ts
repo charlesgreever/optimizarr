@@ -153,6 +153,8 @@ export type LibraryItem = {
   instanceId: string;
   instanceName: string;
   arrId: number;
+  arrSeriesId: number | null;
+  arrEpisodeFileId: number | null;
   type: MediaType;
   title: string;
   showTitle: string | null;
