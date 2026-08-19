@@ -306,3 +306,29 @@ export type ExecutablePlan = {
 export function planHasVideoTranscode(plan: ExecutablePlan): boolean {
   return plan.video.kind !== "copy";
 }
+
+export type CustomAudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";
+export type CustomAudioChoice = {
+  index: number;
+  action: CustomAudioAction;
+  channels?: number;
+};
+export type CustomSubtitleChoice = {
+  index: number;
+  action: "keep" | "remove";
+};
+export type CustomVideoDraft =
+  | { mode: "copy" }
+  | { mode: "size"; targetBytes: number; codec?: VideoTarget; downscale1080p?: boolean }
+  | { mode: "quality"; quality: number; codec?: VideoTarget; downscale1080p?: boolean };
+export type CustomPlanDraft = {
+  remuxToMkv?: boolean;
+  video?: CustomVideoDraft;
+  audio?: CustomAudioChoice[];
+  subtitles?: CustomSubtitleChoice[];
+  writeMode?: WriteMode | "default";
+};
+export type PlanFieldError = { field: string; message: string };
+export type CustomPlanOk = { ok: true; plan: ExecutablePlan };
+export type CustomPlanFail = { ok: false; errors: PlanFieldError[] };
+export type CustomPlanResult = CustomPlanOk | CustomPlanFail;
