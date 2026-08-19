@@ -190,6 +190,8 @@ export type Job = {
   warning: string | null;
   runNow: boolean;
   createdAt: number;
+  writeMode: WriteMode;
+  promoteError: string | null;
 };
 
 export type ReviewItem = {

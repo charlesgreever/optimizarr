@@ -72,4 +72,43 @@ describe("store schema migration", () => {
     stores.push(again);
     expect(again.getSettings().writeMode).toBe("direct");
   });
+
+  it("persists a custom executable plan, write mode, and promote error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-job-plan-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    store.insertJob({
+      id: "job-custom",
+      itemId: "item-1",
+      suggestionId: null,
+      status: "queued",
+      phase: "queued",
+      progress: 0,
+      error: null,
+      warning: null,
+      runNow: false,
+      createdAt: 1,
+      writeMode: "direct",
+      promoteError: null,
+      plan: {
+        origin: "custom",
+        video: { kind: "copy" },
+        audio: [{ op: "keep", index: 1 }],
+        subtitles: [{ op: "remove", index: 2 }],
+        container: "mkv",
+        writeMode: "direct",
+        warning: null,
+        reasons: ["Drop Spanish subtitles."],
+        estimatedOutputBytes: null,
+        category: "movie1080p",
+      },
+    });
+    store.updateJob("job-custom", { promoteError: "Radarr rejected the profile assign." });
+    const loaded = store.getJob("job-custom");
+    expect(loaded?.suggestionId).toBeNull();
+    expect(loaded?.writeMode).toBe("direct");
+    expect(loaded?.promoteError).toBe("Radarr rejected the profile assign.");
+    expect((loaded?.plan as { origin?: string }).origin).toBe("custom");
+  });
 });

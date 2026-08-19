@@ -144,6 +144,8 @@ export class Store {
     this.ensureColumn("jobs", "suggestion_id", "TEXT");
     this.ensureColumn("jobs", "error", "TEXT");
     this.ensureColumn("jobs", "created_at", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("jobs", "write_mode", "TEXT NOT NULL DEFAULT 'sidecar'");
+    this.ensureColumn("jobs", "promote_error", "TEXT");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -390,14 +392,14 @@ export class Store {
     return { walking: row.walking === 1, pending: row.pending, inspected: row.inspected, failed: row.failed };
   }
 
-  insertJob(job: Omit<Job, "displayTitle"> & { plan: unknown; position?: number }): string {
+  insertJob(job: Omit<Job, "displayTitle" | "writeMode" | "promoteError"> & { plan: unknown; position?: number; writeMode?: "sidecar" | "direct"; promoteError?: string | null }): string {
     const position =
       job.position ??
       ((this.db.prepare("SELECT COALESCE(MAX(position), 0) + 1 AS n FROM jobs").get() as { n: number }).n);
     this.db
       .prepare(
-        `INSERT INTO jobs (id, item_id, suggestion_id, status, phase, progress, error, warning, run_now, position, plan, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO jobs (id, item_id, suggestion_id, status, phase, progress, error, warning, run_now, position, plan, created_at, write_mode, promote_error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.id,
@@ -412,16 +414,18 @@ export class Store {
         position,
         JSON.stringify(job.plan),
         job.createdAt,
+        job.writeMode === "direct" ? "direct" : "sidecar",
+        job.promoteError ?? null,
       );
     return job.id;
   }
 
-  updateJob(id: string, patch: Partial<{ status: JobStatus; phase: JobPhase; progress: number; error: string | null; runNow: boolean; position: number }>): void {
+  updateJob(id: string, patch: Partial<{ status: JobStatus; phase: JobPhase; progress: number; error: string | null; runNow: boolean; position: number; promoteError: string | null; writeMode: "sidecar" | "direct" }>): void {
     const current = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!current) return;
     this.db
       .prepare(
-        "UPDATE jobs SET status=?, phase=?, progress=?, error=?, run_now=?, position=? WHERE id=?",
+        "UPDATE jobs SET status=?, phase=?, progress=?, error=?, run_now=?, position=?, write_mode=?, promote_error=? WHERE id=?",
       )
       .run(
         patch.status ?? current.status,
@@ -430,6 +434,8 @@ export class Store {
         patch.error === undefined ? current.error : patch.error,
         (patch.runNow ?? current.run_now === 1) ? 1 : 0,
         patch.position ?? current.position,
+        patch.writeMode ?? current.write_mode ?? "sidecar",
+        patch.promoteError === undefined ? current.promote_error : patch.promoteError,
         id,
       );
   }
@@ -585,6 +591,8 @@ function mapJob(row: Record<string, unknown>): Job & { plan: Suggestion } {
     warning: row.warning == null ? null : String(row.warning),
     runNow: Number(row.run_now) === 1,
     createdAt: Number(row.created_at),
+    writeMode: row.write_mode === "direct" ? "direct" : "sidecar",
+    promoteError: row.promote_error == null ? null : String(row.promote_error),
     plan: JSON.parse(String(row.plan)) as Suggestion,
   };
 }
