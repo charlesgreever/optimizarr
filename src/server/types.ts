@@ -49,6 +49,7 @@ export type Settings = {
   offPeakEnd: string;
   localAuthBypass: boolean;
   inspectConcurrency: number;
+  writeMode: WriteMode;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   offPeakEnd: "07:00",
   localAuthBypass: false,
   inspectConcurrency: 1,
+  writeMode: "sidecar",
 };
 
 export type ArrInstance = {
@@ -106,6 +108,8 @@ export type SubtitleTrack = {
 
 export type InspectionReport = {
   sourceSig: string;
+  sourceMethod: "ffprobe" | "iso_ffmpeg";
+  listingState: "complete" | "iso_unlisted";
   durationSec: number;
   sizeBytes: number;
   sizePerHourGb: number;
@@ -149,6 +153,8 @@ export type LibraryItem = {
   instanceId: string;
   instanceName: string;
   arrId: number;
+  arrSeriesId: number | null;
+  arrEpisodeFileId: number | null;
   type: MediaType;
   title: string;
   showTitle: string | null;
@@ -186,6 +192,8 @@ export type Job = {
   warning: string | null;
   runNow: boolean;
   createdAt: number;
+  writeMode: WriteMode;
+  promoteError: string | null;
 };
 
 export type ReviewItem = {
@@ -249,3 +257,78 @@ export type SearchHit = {
   instanceName: string;
   href: string;
 };
+
+export type PlanOrigin = "bulk" | "custom";
+export type WriteMode = "sidecar" | "direct";
+export type OutputContainer = "mkv";
+
+export type VideoCopy = { kind: "copy" };
+export type VideoSizeTranscode = {
+  kind: "size";
+  codec: VideoTarget;
+  targetBytes: number;
+  downscale1080p: boolean;
+  bitDepth: number;
+};
+export type VideoQualityTranscode = {
+  kind: "quality";
+  codec: VideoTarget;
+  quality: number;
+  downscale1080p: boolean;
+  bitDepth: number;
+};
+export type VideoIntent = VideoCopy | VideoSizeTranscode | VideoQualityTranscode;
+
+export type AudioKeep = { op: "keep"; index: number };
+export type AudioRemove = { op: "remove"; index: number };
+export type AudioReplaceAac = { op: "replace_aac"; index: number };
+export type AudioReplaceDownmix = { op: "replace_downmix"; index: number; channels: number };
+export type AudioAddDownmix = { op: "add_downmix"; index: number; channels: number };
+export type AudioOp = AudioKeep | AudioRemove | AudioReplaceAac | AudioReplaceDownmix | AudioAddDownmix;
+
+export type SubtitleKeep = { op: "keep"; index: number };
+export type SubtitleRemove = { op: "remove"; index: number };
+export type SubtitleOp = SubtitleKeep | SubtitleRemove;
+
+export type ExecutablePlan = {
+  origin: PlanOrigin;
+  video: VideoIntent;
+  audio: AudioOp[];
+  subtitles: SubtitleOp[];
+  container: OutputContainer;
+  writeMode: WriteMode;
+  warning: string | null;
+  reasons: string[];
+  estimatedOutputBytes: number | null;
+  category: SizeCategory;
+};
+
+export function planHasVideoTranscode(plan: ExecutablePlan): boolean {
+  return plan.video.kind !== "copy";
+}
+
+export type CustomAudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";
+export type CustomAudioChoice = {
+  index: number;
+  action: CustomAudioAction;
+  channels?: number;
+};
+export type CustomSubtitleChoice = {
+  index: number;
+  action: "keep" | "remove";
+};
+export type CustomVideoDraft =
+  | { mode: "copy" }
+  | { mode: "size"; targetBytes: number; codec?: VideoTarget; downscale1080p?: boolean }
+  | { mode: "quality"; quality: number; codec?: VideoTarget; downscale1080p?: boolean };
+export type CustomPlanDraft = {
+  remuxToMkv?: boolean;
+  video?: CustomVideoDraft;
+  audio?: CustomAudioChoice[];
+  subtitles?: CustomSubtitleChoice[];
+  writeMode?: WriteMode | "default";
+};
+export type PlanFieldError = { field: string; message: string };
+export type CustomPlanOk = { ok: true; plan: ExecutablePlan };
+export type CustomPlanFail = { ok: false; errors: PlanFieldError[] };
+export type CustomPlanResult = CustomPlanOk | CustomPlanFail;

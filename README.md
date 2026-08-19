@@ -1,11 +1,11 @@
 # Optimizarr
 
-Optimizarr is a companion container for Radarr and Sonarr. It inspects the same library those apps already know, suggests smaller HEVC (or AV1) files and cleaner tracks, and writes a sidecar you Keep or Discard before the library file changes.
+Optimizarr is a companion container for Radarr and Sonarr. It inspects the same library those apps already know, suggests smaller HEVC (or AV1) files and cleaner tracks, and writes a sidecar you Keep or Discard before the library file changes. Custom title plans, ISO remux, and optional direct write are also supported.
 
 This tree is a greenfield rewrite. Do not import the previous application code.
 
-**PRD:** [docs/prd.md](docs/prd.md)
-**Plan:** [plans/optimizarr-rewrite.md](plans/optimizarr-rewrite.md)
+**PRD:** [docs/v2 prd.md](docs/v2%20prd.md) (v2). The rewrite PRD is [docs/prd.md](docs/prd.md).
+**Plan:** [plans/v2-implementation-plan.md](plans/v2-implementation-plan.md)
 **Engineering standard:** [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md)
 **Prose standard:** [CODING_STANDARDS.md](CODING_STANDARDS.md)
 
@@ -13,9 +13,12 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 
 - Syncs movies from Radarr and episodes from Sonarr over their APIs
 - Opens the network path each Arr reports
+- Inspects MKV with ffprobe and ISO disc images with ffmpeg
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
+- Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in
-- Writes the result to a review folder outside the library; Keep replaces the original
+- Writes a sidecar for Review by default, or replaces the library file after an integrity check
+- Can create named Arr quality profiles from the current size caps without starting a search
 
 ## Run locally
 

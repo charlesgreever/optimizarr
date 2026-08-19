@@ -18,6 +18,7 @@ import type {
   Suggestion,
 } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
+import { normalizeInspection } from "./inspect.ts";
 
 export class Store {
   readonly db: Database.Database;
@@ -143,6 +144,10 @@ export class Store {
     this.ensureColumn("jobs", "suggestion_id", "TEXT");
     this.ensureColumn("jobs", "error", "TEXT");
     this.ensureColumn("jobs", "created_at", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("jobs", "write_mode", "TEXT NOT NULL DEFAULT 'sidecar'");
+    this.ensureColumn("jobs", "promote_error", "TEXT");
+    this.ensureColumn("library_items", "arr_series_id", "INTEGER");
+    this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -162,8 +167,14 @@ export class Store {
 
   getSettings(): Settings {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = 'app'").get() as { value: string } | undefined;
-    if (!row) return { ...DEFAULT_SETTINGS, sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps } };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value), sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...(JSON.parse(row.value).sizeCaps ?? {}) } };
+    const parsed = row ? (JSON.parse(row.value) as Record<string, unknown>) : {};
+    const writeMode = parsed.writeMode === "direct" ? "direct" : "sidecar";
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...((parsed.sizeCaps as object) ?? {}) },
+      writeMode,
+    } as Settings;
   }
 
   saveSettings(next: Settings): void {
@@ -255,13 +266,14 @@ export class Store {
   upsertItem(item: Omit<LibraryItem, "hasPoster" | "instanceName"> & { posterBytes?: Buffer | null }): string {
     this.db
       .prepare(
-        `INSERT INTO library_items (id, instance_id, arr_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
-         VALUES (@id, @instanceId, @arrId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt)
+        `INSERT INTO library_items (id, instance_id, arr_id, arr_series_id, arr_episode_file_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
+         VALUES (@id, @instanceId, @arrId, @arrSeriesId, @arrEpisodeFileId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt)
          ON CONFLICT(instance_id, type, arr_id) DO UPDATE SET
            title=excluded.title, show_title=excluded.show_title, season=excluded.season, episode=excluded.episode,
            episode_title=excluded.episode_title, path=excluded.path, size_bytes=excluded.size_bytes, quality=excluded.quality,
            resolution=excluded.resolution, profile=excluded.profile, tags=excluded.tags, poster_remote=excluded.poster_remote,
-           poster_bytes=COALESCE(excluded.poster_bytes, poster_bytes)`,
+           poster_bytes=COALESCE(excluded.poster_bytes, poster_bytes),
+           arr_series_id=excluded.arr_series_id, arr_episode_file_id=excluded.arr_episode_file_id`,
       )
       .run({
         ...item,
@@ -299,7 +311,7 @@ export class Store {
 
   getInspection(itemId: string): InspectionReport | undefined {
     const row = this.db.prepare("SELECT report FROM inspections WHERE item_id = ?").get(itemId) as { report: string } | undefined;
-    return row ? (JSON.parse(row.report) as InspectionReport) : undefined;
+    return row ? normalizeInspection(JSON.parse(row.report) as Record<string, unknown>) : undefined;
   }
 
   getInspectionSig(itemId: string): string | undefined {
@@ -383,14 +395,14 @@ export class Store {
     return { walking: row.walking === 1, pending: row.pending, inspected: row.inspected, failed: row.failed };
   }
 
-  insertJob(job: Omit<Job, "displayTitle"> & { plan: unknown; position?: number }): string {
+  insertJob(job: Omit<Job, "displayTitle" | "writeMode" | "promoteError"> & { plan: unknown; position?: number; writeMode?: "sidecar" | "direct"; promoteError?: string | null }): string {
     const position =
       job.position ??
       ((this.db.prepare("SELECT COALESCE(MAX(position), 0) + 1 AS n FROM jobs").get() as { n: number }).n);
     this.db
       .prepare(
-        `INSERT INTO jobs (id, item_id, suggestion_id, status, phase, progress, error, warning, run_now, position, plan, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO jobs (id, item_id, suggestion_id, status, phase, progress, error, warning, run_now, position, plan, created_at, write_mode, promote_error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.id,
@@ -405,16 +417,18 @@ export class Store {
         position,
         JSON.stringify(job.plan),
         job.createdAt,
+        job.writeMode === "direct" ? "direct" : "sidecar",
+        job.promoteError ?? null,
       );
     return job.id;
   }
 
-  updateJob(id: string, patch: Partial<{ status: JobStatus; phase: JobPhase; progress: number; error: string | null; runNow: boolean; position: number }>): void {
+  updateJob(id: string, patch: Partial<{ status: JobStatus; phase: JobPhase; progress: number; error: string | null; runNow: boolean; position: number; promoteError: string | null; writeMode: "sidecar" | "direct" }>): void {
     const current = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!current) return;
     this.db
       .prepare(
-        "UPDATE jobs SET status=?, phase=?, progress=?, error=?, run_now=?, position=? WHERE id=?",
+        "UPDATE jobs SET status=?, phase=?, progress=?, error=?, run_now=?, position=?, write_mode=?, promote_error=? WHERE id=?",
       )
       .run(
         patch.status ?? current.status,
@@ -423,6 +437,8 @@ export class Store {
         patch.error === undefined ? current.error : patch.error,
         (patch.runNow ?? current.run_now === 1) ? 1 : 0,
         patch.position ?? current.position,
+        patch.writeMode ?? current.write_mode ?? "sidecar",
+        patch.promoteError === undefined ? current.promote_error : patch.promoteError,
         id,
       );
   }
@@ -547,6 +563,8 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     instanceId: String(row.instance_id),
     instanceName: String(row.instance_name ?? ""),
     arrId: Number(row.arr_id),
+    arrSeriesId: row.arr_series_id == null ? null : Number(row.arr_series_id),
+    arrEpisodeFileId: row.arr_episode_file_id == null ? null : Number(row.arr_episode_file_id),
     type: row.type === "episode" ? "episode" : "movie",
     title: String(row.title),
     showTitle: row.show_title == null ? null : String(row.show_title),
@@ -578,6 +596,8 @@ function mapJob(row: Record<string, unknown>): Job & { plan: Suggestion } {
     warning: row.warning == null ? null : String(row.warning),
     runNow: Number(row.run_now) === 1,
     createdAt: Number(row.created_at),
+    writeMode: row.write_mode === "direct" ? "direct" : "sidecar",
+    promoteError: row.promote_error == null ? null : String(row.promote_error),
     plan: JSON.parse(String(row.plan)) as Suggestion,
   };
 }

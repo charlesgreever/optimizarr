@@ -29,6 +29,8 @@ export function parseFfprobe(path: string, sizeBytes: number, probe: Record<stri
   const hours = durationSec > 0 ? durationSec / 3600 : 0;
   return {
     sourceSig: `${path}|${sizeBytes}`,
+    sourceMethod: "ffprobe",
+    listingState: "complete",
     durationSec,
     sizeBytes,
     sizePerHourGb: hours > 0 ? sizeBytes / (1024 ** 3) / hours : 0,
@@ -121,6 +123,126 @@ export function normalizeLang(value: string): string {
   if (v === "en" || v === "eng" || v === "english") return "eng";
   if (v === "und" || v === "unknown" || v === "") return "und";
   return v.slice(0, 3);
+}
+
+export function normalizeInspection(raw: Record<string, unknown>, path = "", sizeBytes = 0): InspectionReport {
+  const sourceMethod = raw.sourceMethod === "iso_ffmpeg" ? "iso_ffmpeg" : "ffprobe";
+  const listingState = raw.listingState === "iso_unlisted" ? "iso_unlisted" : "complete";
+  return {
+    sourceSig: typeof raw.sourceSig === "string" ? raw.sourceSig : `${path}|${sizeBytes}`,
+    sourceMethod,
+    listingState,
+    durationSec: typeof raw.durationSec === "number" ? raw.durationSec : 0,
+    sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : sizeBytes,
+    sizePerHourGb: typeof raw.sizePerHourGb === "number" ? raw.sizePerHourGb : 0,
+    videoCodec: typeof raw.videoCodec === "string" ? raw.videoCodec : "unknown",
+    width: typeof raw.width === "number" ? raw.width : 0,
+    height: typeof raw.height === "number" ? raw.height : 0,
+    bitDepth: typeof raw.bitDepth === "number" ? raw.bitDepth : 8,
+    hdr: raw.hdr === "hdr10" || raw.hdr === "hdr10plus" || raw.hdr === "dolby_vision" ? raw.hdr : "none",
+    audio: Array.isArray(raw.audio) ? (raw.audio as InspectionReport["audio"]) : [],
+    subtitles: Array.isArray(raw.subtitles) ? (raw.subtitles as InspectionReport["subtitles"]) : [],
+    hasChapters: Boolean(raw.hasChapters),
+    hasAttachments: Boolean(raw.hasAttachments),
+  };
+}
+
+export function parseFfmpegListing(path: string, sizeBytes: number, listing: string): InspectionReport {
+  const streams = [...listing.matchAll(/Stream #0:(\d+)(?:\[[^\]]*\])?(?:\((\w+)\))?: (Video|Audio|Subtitle): ([^\n]+)/g)];
+  if (streams.length === 0) return unlistedIsoReport(path, sizeBytes);
+  const videoLine = streams.find((m) => m[3] === "Video")?.[4] ?? "";
+  const size = videoLine.match(/(\d{3,5})x(\d{3,5})/);
+  const audio = streams.filter((m) => m[3] === "Audio").map((m, i) => parseListedAudio(m, i));
+  const subtitles = streams.filter((m) => m[3] === "Subtitle").map((m, i) => parseListedSub(m, i));
+  const durationSec = parseListedDuration(listing);
+  const hours = durationSec > 0 ? durationSec / 3600 : 0;
+  const codec = videoLine.split(",")[0]?.trim().split(" ")[0] ?? "unknown";
+  return {
+    sourceSig: `${path}|${sizeBytes}`,
+    sourceMethod: "iso_ffmpeg",
+    listingState: "complete",
+    durationSec,
+    sizeBytes,
+    sizePerHourGb: hours > 0 ? sizeBytes / 1024 ** 3 / hours : 0,
+    videoCodec: codec,
+    width: size ? Number(size[1]) : 0,
+    height: size ? Number(size[2]) : 0,
+    bitDepth: /10\s*bit|p10|yuv420p10/i.test(videoLine) ? 10 : 8,
+    hdr: /dolby|dovi|hdr10\+|hdr10|smpte2084/i.test(listing) ? (/dolby|dovi/i.test(listing) ? "dolby_vision" : "hdr10") : "none",
+    audio,
+    subtitles,
+    hasChapters: /Chapter #/i.test(listing),
+    hasAttachments: false,
+  };
+}
+
+function parseListedDuration(listing: string): number {
+  const match = listing.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+function listedChannels(detail: string): number {
+  if (/\b7\.1\b/.test(detail)) return 8;
+  if (/\b5\.1\b/.test(detail)) return 6;
+  if (/\bmono\b/i.test(detail)) return 1;
+  return 2;
+}
+
+function parseListedAudio(match: RegExpMatchArray, i: number): InspectionReport["audio"][number] {
+  const detail = match[4] ?? "";
+  const language = normalizeLang(match[2] ?? "und");
+  return {
+    index: Number(match[1] ?? i),
+    language,
+    channels: listedChannels(detail),
+    codec: detail.split(",")[0]?.trim().split(" ")[0] ?? "unknown",
+    title: "",
+    untagged: language === "und",
+    commentary: /comment/i.test(detail),
+  };
+}
+
+function parseListedSub(match: RegExpMatchArray, i: number): InspectionReport["subtitles"][number] {
+  const detail = match[4] ?? "";
+  const language = normalizeLang(match[2] ?? "und");
+  return {
+    index: Number(match[1] ?? i),
+    language,
+    codec: detail.split(",")[0]?.trim().split(" ")[0] ?? "unknown",
+    title: "",
+    untagged: language === "und",
+    forced: /forced/i.test(detail),
+    sdh: /sdh|hearing/i.test(detail),
+  };
+}
+
+export function isIsoPath(path: string): boolean {
+  return path.toLowerCase().endsWith(".iso");
+}
+
+export function trackEditingAvailable(report: InspectionReport): boolean {
+  return report.listingState === "complete";
+}
+
+export function unlistedIsoReport(path: string, sizeBytes: number): InspectionReport {
+  return {
+    sourceSig: `${path}|${sizeBytes}`,
+    sourceMethod: "iso_ffmpeg",
+    listingState: "iso_unlisted",
+    durationSec: 0,
+    sizeBytes,
+    sizePerHourGb: 0,
+    videoCodec: "unknown",
+    width: 0,
+    height: 0,
+    bitDepth: 8,
+    hdr: "none",
+    audio: [],
+    subtitles: [],
+    hasChapters: false,
+    hasAttachments: false,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

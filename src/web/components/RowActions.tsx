@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import { api, type LibraryRow } from "../api";
 import { Icons } from "./icons";
@@ -18,6 +19,9 @@ export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => v
 
   return (
     <div className="flex flex-wrap gap-1">
+      <Link className="btn-secondary" to={item.href || (item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`)}>
+        Open
+      </Link>
       <button className="btn-secondary" type="button" disabled={locked || !item.suggestion} onClick={() => void run("Added to queue.", () => api.queue({ itemId: item.id }))}>
         {Icons.queue()} Queue
       </button>

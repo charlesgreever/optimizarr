@@ -44,4 +44,71 @@ describe("store schema migration", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.id).toBe("job-1");
   });
+
+  it("defaults an existing settings row to sidecar write mode", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-settings-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    store.saveSettings({
+      preferredLanguage: "eng",
+      languageConfirmed: true,
+      reviewPath: "/review",
+      sizeCaps: { movie1080p: 2.5, movie4kSdr: 6, movie4kHdr: 8, tv1080p: 1, tv4k: 4 },
+      videoTarget: "hevc",
+      concurrency: 1,
+      conservativeMode: false,
+      offPeakEnabled: false,
+      offPeakStart: "01:00",
+      offPeakEnd: "07:00",
+      localAuthBypass: false,
+      inspectConcurrency: 1,
+    } as never);
+    const reopened = new Store(path);
+    stores.push(reopened);
+    expect(reopened.getSettings().writeMode).toBe("sidecar");
+    reopened.saveSettings({ ...reopened.getSettings(), writeMode: "direct" });
+    const again = new Store(path);
+    stores.push(again);
+    expect(again.getSettings().writeMode).toBe("direct");
+  });
+
+  it("persists a custom executable plan, write mode, and promote error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-job-plan-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    store.insertJob({
+      id: "job-custom",
+      itemId: "item-1",
+      suggestionId: null,
+      status: "queued",
+      phase: "queued",
+      progress: 0,
+      error: null,
+      warning: null,
+      runNow: false,
+      createdAt: 1,
+      writeMode: "direct",
+      promoteError: null,
+      plan: {
+        origin: "custom",
+        video: { kind: "copy" },
+        audio: [{ op: "keep", index: 1 }],
+        subtitles: [{ op: "remove", index: 2 }],
+        container: "mkv",
+        writeMode: "direct",
+        warning: null,
+        reasons: ["Drop Spanish subtitles."],
+        estimatedOutputBytes: null,
+        category: "movie1080p",
+      },
+    });
+    store.updateJob("job-custom", { promoteError: "Radarr rejected the profile assign." });
+    const loaded = store.getJob("job-custom");
+    expect(loaded?.suggestionId).toBeNull();
+    expect(loaded?.writeMode).toBe("direct");
+    expect(loaded?.promoteError).toBe("Radarr rejected the profile assign.");
+    expect((loaded?.plan as { origin?: string }).origin).toBe("custom");
+  });
 });

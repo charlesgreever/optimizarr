@@ -1,0 +1,79 @@
+{
+  "format": {
+    "duration": "6420.48",
+    "size": "18500000000",
+    "tags": { "title": "Example Film" }
+  },
+  "chapters": [
+    { "id": 0, "start_time": "0.000000", "end_time": "120.000000", "tags": { "title": "Opening" } },
+    { "id": 1, "start_time": "120.000000", "end_time": "6420.480000", "tags": { "title": "Feature" } }
+  ],
+  "streams": [
+    {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "hevc",
+      "width": 1920,
+      "height": 1080,
+      "pix_fmt": "yuv420p10le",
+      "bits_per_raw_sample": "10",
+      "disposition": { "attached_pic": 0 }
+    },
+    {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "truehd",
+      "channels": 8,
+      "channel_layout": "7.1",
+      "tags": { "language": "eng", "title": "TrueHD Atmos 7.1" }
+    },
+    {
+      "index": 2,
+      "codec_type": "audio",
+      "codec_name": "ac3",
+      "channels": 6,
+      "channel_layout": "5.1",
+      "tags": { "language": "eng", "title": "AC3 5.1" }
+    },
+    {
+      "index": 3,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "channels": 2,
+      "channel_layout": "stereo",
+      "tags": { "language": "spa", "title": "Spanish stereo" }
+    },
+    {
+      "index": 4,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": { "language": "eng", "title": "Director Commentary" }
+    },
+    {
+      "index": 5,
+      "codec_type": "subtitle",
+      "codec_name": "hdmv_pgs_subtitle",
+      "tags": { "language": "eng", "title": "English" }
+    },
+    {
+      "index": 6,
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "tags": { "language": "eng", "title": "English SDH" },
+      "disposition": { "hearing_impaired": 1 }
+    },
+    {
+      "index": 7,
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "tags": { "language": "spa", "title": "Spanish" }
+    },
+    {
+      "index": 8,
+      "codec_type": "attachment",
+      "codec_name": "ttf",
+      "tags": { "filename": "arial.ttf" }
+    }
+  ]
+}

@@ -20,13 +20,15 @@ import {
   testSonarr,
   trimUrl,
 } from "./arr.ts";
-import { parseFfprobe } from "./inspect.ts";
+import { isIsoPath, parseFfprobe, parseFfmpegListing, unlistedIsoReport } from "./inspect.ts";
 import { buildSuggestion } from "./suggest.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService, withTitles } from "./jobs.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
-import type { ArrKind, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
+import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
+import { validateCustomPlan } from "./custom-plan.ts";
+import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
@@ -39,6 +41,7 @@ export type AppOptions = {
   hardware?: HardwareProbe;
   optimizer?: Optimizer;
   probe?: (path: string, size: number) => Promise<Record<string, unknown>>;
+  listIso?: (path: string, size: number) => Promise<string>;
   clock?: () => number;
   readable?: (path: string) => Promise<boolean>;
 };
@@ -184,16 +187,45 @@ export function createApp(opts: AppOptions) {
       ...settings,
       instances: publicInstances(),
       firstRun: firstRunState(),
+      profilePreviews: profilePreviews(settings.sizeCaps),
     });
+  });
+
+  app.post("/api/settings/profiles/sync", async (c) => {
+    const settings = store.getSettings();
+    const results = [];
+    for (const inst of store.listInstances()) {
+      if (!inst.enabled || (inst.kind !== "radarr" && inst.kind !== "sonarr")) continue;
+      const full = store.getInstance(inst.id);
+      if (!full?.secret) continue;
+      results.push(await syncProfiles({
+        instanceId: inst.id,
+        url: inst.url,
+        apiKey: decryptSecret(secret, full.secret),
+        caps: settings.sizeCaps,
+        fetch: httpFetch,
+      }));
+    }
+    return c.json({ results });
   });
 
   app.put("/api/settings", async (c) => {
     const body = await c.req.json<Partial<Settings>>();
     const current = store.getSettings();
     const next: Settings = {
-      ...current,
-      ...body,
+      preferredLanguage: body.preferredLanguage ?? current.preferredLanguage,
+      languageConfirmed: body.languageConfirmed ?? current.languageConfirmed,
+      reviewPath: body.reviewPath ?? current.reviewPath,
       sizeCaps: { ...current.sizeCaps, ...(body.sizeCaps ?? {}) },
+      videoTarget: body.videoTarget === "av1" ? "av1" : body.videoTarget === "hevc" ? "hevc" : current.videoTarget,
+      concurrency: body.concurrency ?? current.concurrency,
+      conservativeMode: body.conservativeMode ?? current.conservativeMode,
+      offPeakEnabled: body.offPeakEnabled ?? current.offPeakEnabled,
+      offPeakStart: body.offPeakStart ?? current.offPeakStart,
+      offPeakEnd: body.offPeakEnd ?? current.offPeakEnd,
+      localAuthBypass: body.localAuthBypass ?? current.localAuthBypass,
+      inspectConcurrency: body.inspectConcurrency ?? current.inspectConcurrency,
+      writeMode: body.writeMode === "direct" ? "direct" : body.writeMode === "sidecar" ? "sidecar" : current.writeMode,
     };
     if (next.reviewPath && unsafeReviewPath(next.reviewPath, store.listItems().map((i) => i.path))) {
       return c.json({ error: "The review folder cannot sit inside an Arr library folder." }, 400);
@@ -280,6 +312,8 @@ export function createApp(opts: AppOptions) {
               id: `${inst.id}:movie:${movie.id}`,
               instanceId: inst.id,
               arrId: movie.id,
+              arrSeriesId: null,
+              arrEpisodeFileId: null,
               type: "movie",
               title: movie.title,
               showTitle: null,
@@ -313,6 +347,8 @@ export function createApp(opts: AppOptions) {
                 id,
                 instanceId: inst.id,
                 arrId: ep.id,
+                arrSeriesId: ep.seriesId,
+                arrEpisodeFileId: ep.episodeFileId,
                 type: "episode",
                 title: ep.seriesTitle,
                 showTitle: ep.seriesTitle,
@@ -357,6 +393,16 @@ export function createApp(opts: AppOptions) {
         continue;
       }
       try {
+        if (isIsoPath(item.path)) {
+          const listing = opts.listIso
+            ? await opts.listIso(item.path, item.sizeBytes)
+            : await defaultIsoListing(opts.env.ffmpeg, item.path);
+          const report = parseFfmpegListing(item.path, item.sizeBytes, listing);
+          store.saveInspection(item.id, report);
+          store.clearFileError(item.path);
+          if (report.listingState === "complete") recomputeSuggestion(item.id);
+          continue;
+        }
         const raw = opts.probe
           ? await opts.probe(item.path, item.sizeBytes)
           : await defaultProbe(opts.env.ffprobe, item.path);
@@ -365,6 +411,11 @@ export function createApp(opts: AppOptions) {
         store.clearFileError(item.path);
         recomputeSuggestion(item.id);
       } catch (error) {
+        if (isIsoPath(item.path)) {
+          store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
+          store.clearFileError(item.path);
+          continue;
+        }
         const message = error instanceof Error ? error.message : "ffprobe failed.";
         store.setFileError(item.path, item.id, message);
       }
@@ -472,6 +523,54 @@ export function createApp(opts: AppOptions) {
     store.setExempt(c.req.param("id"), Boolean(body.exempt));
     recomputeSuggestion(c.req.param("id"));
     return c.json({ ok: true, item: presentItem(store.getItem(c.req.param("id"))!) });
+  });
+
+  app.get("/api/library/items/:id", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    return c.json({
+      item: presentItem(item),
+      hardware: lastHardware,
+      settings: { writeMode: store.getSettings().writeMode, videoTarget: store.getSettings().videoTarget },
+    });
+  });
+
+  app.post("/api/library/items/:id/plan", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ draft?: CustomPlanDraft }>();
+    const result = validateCustomPlan({
+      item,
+      report,
+      settings: store.getSettings(),
+      hardware: lastHardware,
+      draft: body.draft ?? {},
+    });
+    if (!result.ok) return c.json({ ok: false, errors: result.errors }, 400);
+    return c.json({ ok: true, plan: result.plan });
+  });
+
+  app.post("/api/library/items/:id/queue", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ draft?: CustomPlanDraft; runNow?: boolean }>();
+    const result = validateCustomPlan({
+      item,
+      report,
+      settings: store.getSettings(),
+      hardware: lastHardware,
+      draft: body.draft ?? {},
+    });
+    if (!result.ok) return c.json({ ok: false, errors: result.errors }, 400);
+    const queued = jobs.enqueueCustom(item.id, result.plan, Boolean(body.runNow));
+    if ("error" in queued) return c.json({ error: queued.error }, queued.status as 400 | 404 | 409);
+    return c.json({ ok: true, id: queued.id, plan: result.plan });
   });
 
   app.post("/api/library/series/:instanceId/:show/optimize", async (c) => {
@@ -621,7 +720,7 @@ export function createApp(opts: AppOptions) {
         type: item.type,
         displayTitle: displayTitle(item),
         instanceName: item.instanceName,
-        href: item.type === "movie" ? `/movies?focus=${item.id}` : `/series?focus=${item.id}`,
+        href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
       }));
     return c.json({ items: hits });
   });
@@ -699,6 +798,13 @@ export function createApp(opts: AppOptions) {
       suggestion,
       error: error?.reason ?? null,
       reasons: suggestion?.reasons ?? [],
+      href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
+      listingState: report?.listingState ?? null,
+      sourceMethod: report?.sourceMethod ?? null,
+      videoLabel: report ? `${report.videoCodec} · ${report.width}x${report.height}` : null,
+      audioLabels: report?.audio.map((t) => `${t.language} ${t.codec} ${t.channels}ch`) ?? [],
+      subtitleLabels: report?.subtitles.map((t) => `${t.language} ${t.codec}`) ?? [],
+      trackEditingAvailable: report?.listingState === "complete",
     };
   }
 
@@ -747,6 +853,21 @@ async function defaultProbe(ffprobe: string, path: string): Promise<Record<strin
     maxBuffer: 1024 * 512,
   });
   return JSON.parse(stdout) as Record<string, unknown>;
+}
+
+async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  try {
+    const { stdout, stderr } = await run(ffmpeg, ["-hide_banner", "-i", path], { timeout: 15_000, maxBuffer: 1024 * 512 });
+    return `${stderr}\n${stdout}`;
+  } catch (error) {
+    const err = error as { stdout?: string; stderr?: string };
+    const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
+    if (text.includes("Stream #")) return text;
+    throw error;
+  }
 }
 
 void basename;

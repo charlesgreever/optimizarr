@@ -100,7 +100,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
         {inspecting && (
           <div className="inspect-banner">
-            Movie and series lists are ready. Inspecting leftover files with ffprobe. {inspect?.pending} left.
+            Movie and series lists are ready. Inspecting leftover files. {inspect?.pending} left.
             {inspect && inspect.failed > 0 ? ` ${inspect.failed} files could not be read.` : ""}
           </div>
         )}

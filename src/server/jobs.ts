@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { rename, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { unlink } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { HardwareInfo, Job, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
-import { CancelledError } from "./optimize.ts";
-import { notifyPlayers, refreshArr } from "./notify.ts";
+import { CancelledError, isExecutablePlan, resolvePlan } from "./optimize.ts";
+import { promote } from "./promote.ts";
+import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
+import { planHasVideoTranscode } from "./types.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -55,6 +56,35 @@ export class JobService {
       runNow,
       createdAt: this.now(),
       plan: suggestion,
+    });
+    void this.tick();
+    return { id };
+  }
+
+  enqueueCustom(itemId: string, plan: import("./types.ts").ExecutablePlan, runNow = false): { id: string } | { error: string; status: number } {
+    const item = this.opts.store.getItem(itemId);
+    if (!item) return { error: "That title is not in the library.", status: 404 };
+    if (this.opts.store.pendingReviewForItem(itemId)) {
+      return { error: "This title already has a sidecar waiting in Review.", status: 409 };
+    }
+    if (this.opts.store.activeJobForItem(itemId)) {
+      return { error: "This title already has an active job.", status: 409 };
+    }
+    const id = randomUUID();
+    this.opts.store.insertJob({
+      id,
+      itemId,
+      suggestionId: null,
+      status: "queued",
+      phase: "queued",
+      progress: 0,
+      error: null,
+      warning: plan.warning,
+      runNow,
+      createdAt: this.now(),
+      writeMode: plan.writeMode,
+      promoteError: null,
+      plan,
     });
     void this.tick();
     return { id };
@@ -116,10 +146,12 @@ export class JobService {
     this.opts.store.updateJob(id, { status: "running", phase: "muxing", progress: 0.05 });
     try {
       const hardware = await this.opts.hardware();
+      const plan = resolvePlan(job.plan, job.writeMode);
       const result = await this.opts.optimizer({
         sourcePath: item.path,
         reviewDir: settings.reviewPath,
-        suggestion: job.plan,
+        suggestion: isExecutablePlan(job.plan) ? undefined : job.plan,
+        plan,
         report,
         target: settings.videoTarget,
         backend: hardware.backend,
@@ -136,7 +168,18 @@ export class JobService {
         await safeUnlink(result.sidecarPath);
         return;
       }
-      const overCap = result.output.sizePerHourGb > settings.sizeCaps[job.plan.category];
+      if (plan.writeMode === "direct") {
+        const outcome = await this.promoteOutput(item, result.sidecarPath, report.sizeBytes, result.output.sizeBytes, plan);
+        if (!outcome.replaced) {
+          this.opts.store.updateJob(id, { status: "failed", error: outcome.error ?? "Direct write failed." });
+          this.opts.store.addHistory(item.id, "failed", 0, this.now());
+          return;
+        }
+        this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1, promoteError: outcome.warning });
+        this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
+        return;
+      }
+      const overCap = result.output.sizePerHourGb > settings.sizeCaps[plan.category];
       const larger = result.output.sizeBytes > report.sizeBytes;
       this.opts.store.insertReview({
         id: randomUUID(),
@@ -198,44 +241,59 @@ export class JobService {
       this.opts.store.updateReview(reviewId, { status: "pending", error: "The library row disappeared." });
       return;
     }
-    try {
-      await rename(review.sidecarPath, item.path);
-    } catch {
-      try {
-        const { copyFile } = await import("node:fs/promises");
-        await copyFile(review.sidecarPath, item.path);
-        await unlink(review.sidecarPath);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Keep could not replace the library file.";
-        this.opts.store.updateReview(reviewId, { status: "pending", error: message });
-        return;
-      }
+    const job = this.opts.store.getJob(review.jobId);
+    const plan = job ? resolvePlan(job.plan, job.writeMode) : undefined;
+    const outcome = await this.promoteOutput(item, review.sidecarPath, review.source.sizeBytes ?? 0, review.sidecar.sizeBytes ?? 0, plan);
+    if (!outcome.replaced) {
+      this.opts.store.updateReview(reviewId, { status: "pending", error: outcome.error });
+      return;
     }
-    const saved = Math.max(0, review.source.sizeBytes ?? 0) - Math.max(0, review.sidecar.sizeBytes ?? 0);
-    this.opts.store.addHistory(item.id, "kept", saved, this.now());
+    this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
     this.opts.store.deleteReview(reviewId);
+    if (outcome.warning && job) this.opts.store.updateJob(job.id, { promoteError: outcome.warning });
+  }
+
+  private async promoteOutput(
+    item: NonNullable<ReturnType<Store["getItem"]>>,
+    outputPath: string,
+    sourceSize: number,
+    outputSize: number,
+    plan: ReturnType<typeof resolvePlan> | undefined,
+  ) {
     const instance = this.opts.store.getInstance(item.instanceId);
-    if (instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
-      const msg = await refreshArr(instance.kind, instance.url, this.opts.decrypt(instance.secret), item.arrId, this.opts.fetch);
-      if (msg) this.opts.store.addHistory(item.id, "failed", 0, this.now());
-    }
     const players = this.opts.store
       .listInstances()
-      .filter((p) => (p.kind === "plex" || p.kind === "jellyfin") && "enabled" in p);
-    const enabled = this.opts.store.listInstances().filter((p) => p.kind === "plex" || p.kind === "jellyfin");
-    const list = enabled
       .map((p) => this.opts.store.getInstance(p.id))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p?.enabled && p.secret));
-    await notifyPlayers(
-      list.map((p) => ({
+      .filter((p): p is NonNullable<typeof p> => Boolean(p?.enabled && p.secret && (p.kind === "plex" || p.kind === "jellyfin")))
+      .map((p) => ({
         kind: p.kind as "plex" | "jellyfin",
         url: p.url,
         token: this.opts.decrypt(p.secret ?? ""),
-      })),
-      this.opts.fetch,
-    );
-    void dirname;
-    void players;
+      }));
+    const outcome = await promote({
+      item,
+      outputPath,
+      sourceSize,
+      outputSize,
+      plan,
+      decrypt: this.opts.decrypt,
+      fetch: this.opts.fetch,
+      instance,
+      players,
+    });
+    if (outcome.replaced && plan && planHasVideoTranscode(plan) && instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
+      const extra = await assignProfile({
+        kind: instance.kind,
+        url: instance.url,
+        apiKey: this.opts.decrypt(instance.secret),
+        movieId: instance.kind === "radarr" ? item.arrId : undefined,
+        seriesId: instance.kind === "sonarr" ? (item.arrSeriesId ?? undefined) : undefined,
+        profileName: PROFILE_NAMES[plan.category],
+        fetch: this.opts.fetch,
+      });
+      if (extra) outcome.warning = outcome.warning ? `${outcome.warning} ${extra}` : extra;
+    }
+    return outcome;
   }
 
   async discard(reviewId: string): Promise<{ accepted: true } | { error: string; status: number }> {

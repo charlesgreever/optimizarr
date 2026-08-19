@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.ts";
 import { loadEnv } from "./env.ts";
+import { isoListedFfmpeg } from "./fixtures/index.ts";
 import type { HardwareInfo } from "./types.ts";
 
 function cookie(res: Response): string {
@@ -102,9 +103,10 @@ describe("public HTTP behavior", () => {
       body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "super-secret-key", enabled: true }),
     });
     const listed = await ctx.app.app.request("/api/settings", { headers });
-    const body = (await listed.json()) as { instances: Array<{ hasApiKey: boolean; apiKey?: string }> };
+    const body = (await listed.json()) as { instances: Array<{ hasApiKey: boolean; apiKey?: string }>; writeMode?: string };
     expect(body.instances[0]?.hasApiKey).toBe(true);
     expect(JSON.stringify(body)).not.toContain("super-secret-key");
+    expect(body.writeMode ?? "sidecar").toBe("sidecar");
 
     await ctx.app.app.request("/api/settings", {
       method: "PUT",
@@ -177,5 +179,112 @@ describe("public HTTP behavior", () => {
     const res = await ctx.app.app.request("/api/widget", { headers: { "x-real-ip": "8.8.8.8" } });
     expect(res.status).toBe(401);
     expect(JSON.stringify(await res.json())).not.toContain("/mnt/nas");
+  });
+
+  it("lists ISO files with ffmpeg and never calls ffprobe", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    let probeCalls = 0;
+    let isoCalls = 0;
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => {
+        probeCalls += 1;
+        return { format: { duration: "3600" }, streams: [] };
+      },
+      listIso: async () => {
+        isoCalls += 1;
+        return isoListedFfmpeg;
+      },
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:movie:iso`,
+      instanceId,
+      arrId: 99,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Disc",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/discs/Example.ISO",
+      sizeBytes: 19_000_000_000,
+      quality: "Bluray-1080p",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    await created.inspectPending();
+    expect(isoCalls).toBe(1);
+    expect(probeCalls).toBe(0);
+    const report = created.store.getInspection(`${instanceId}:movie:iso`);
+    expect(report?.sourceMethod).toBe("iso_ffmpeg");
+    expect(report?.listingState).toBe("complete");
+    expect(created.store.listErrors()).toHaveLength(0);
+  });
+
+  it("returns profile previews and sends search to title pages", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    const settings = (await (await ctx.app.app.request("/api/settings", { headers })).json()) as { profilePreviews?: Array<{ name: string }>; writeMode?: string };
+    expect(settings.writeMode).toBe("sidecar");
+    expect(settings.profilePreviews?.[0]?.name).toMatch(/^Optimizarr /);
+    const search = (await (await ctx.app.app.request("/api/search?q=underdog", { headers })).json()) as { items: Array<{ href: string }> };
+    expect(search.items[0]?.href).toMatch(/^\/movies\//);
+  });
+
+  it("rejects a do-nothing custom plan with a field error", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as { items: Array<{ id: string; videoLabel?: string }> };
+    const id = movies.items[0]?.id ?? "";
+    expect(movies.items[0]?.videoLabel).toMatch(/h264/i);
+    const empty = await ctx.app.app.request(`/api/library/items/${id}/plan`, { method: "POST", headers, body: JSON.stringify({ draft: {} }) });
+    expect(empty.status).toBe(400);
+    const body = (await empty.json()) as { errors?: Array<{ field: string }> };
+    expect(body.errors?.[0]?.field).toBe("plan");
   });
 });
