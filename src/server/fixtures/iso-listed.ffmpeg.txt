@@ -1,0 +1,11 @@
+ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers
+Input #0, mpegts, from '/mnt/nas/discs/Example.iso':
+  Duration: 01:42:33.12, start: 0.280000, bitrate: 24800 kb/s
+  Stream #0:0[0x1e0]: Video: mpeg2video (Main), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 90k tbn
+  Stream #0:1[0x80](eng): Audio: ac3, 48000 Hz, 5.1(side), fltp, 640 kb/s
+  Stream #0:2[0x81](eng): Audio: dts (DTS-HD MA), 48000 Hz, 7.1, s32p (24 bit), 1536 kb/s
+  Stream #0:3[0x82](spa): Audio: ac3, 48000 Hz, stereo, fltp, 192 kb/s
+  Stream #0:4[0x20](eng): Subtitle: hdmv_pgs_subtitle
+  Stream #0:5[0x21](eng): Subtitle: hdmv_pgs_subtitle (forced)
+  Stream #0:6[0x22](spa): Subtitle: hdmv_pgs_subtitle
+At least one output file must be specified
