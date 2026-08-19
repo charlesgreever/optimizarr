@@ -97,4 +97,48 @@ describe("suggestion engine", () => {
     });
     expect(suggestion?.actions ?? []).not.toContain("transcode");
   });
+
+  it("applies bulk size and track rules to a listed ISO report", () => {
+    const iso = {
+      ...movie,
+      path: "/mnt/nas/discs/Example.iso",
+      quality: "Bluray-1080p",
+      resolution: "1080",
+    };
+    const listed = report({
+      sourceMethod: "iso_ffmpeg",
+      listingState: "complete",
+      videoCodec: "mpeg2video",
+      width: 1920,
+      height: 1080,
+      sizePerHourGb: 8,
+      hdr: "none",
+      bitDepth: 8,
+    });
+    const suggestion = buildSuggestion({
+      item: iso,
+      report: listed,
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion?.actions).toContain("transcode");
+    expect(suggestion?.actions).toContain("tracks");
+    expect(suggestion?.actions).toContain("add_stereo");
+  });
+
+  it("does not invent bulk work for an unlisted ISO", () => {
+    const suggestion = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/discs/Broken.iso" },
+      report: report({ sourceMethod: "iso_ffmpeg", listingState: "iso_unlisted", videoCodec: "unknown", audio: [], subtitles: [], sizePerHourGb: 0, width: 0, height: 0 }),
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion).toBeNull();
+  });
 });

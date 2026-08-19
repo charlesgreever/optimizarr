@@ -20,7 +20,7 @@ import {
   testSonarr,
   trimUrl,
 } from "./arr.ts";
-import { parseFfprobe } from "./inspect.ts";
+import { isIsoPath, parseFfprobe, parseFfmpegListing, unlistedIsoReport } from "./inspect.ts";
 import { buildSuggestion } from "./suggest.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService, withTitles } from "./jobs.ts";
@@ -39,6 +39,7 @@ export type AppOptions = {
   hardware?: HardwareProbe;
   optimizer?: Optimizer;
   probe?: (path: string, size: number) => Promise<Record<string, unknown>>;
+  listIso?: (path: string, size: number) => Promise<string>;
   clock?: () => number;
   readable?: (path: string) => Promise<boolean>;
 };
@@ -361,6 +362,16 @@ export function createApp(opts: AppOptions) {
         continue;
       }
       try {
+        if (isIsoPath(item.path)) {
+          const listing = opts.listIso
+            ? await opts.listIso(item.path, item.sizeBytes)
+            : await defaultIsoListing(opts.env.ffmpeg, item.path);
+          const report = parseFfmpegListing(item.path, item.sizeBytes, listing);
+          store.saveInspection(item.id, report);
+          store.clearFileError(item.path);
+          if (report.listingState === "complete") recomputeSuggestion(item.id);
+          continue;
+        }
         const raw = opts.probe
           ? await opts.probe(item.path, item.sizeBytes)
           : await defaultProbe(opts.env.ffprobe, item.path);
@@ -369,6 +380,11 @@ export function createApp(opts: AppOptions) {
         store.clearFileError(item.path);
         recomputeSuggestion(item.id);
       } catch (error) {
+        if (isIsoPath(item.path)) {
+          store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
+          store.clearFileError(item.path);
+          continue;
+        }
         const message = error instanceof Error ? error.message : "ffprobe failed.";
         store.setFileError(item.path, item.id, message);
       }
@@ -751,6 +767,21 @@ async function defaultProbe(ffprobe: string, path: string): Promise<Record<strin
     maxBuffer: 1024 * 512,
   });
   return JSON.parse(stdout) as Record<string, unknown>;
+}
+
+async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  try {
+    const { stdout, stderr } = await run(ffmpeg, ["-hide_banner", "-i", path], { timeout: 15_000, maxBuffer: 1024 * 512 });
+    return `${stderr}\n${stdout}`;
+  } catch (error) {
+    const err = error as { stdout?: string; stderr?: string };
+    const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
+    if (text.includes("Stream #")) return text;
+    throw error;
+  }
 }
 
 void basename;

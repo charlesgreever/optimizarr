@@ -38,6 +38,7 @@ export function is4k(item: LibraryItem, report: InspectionReport): boolean {
 
 export function buildSuggestion(input: SuggestInput): Suggestion | null {
   if (input.excluded) return null;
+  if (input.report.listingState === "iso_unlisted") return null;
   const { item, report, settings } = input;
   const category = sizeCategory(item, report);
   const cap = settings.sizeCaps[category];
