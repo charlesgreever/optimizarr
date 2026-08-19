@@ -143,6 +143,34 @@ describe("public HTTP behavior", () => {
     expect(queued.status).toBe(200);
   });
 
+  it("rejects enqueue without a session after first-run is complete", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    const res = await ctx.app.app.request("/api/queue", { method: "POST", body: JSON.stringify({ itemId: "missing" }) });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects minting a widget key without a session", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/settings/widget-key", { method: "POST" });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toMatch(/[a-f0-9]{32}/);
+  });
+
   it("requires a widget key on a public address", async () => {
     const ctx = await setup();
     apps.push(ctx);

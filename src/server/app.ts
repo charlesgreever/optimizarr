@@ -149,6 +149,7 @@ export function createApp(opts: AppOptions) {
   };
 
   app.use("/api/settings", authed);
+  app.use("/api/settings/*", authed);
   app.use("/api/integrations/*", authed);
   app.use("/api/library/*", authed);
   app.use("/api/inspect/*", authed);
@@ -164,6 +165,7 @@ export function createApp(opts: AppOptions) {
   app.use("/api/search", authed);
   app.use("/api/hardware", authed);
   app.use("/api/auth/password", authed);
+  app.use("/api/queue", authed);
 
   function gateOptimize(): string | null {
     const state = firstRunState();
