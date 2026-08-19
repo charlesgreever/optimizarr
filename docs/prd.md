@@ -1,6 +1,6 @@
 # PRD: Optimizarr Rewrite
 
-Canonical product spec. This document replaces GitHub issue #20.
+Canonical v1 product spec. This document replaces GitHub issue #20. v2 is [v2 prd.md](v2%20prd.md) (issue #26).
 
 ## Problem Statement
 

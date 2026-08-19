@@ -1,0 +1,181 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { createApp } from "./app.ts";
+import { loadEnv } from "./env.ts";
+import type { HardwareInfo } from "./types.ts";
+
+function cookie(res: Response): string {
+  const raw = res.headers.get("set-cookie") ?? "";
+  return raw.split(";")[0] ?? "";
+}
+
+async function setup() {
+  const dir = mkdtempSync(join(tmpdir(), "opt-"));
+  const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+  let probeCalls = 0;
+  const hw: HardwareInfo = { backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null };
+  const created = createApp({
+    env,
+    hardware: async () => hw,
+    readable: async () => true,
+    probe: async () => {
+      probeCalls += 1;
+      return {
+        format: { duration: "3600" },
+        streams: [
+          { codec_type: "video", codec_name: "h264", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 6, tags: { language: "eng" }, index: 1 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "spa" }, index: 2 },
+        ],
+      };
+    },
+    fetch: (async (url: string) => {
+      if (String(url).includes("/movie")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 10,
+              title: "American Underdog",
+              path: "/mnt/nas/movies/underdog.mkv",
+              sizeOnDisk: 8_000_000_000,
+              movieFile: { path: "/mnt/nas/movies/underdog.mkv", size: 8_000_000_000, quality: { quality: { name: "Bluray-1080p" } } },
+              images: [{ coverType: "poster", url: "http://radarr/poster.jpg" }],
+            },
+          ]),
+        );
+      }
+      if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+    optimizer: async (req) => ({
+      sidecarPath: join(dir, "sidecar.mkv"),
+      output: {
+        ...req.report,
+        videoCodec: "hevc",
+        sizeBytes: 3_000_000_000,
+        sizePerHourGb: 3,
+      },
+    }),
+  });
+  return { app: created, store: created.store, dir, probeCalls: () => probeCalls };
+}
+
+describe("public HTTP behavior", () => {
+  const apps: Array<{ store: { close: () => void }; app: { jobs: { stop: () => void } } }> = [];
+  afterEach(() => {
+    for (const a of apps) {
+      a.app.jobs.stop();
+      a.store.close();
+    }
+    apps.length = 0;
+  });
+
+  it("boots health without secrets", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const res = await ctx.app.app.request("/api/health");
+    expect(await res.json()).toEqual({ ok: true, service: "optimizarr" });
+  });
+
+  it("rejects a wrong login with one generic error", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/auth/login", { method: "POST", body: JSON.stringify({ username: "ada", password: "nope" }) });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Username or password is wrong." });
+  });
+
+  it("gates optimize until language is confirmed and never echoes API keys", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    const denied = await ctx.app.app.request("/api/queue", { method: "POST", headers, body: JSON.stringify({ itemId: "x" }) });
+    expect(denied.status).toBe(403);
+
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "super-secret-key", enabled: true }),
+    });
+    const listed = await ctx.app.app.request("/api/settings", { headers });
+    const body = (await listed.json()) as { instances: Array<{ hasApiKey: boolean; apiKey?: string }> };
+    expect(body.instances[0]?.hasApiKey).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("super-secret-key");
+
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    const refresh = await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    expect(refresh.status).toBe(200);
+    const movies = await ctx.app.app.request("/api/library/movies", { headers });
+    const list = (await movies.json()) as { items: Array<{ title: string; path: string; inspected: boolean }> };
+    expect(list.items[0]?.title).toBe("American Underdog");
+    expect(list.items[0]?.path).toBe("/mnt/nas/movies/underdog.mkv");
+  });
+
+  it("accepts enqueue while a runner is still working and rejects a second Keep", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    const suggestions = await ctx.app.app.request("/api/suggestions", { headers });
+    const sug = (await suggestions.json()) as { items: Array<{ id: string }> };
+    expect(sug.items.length).toBeGreaterThan(0);
+    const queued = await ctx.app.app.request("/api/queue", { method: "POST", headers, body: JSON.stringify({ suggestionId: sug.items[0].id }) });
+    expect(queued.status).toBe(200);
+  });
+
+  it("rejects enqueue without a session after first-run is complete", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    const res = await ctx.app.app.request("/api/queue", { method: "POST", body: JSON.stringify({ itemId: "missing" }) });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects minting a widget key without a session", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/settings/widget-key", { method: "POST" });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toMatch(/[a-f0-9]{32}/);
+  });
+
+  it("requires a widget key on a public address", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const res = await ctx.app.app.request("/api/widget", { headers: { "x-real-ip": "8.8.8.8" } });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain("/mnt/nas");
+  });
+});

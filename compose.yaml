@@ -1,0 +1,22 @@
+services:
+  optimizarr:
+    build: .
+    ports:
+      - "7373:7373"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/New_York
+      CONFIG_DIR: /config
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+    volumes:
+      - /home/cgreever/appdata/arr/optimizarr/config:/config
+      - /mnt/nas:/mnt/nas
+    networks:
+      - arr_net
+    runtime: nvidia
+
+networks:
+  arr_net:
+    external: true
