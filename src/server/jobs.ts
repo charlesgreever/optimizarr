@@ -5,7 +5,7 @@ import type { Store } from "./store.ts";
 import type { HardwareInfo, Job, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
-import { CancelledError } from "./optimize.ts";
+import { CancelledError, isExecutablePlan, resolvePlan } from "./optimize.ts";
 import { notifyPlayers, refreshArr } from "./notify.ts";
 
 export type JobServiceOptions = {
@@ -116,10 +116,12 @@ export class JobService {
     this.opts.store.updateJob(id, { status: "running", phase: "muxing", progress: 0.05 });
     try {
       const hardware = await this.opts.hardware();
+      const plan = resolvePlan(job.plan, job.writeMode);
       const result = await this.opts.optimizer({
         sourcePath: item.path,
         reviewDir: settings.reviewPath,
-        suggestion: job.plan,
+        suggestion: isExecutablePlan(job.plan) ? undefined : job.plan,
+        plan,
         report,
         target: settings.videoTarget,
         backend: hardware.backend,
@@ -136,7 +138,7 @@ export class JobService {
         await safeUnlink(result.sidecarPath);
         return;
       }
-      const overCap = result.output.sizePerHourGb > settings.sizeCaps[job.plan.category];
+      const overCap = result.output.sizePerHourGb > settings.sizeCaps[plan.category];
       const larger = result.output.sizeBytes > report.sizeBytes;
       this.opts.store.insertReview({
         id: randomUUID(),

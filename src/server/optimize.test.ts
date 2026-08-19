@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeArgs, formatToolError, muxArgs } from "./optimize.ts";
+import { audioAacArgs, encodeArgs, formatToolError, isoRemuxArgs, muxArgs, planFromSuggestion } from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
 
@@ -101,5 +101,63 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("hevc_nvenc");
     expect(args).toContain("main10");
     expect(args).toContain("p010le");
+  });
+
+  it("uses quality controls instead of bitrate for quality mode", () => {
+    const plan = planFromSuggestion(suggestion);
+    const qualityReq = {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      suggestion,
+      plan: {
+        ...plan,
+        video: { kind: "quality" as const, codec: "hevc" as const, quality: 22, downscale1080p: true, bitDepth: 10 },
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "ffprobe" as const,
+        listingState: "complete" as const,
+        durationSec: 6000,
+        sizeBytes: 20_000_000_000,
+        sizePerHourGb: 12,
+        videoCodec: "hevc",
+        width: 3840,
+        height: 2160,
+        bitDepth: 10,
+        hdr: "hdr10" as const,
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc" as const,
+      backend: "cuda" as const,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    };
+    const args = encodeArgs(source, "/tmp/out.mkv", qualityReq);
+    expect(args).toContain("-cq");
+    expect(args).not.toContain("-b:v");
+    expect(args).toContain("scale=1920:1080");
+  });
+});
+
+describe("ISO remux and custom audio arguments", () => {
+  it("copies video for ISO remux and does not pick an encoder", () => {
+    const plan = planFromSuggestion(suggestion);
+    const args = isoRemuxArgs("/mnt/nas/disc.iso", "/tmp/out.mkv", plan);
+    expect(args).toContain("/mnt/nas/disc.iso");
+    expect(args).toContain("-c");
+    expect(args).toContain("copy");
+    expect(args.join(" ")).not.toMatch(/nvenc|vaapi/);
+  });
+
+  it("builds AAC from a selected source stream", () => {
+    const args = audioAacArgs("/in.mkv", "/out.aac", 1, 6, "160k");
+    expect(args).toContain("0:1");
+    expect(args).toContain("6");
+    expect(args).toContain("aac");
   });
 });
