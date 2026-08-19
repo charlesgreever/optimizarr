@@ -163,8 +163,14 @@ export class Store {
 
   getSettings(): Settings {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = 'app'").get() as { value: string } | undefined;
-    if (!row) return { ...DEFAULT_SETTINGS, sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps } };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value), sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...(JSON.parse(row.value).sizeCaps ?? {}) } };
+    const parsed = row ? (JSON.parse(row.value) as Record<string, unknown>) : {};
+    const writeMode = parsed.writeMode === "direct" ? "direct" : "sidecar";
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...((parsed.sizeCaps as object) ?? {}) },
+      writeMode,
+    } as Settings;
   }
 
   saveSettings(next: Settings): void {

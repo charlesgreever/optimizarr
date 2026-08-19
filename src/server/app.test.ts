@@ -102,9 +102,10 @@ describe("public HTTP behavior", () => {
       body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "super-secret-key", enabled: true }),
     });
     const listed = await ctx.app.app.request("/api/settings", { headers });
-    const body = (await listed.json()) as { instances: Array<{ hasApiKey: boolean; apiKey?: string }> };
+    const body = (await listed.json()) as { instances: Array<{ hasApiKey: boolean; apiKey?: string }>; writeMode?: string };
     expect(body.instances[0]?.hasApiKey).toBe(true);
     expect(JSON.stringify(body)).not.toContain("super-secret-key");
+    expect(body.writeMode ?? "sidecar").toBe("sidecar");
 
     await ctx.app.app.request("/api/settings", {
       method: "PUT",

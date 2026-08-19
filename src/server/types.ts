@@ -49,6 +49,7 @@ export type Settings = {
   offPeakEnd: string;
   localAuthBypass: boolean;
   inspectConcurrency: number;
+  writeMode: WriteMode;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   offPeakEnd: "07:00",
   localAuthBypass: false,
   inspectConcurrency: 1,
+  writeMode: "sidecar",
 };
 
 export type ArrInstance = {

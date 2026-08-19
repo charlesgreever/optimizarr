@@ -44,4 +44,32 @@ describe("store schema migration", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.id).toBe("job-1");
   });
+
+  it("defaults an existing settings row to sidecar write mode", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-settings-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    store.saveSettings({
+      preferredLanguage: "eng",
+      languageConfirmed: true,
+      reviewPath: "/review",
+      sizeCaps: { movie1080p: 2.5, movie4kSdr: 6, movie4kHdr: 8, tv1080p: 1, tv4k: 4 },
+      videoTarget: "hevc",
+      concurrency: 1,
+      conservativeMode: false,
+      offPeakEnabled: false,
+      offPeakStart: "01:00",
+      offPeakEnd: "07:00",
+      localAuthBypass: false,
+      inspectConcurrency: 1,
+    } as never);
+    const reopened = new Store(path);
+    stores.push(reopened);
+    expect(reopened.getSettings().writeMode).toBe("sidecar");
+    reopened.saveSettings({ ...reopened.getSettings(), writeMode: "direct" });
+    const again = new Store(path);
+    stores.push(again);
+    expect(again.getSettings().writeMode).toBe("direct");
+  });
 });
