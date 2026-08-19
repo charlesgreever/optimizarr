@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, formatSize, type LibraryRow } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { RowActions } from "../components/RowActions";
 
@@ -29,15 +29,16 @@ export function SeriesPage() {
 
   return (
     <section>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Series</h1>
+      <PageHead title="Series">
         <RefreshLibrary onDone={load} />
-      </div>
+      </PageHead>
       <Help>Episode rows use the same actions as movies. Optimize all episodes queues every episode of that show that already has open work.</Help>
       {groups.length === 0 ? (
-        <div className="glass mt-6 space-y-3 p-5 text-sm text-slate-300">
-          <p>No series loaded yet. Refresh pulls episodes from the Sonarr connections in Settings.</p>
-          <RefreshLibrary onDone={load} />
+        <div className="empty">
+          <div className="space-y-3">
+            <p>No series loaded yet. Refresh pulls episodes from the Sonarr connections in Settings.</p>
+            <RefreshLibrary onDone={load} />
+          </div>
         </div>
       ) : (
         groups.map(([key, eps]) => {

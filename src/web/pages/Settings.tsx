@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type FirstRun, type Hardware, type SettingsPayload } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 
 export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onChange: () => void }) {
@@ -20,7 +20,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
   return (
     <section className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Settings</h1>
+        <PageHead title="Settings" />
         <Help>
           Preferred language decides which audio and subtitle tracks stay. Confirm it once before any optimize. The review folder is where sidecars land; it must sit outside your movie and show libraries.
         </Help>
@@ -144,7 +144,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
                 <button className="btn-secondary" type="button" onClick={() => void api.testInstance(row.id).then((r) => setMsg(r.ok ? `${row.name} is reachable.` : r.message || "Test failed."))}>
                   Test
                 </button>
-                <button className="btn-secondary" type="button" onClick={() => void api.deleteInstance(row.id).then(load)}>
+                <button className="btn-secondary danger" type="button" onClick={() => void api.deleteInstance(row.id).then(load)}>
                   Remove
                 </button>
               </span>
@@ -153,7 +153,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </ul>
         <RefreshLibrary />
       </div>
-      {msg && <p className="text-sm text-[#01b574]">{msg}</p>}
+      {msg && <p className="ok text-sm">{msg}</p>}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatSize, type SuggestionRow } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 
 export function SuggestionsPage() {
   const [params, setParams] = useSearchParams();
@@ -20,12 +20,12 @@ export function SuggestionsPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Suggestions</h1>
+      <PageHead title="Suggestions" />
       <Help>
         Suggestions is the work list: only titles that still need something. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
       </Help>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
+      <div className="filter-row">
+        <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
         <button
           className="btn"
           type="button"
@@ -39,7 +39,7 @@ export function SuggestionsPage() {
         </button>
       </div>
       {items.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">No open work. Healthy files stay off this list.</div>
+        <div className="empty">No open work. Healthy files stay off this list.</div>
       ) : (
         <div className="glass mt-5 overflow-x-auto">
           <table>
@@ -78,7 +78,7 @@ export function SuggestionsPage() {
                     <button className="btn" type="button" onClick={() => void api.queue({ suggestionId: item.id }).then(() => setMsg("Added to queue."))}>
                       Queue
                     </button>
-                    <button className="btn-secondary ml-1" type="button" onClick={() => void api.dismiss(item.id).then(() => setItems((cur) => cur.filter((x) => x.id !== item.id)))}>
+                    <button className="btn-secondary danger ml-1" type="button" onClick={() => void api.dismiss(item.id).then(() => setItems((cur) => cur.filter((x) => x.id !== item.id)))}>
                       Dismiss
                     </button>
                   </td>

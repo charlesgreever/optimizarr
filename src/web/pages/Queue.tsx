@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type JobRow } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 
 export function QueuePage() {
   const [items, setItems] = useState<JobRow[]>([]);
@@ -13,10 +13,10 @@ export function QueuePage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Queue</h1>
+      <PageHead title="Queue" />
       <Help>Queue is approved work that has not finished. Phase names the real step. Cancel never replaces the library file.</Help>
       {items.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">The queue is idle. Approve a suggestion to add work.</div>
+        <div className="empty">The queue is idle. Approve a suggestion to add work.</div>
       ) : (
         <div className="glass mt-5 overflow-x-auto">
           <table>

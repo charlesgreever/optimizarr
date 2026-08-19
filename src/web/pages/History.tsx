@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatSize, type HistoryRow } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 
 export function HistoryPage() {
   const [items, setItems] = useState<HistoryRow[]>([]);
@@ -9,10 +9,10 @@ export function HistoryPage() {
   }, []);
   return (
     <section>
-      <h1 className="text-2xl font-semibold">History</h1>
+      <PageHead title="History" />
       <Help>History is the log of finished work: kept, discarded, flagged, failed, and cancelled.</Help>
       {items.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">No finished work yet.</div>
+        <div className="empty">No finished work yet.</div>
       ) : (
         <div className="glass mt-5 overflow-x-auto">
           <table>

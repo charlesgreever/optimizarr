@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatSize, type ReviewRow } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 
 export function ReviewPage() {
   const [items, setItems] = useState<ReviewRow[]>([]);
@@ -18,11 +18,7 @@ export function ReviewPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Review</h1>
-      <Help>
-        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes.
-      </Help>
-      <div className="mt-4">
+      <PageHead title="Review">
         <button
           className="btn"
           type="button"
@@ -31,9 +27,12 @@ export function ReviewPage() {
         >
           Keep selected ({chosen.length})
         </button>
-      </div>
+      </PageHead>
+      <Help>
+        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes.
+      </Help>
       {items.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">Nothing is waiting for Keep or Discard.</div>
+        <div className="empty">Nothing is waiting for Keep or Discard.</div>
       ) : (
         <ul className="mt-5 space-y-3">
           {items.map((item) => (
@@ -57,7 +56,7 @@ export function ReviewPage() {
                     <button className="btn" type="button" disabled={item.status !== "pending"} onClick={() => void api.keep(item.id).then(load)}>
                       {item.status === "keeping" ? "Keeping…" : "Keep"}
                     </button>
-                    <button className="btn-secondary" type="button" disabled={item.status !== "pending"} onClick={() => void api.discard(item.id).then(load)}>
+                    <button className="btn-secondary danger" type="button" disabled={item.status !== "pending"} onClick={() => void api.discard(item.id).then(load)}>
                       Discard
                     </button>
                   </div>

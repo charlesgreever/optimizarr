@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatSize, type HomePayload } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 
 export function HomePage() {
@@ -9,17 +9,16 @@ export function HomePage() {
   useEffect(() => {
     void api.home().then(setData);
   }, []);
-  if (!data) return <p className="text-slate-400">Loading dashboard…</p>;
+  if (!data) return <p className="help">Loading dashboard…</p>;
   return (
     <section>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Home</h1>
+      <PageHead title="Home">
         <RefreshLibrary onDone={() => void api.home().then(setData)} />
-      </div>
+      </PageHead>
       <Help>
         Home is the landing page after sign-in. Files optimized and space saved only count after you Keep a sidecar. A sidecar is the new file waiting in Review; Keep replaces the library file with it.
       </Help>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="metrics">
         <Stat label="Files optimized" value={String(data.filesOptimized)} />
         <Stat label="Space saved" value={formatSize(data.spaceSavedBytes)} />
         <Stat label="Status" value={data.status} />
@@ -29,7 +28,7 @@ export function HomePage() {
         <Stat label="Errors" value={String(data.errors)} to="/errors" />
       </div>
       {data.filesOptimized === 0 && data.suggestions === 0 && (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">
+        <div className="empty">
           Nothing has been kept yet. Refresh the library to pull titles, then work Suggestions and Review.
         </div>
       )}
@@ -47,11 +46,11 @@ export function HomePage() {
 }
 
 function Stat({ label, value, to }: { label: string; value: string; to?: string }) {
-  const inner = (
-    <div className="glass p-4">
-      <div className="text-xs uppercase tracking-wider text-slate-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
-    </div>
+  const body = (
+    <>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </>
   );
-  return to ? <Link to={to}>{inner}</Link> : inner;
+  return <article>{to ? <Link to={to}>{body}</Link> : body}</article>;
 }

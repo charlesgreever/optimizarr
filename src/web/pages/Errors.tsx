@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type FileError } from "../api";
-import { Help } from "../components/Shell";
+import { Help, PageHead } from "../components/Shell";
 
 export function ErrorsPage() {
   const [items, setItems] = useState<FileError[]>([]);
@@ -9,10 +9,10 @@ export function ErrorsPage() {
   }, []);
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Errors</h1>
+      <PageHead title="Errors" />
       <Help>Each row is one file Optimizarr could not read or probe. The count is distinct files, not retry attempts.</Help>
       {items.length === 0 ? (
-        <div className="glass mt-6 p-5 text-sm text-slate-300">No unread files. Nothing needs attention here.</div>
+        <div className="empty">No unread files. Nothing needs attention here.</div>
       ) : (
         <div className="glass mt-5 overflow-x-auto">
           <table>

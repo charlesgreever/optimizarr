@@ -8,35 +8,50 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
   const setup = !firstRun.hasAdmin;
 
   return (
-    <div className="mx-auto mt-24 max-w-md p-6">
-      <div className="glass p-6">
-        <div className="mb-4 flex items-center gap-2 text-xl font-semibold">
-          <img src="/favicon.svg" alt="" className="h-8 w-8" />
-          {setup ? "Create the Optimizarr admin" : "Sign in"}
+    <main className="auth-page">
+      <form
+        className="auth-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const run = setup ? api.setup : api.login;
+          void run(username, password)
+            .then(onReady)
+            .catch((err: Error) => setError(err.message));
+        }}
+      >
+        <div className="brand">
+          <b>O</b>
+          <strong>Optimizarr</strong>
         </div>
-        <p className="help mb-4">
+        <p className="eyebrow">{setup ? "FIRST RUN" : "WELCOME BACK"}</p>
+        <h1>{setup ? "Create the Optimizarr admin" : "Sign in"}</h1>
+        <p>
           {setup
             ? "This account is the only login. Choose a password you can remember; Optimizarr stores a hash, not the password itself."
             : "Use the administrator account created on first run."}
         </p>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const run = setup ? api.setup : api.login;
-            void run(username, password)
-              .then(onReady)
-              .catch((err: Error) => setError(err.message));
-          }}
-        >
-          <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {error && <p className="text-sm text-rose-400">{error}</p>}
-          <button className="btn w-full justify-center" type="submit">
-            {setup ? "Create account" : "Sign in"}
-          </button>
-        </form>
-      </div>
-    </div>
+        <label>
+          Username
+          <input
+            placeholder="Username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </label>
+        <label>
+          Password
+          <input
+            placeholder="Password"
+            type="password"
+            autoComplete={setup ? "new-password" : "current-password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        {error && <div className="form-error">{error}</div>}
+        <button type="submit">{setup ? "Create account" : "Sign in"}</button>
+      </form>
+    </main>
   );
 }
