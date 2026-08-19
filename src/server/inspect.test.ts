@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isIsoPath, parseFfprobe, pickPlayableVideo, trackEditingAvailable, unlistedIsoReport } from "./inspect.ts";
+import { isIsoPath, parseFfprobe, parseFfmpegListing, pickPlayableVideo, trackEditingAvailable, unlistedIsoReport } from "./inspect.ts";
 import { isoFailedFfmpeg, isoListedFfmpeg, mkv4kHdrFfprobe, mkvNormalFfprobe } from "./fixtures/index.ts";
 
 describe("parseFfprobe", () => {
@@ -67,5 +67,27 @@ describe("parseFfprobe", () => {
     expect(mkv.sourceMethod).toBe("ffprobe");
     expect(mkv.listingState).toBe("complete");
     expect(trackEditingAvailable(mkv)).toBe(true);
+  });
+
+  it("parses a listed ISO fixture into the public inspection report shape", () => {
+    const report = parseFfmpegListing("/mnt/nas/discs/Example.iso", 19_000_000_000, isoListedFfmpeg);
+    expect(report.sourceMethod).toBe("iso_ffmpeg");
+    expect(report.listingState).toBe("complete");
+    expect(report.videoCodec).toBe("mpeg2video");
+    expect(report.width).toBe(1920);
+    expect(report.height).toBe(1080);
+    expect(report.audio).toHaveLength(3);
+    expect(report.audio[0]?.channels).toBe(6);
+    expect(report.audio[1]?.channels).toBe(8);
+    expect(report.subtitles).toHaveLength(3);
+    expect(report.durationSec).toBeGreaterThan(6000);
+    expect(trackEditingAvailable(report)).toBe(true);
+  });
+
+  it("returns a distinct failed listing instead of invented streams", () => {
+    const report = parseFfmpegListing("/mnt/nas/discs/Broken.iso", 8_000_000_000, isoFailedFfmpeg);
+    expect(report.sourceMethod).toBe("iso_ffmpeg");
+    expect(report.listingState).toBe("iso_unlisted");
+    expect(trackEditingAvailable(report)).toBe(false);
   });
 });
