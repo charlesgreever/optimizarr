@@ -249,3 +249,52 @@ export type SearchHit = {
   instanceName: string;
   href: string;
 };
+
+export type PlanOrigin = "bulk" | "custom";
+export type WriteMode = "sidecar" | "direct";
+export type OutputContainer = "mkv";
+
+export type VideoCopy = { kind: "copy" };
+export type VideoSizeTranscode = {
+  kind: "size";
+  codec: VideoTarget;
+  targetBytes: number;
+  downscale1080p: boolean;
+  bitDepth: number;
+};
+export type VideoQualityTranscode = {
+  kind: "quality";
+  codec: VideoTarget;
+  quality: number;
+  downscale1080p: boolean;
+  bitDepth: number;
+};
+export type VideoIntent = VideoCopy | VideoSizeTranscode | VideoQualityTranscode;
+
+export type AudioKeep = { op: "keep"; index: number };
+export type AudioRemove = { op: "remove"; index: number };
+export type AudioReplaceAac = { op: "replace_aac"; index: number };
+export type AudioReplaceDownmix = { op: "replace_downmix"; index: number; channels: number };
+export type AudioAddDownmix = { op: "add_downmix"; index: number; channels: number };
+export type AudioOp = AudioKeep | AudioRemove | AudioReplaceAac | AudioReplaceDownmix | AudioAddDownmix;
+
+export type SubtitleKeep = { op: "keep"; index: number };
+export type SubtitleRemove = { op: "remove"; index: number };
+export type SubtitleOp = SubtitleKeep | SubtitleRemove;
+
+export type ExecutablePlan = {
+  origin: PlanOrigin;
+  video: VideoIntent;
+  audio: AudioOp[];
+  subtitles: SubtitleOp[];
+  container: OutputContainer;
+  writeMode: WriteMode;
+  warning: string | null;
+  reasons: string[];
+  estimatedOutputBytes: number | null;
+  category: SizeCategory;
+};
+
+export function planHasVideoTranscode(plan: ExecutablePlan): boolean {
+  return plan.video.kind !== "copy";
+}
