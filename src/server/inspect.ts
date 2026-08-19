@@ -29,6 +29,8 @@ export function parseFfprobe(path: string, sizeBytes: number, probe: Record<stri
   const hours = durationSec > 0 ? durationSec / 3600 : 0;
   return {
     sourceSig: `${path}|${sizeBytes}`,
+    sourceMethod: "ffprobe",
+    listingState: "complete",
     durationSec,
     sizeBytes,
     sizePerHourGb: hours > 0 ? sizeBytes / (1024 ** 3) / hours : 0,
@@ -121,6 +123,56 @@ export function normalizeLang(value: string): string {
   if (v === "en" || v === "eng" || v === "english") return "eng";
   if (v === "und" || v === "unknown" || v === "") return "und";
   return v.slice(0, 3);
+}
+
+export function normalizeInspection(raw: Record<string, unknown>, path = "", sizeBytes = 0): InspectionReport {
+  const sourceMethod = raw.sourceMethod === "iso_ffmpeg" ? "iso_ffmpeg" : "ffprobe";
+  const listingState = raw.listingState === "iso_unlisted" ? "iso_unlisted" : "complete";
+  return {
+    sourceSig: typeof raw.sourceSig === "string" ? raw.sourceSig : `${path}|${sizeBytes}`,
+    sourceMethod,
+    listingState,
+    durationSec: typeof raw.durationSec === "number" ? raw.durationSec : 0,
+    sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : sizeBytes,
+    sizePerHourGb: typeof raw.sizePerHourGb === "number" ? raw.sizePerHourGb : 0,
+    videoCodec: typeof raw.videoCodec === "string" ? raw.videoCodec : "unknown",
+    width: typeof raw.width === "number" ? raw.width : 0,
+    height: typeof raw.height === "number" ? raw.height : 0,
+    bitDepth: typeof raw.bitDepth === "number" ? raw.bitDepth : 8,
+    hdr: raw.hdr === "hdr10" || raw.hdr === "hdr10plus" || raw.hdr === "dolby_vision" ? raw.hdr : "none",
+    audio: Array.isArray(raw.audio) ? (raw.audio as InspectionReport["audio"]) : [],
+    subtitles: Array.isArray(raw.subtitles) ? (raw.subtitles as InspectionReport["subtitles"]) : [],
+    hasChapters: Boolean(raw.hasChapters),
+    hasAttachments: Boolean(raw.hasAttachments),
+  };
+}
+
+export function isIsoPath(path: string): boolean {
+  return path.toLowerCase().endsWith(".iso");
+}
+
+export function trackEditingAvailable(report: InspectionReport): boolean {
+  return report.listingState === "complete";
+}
+
+export function unlistedIsoReport(path: string, sizeBytes: number): InspectionReport {
+  return {
+    sourceSig: `${path}|${sizeBytes}`,
+    sourceMethod: "iso_ffmpeg",
+    listingState: "iso_unlisted",
+    durationSec: 0,
+    sizeBytes,
+    sizePerHourGb: 0,
+    videoCodec: "unknown",
+    width: 0,
+    height: 0,
+    bitDepth: 8,
+    hdr: "none",
+    audio: [],
+    subtitles: [],
+    hasChapters: false,
+    hasAttachments: false,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

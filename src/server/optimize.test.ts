@@ -74,6 +74,8 @@ describe("ffmpeg encode arguments", () => {
       suggestion,
       report: {
         sourceSig: "p|1",
+        sourceMethod: "ffprobe",
+        listingState: "complete",
         durationSec: 6000,
         sizeBytes: 20_000_000_000,
         sizePerHourGb: 12,

@@ -106,6 +106,8 @@ export type SubtitleTrack = {
 
 export type InspectionReport = {
   sourceSig: string;
+  sourceMethod: "ffprobe" | "iso_ffmpeg";
+  listingState: "complete" | "iso_unlisted";
   durationSec: number;
   sizeBytes: number;
   sizePerHourGb: number;

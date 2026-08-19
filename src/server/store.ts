@@ -18,6 +18,7 @@ import type {
   Suggestion,
 } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
+import { normalizeInspection } from "./inspect.ts";
 
 export class Store {
   readonly db: Database.Database;
@@ -299,7 +300,7 @@ export class Store {
 
   getInspection(itemId: string): InspectionReport | undefined {
     const row = this.db.prepare("SELECT report FROM inspections WHERE item_id = ?").get(itemId) as { report: string } | undefined;
-    return row ? (JSON.parse(row.report) as InspectionReport) : undefined;
+    return row ? normalizeInspection(JSON.parse(row.report) as Record<string, unknown>) : undefined;
   }
 
   getInspectionSig(itemId: string): string | undefined {

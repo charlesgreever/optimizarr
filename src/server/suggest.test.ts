@@ -28,6 +28,8 @@ const movie: LibraryItem = {
 function report(over: Partial<InspectionReport> = {}): InspectionReport {
   return {
     sourceSig: "p|1",
+    sourceMethod: "ffprobe",
+    listingState: "complete",
     durationSec: 5900,
     sizeBytes: 16_000_000_000,
     sizePerHourGb: 9.8,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFfprobe, pickPlayableVideo } from "./inspect.ts";
+import { isIsoPath, parseFfprobe, pickPlayableVideo, trackEditingAvailable, unlistedIsoReport } from "./inspect.ts";
 import { isoFailedFfmpeg, isoListedFfmpeg, mkv4kHdrFfprobe, mkvNormalFfprobe } from "./fixtures/index.ts";
 
 describe("parseFfprobe", () => {
@@ -53,5 +53,19 @@ describe("parseFfprobe", () => {
     expect(isoListedFfmpeg).toMatch(/Subtitle: hdmv_pgs_subtitle/);
     expect(isoFailedFfmpeg).toMatch(/Invalid data found when processing input/);
     expect(isoFailedFfmpeg).not.toMatch(/Stream #0:/);
+  });
+
+  it("classifies ISO paths without treating them as ffprobe failures", () => {
+    expect(isIsoPath("/mnt/nas/disc.iso")).toBe(true);
+    expect(isIsoPath("/mnt/nas/DISC.ISO")).toBe(true);
+    expect(isIsoPath("/mnt/nas/movie.mkv")).toBe(false);
+    const failed = unlistedIsoReport("/mnt/nas/Broken.iso", 8_000_000_000);
+    expect(failed.sourceMethod).toBe("iso_ffmpeg");
+    expect(failed.listingState).toBe("iso_unlisted");
+    expect(trackEditingAvailable(failed)).toBe(false);
+    const mkv = parseFfprobe("/mnt/nas/Example.mkv", 18_500_000_000, mkvNormalFfprobe);
+    expect(mkv.sourceMethod).toBe("ffprobe");
+    expect(mkv.listingState).toBe("complete");
+    expect(trackEditingAvailable(mkv)).toBe(true);
   });
 });
