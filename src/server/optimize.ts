@@ -88,21 +88,20 @@ export function ffmpegOptimizer(): Optimizer {
     const temps: string[] = [];
     try {
       let current = req.sourcePath;
-      if (isIsoPath(req.sourcePath) && plan.video.kind === "copy") {
+      if (isIsoPath(req.sourcePath)) {
         req.onPhase?.("muxing", 0.2);
         const remuxed = join(workDir, `${Date.now()}-iso.mkv`);
         temps.push(remuxed);
-        await run(req.ffmpeg, isoRemuxArgs(current, remuxed, plan));
+        await remuxIso(req.ffmpeg, current, remuxed, plan);
         current = remuxed;
-      } else {
-        const extras = await createAudioExtras(req, plan, workDir, current, temps);
-        if (needsMux(plan) || extras.length) {
-          req.onPhase?.("muxing", 0.35);
-          const muxed = join(workDir, `${Date.now()}-mux.mkv`);
-          temps.push(muxed);
-          await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras));
-          current = muxed;
-        }
+      }
+      const extras = await createAudioExtras(req, plan, workDir, current, temps);
+      if (needsMux(plan) || extras.length) {
+        req.onPhase?.("muxing", 0.35);
+        const muxed = join(workDir, `${Date.now()}-mux.mkv`);
+        temps.push(muxed);
+        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras));
+        current = muxed;
       }
       if (planHasVideoTranscode(plan)) {
         if (req.isCancelled?.()) throw new CancelledError();
@@ -116,7 +115,13 @@ export function ffmpegOptimizer(): Optimizer {
       if (current !== sidecarPath) await copyFile(current, sidecarPath);
       const output = await probeOutput(req.ffprobe, sidecarPath);
       if (output.durationSec <= 0 || (req.report.durationSec > 0 && output.durationSec < req.report.durationSec * 0.9)) {
-        throw new Error("The finished file is missing duration or is shorter than the original.");
+        const srcMin = Math.round(req.report.durationSec / 60);
+        const outMin = Math.round(output.durationSec / 60);
+        throw new Error(
+          isIsoPath(req.sourcePath)
+            ? `The remuxed file is ${outMin} minutes; the disc listing was ${srcMin} minutes. ffmpeg likely copied a short title instead of the feature.`
+            : "The finished file is missing duration or is shorter than the original.",
+        );
       }
       return { sidecarPath, output };
     } catch (error) {
@@ -178,18 +183,60 @@ export function muxPlanArgs(source: string, dest: string, plan: ExecutablePlan, 
   return args;
 }
 
-export function isoRemuxArgs(source: string, dest: string, plan: ExecutablePlan): string[] {
-  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source, "-map", "0:v:0"];
-  for (const op of plan.audio) {
-    if (op.op === "remove") continue;
-    args.push("-map", `0:${op.index}`);
+export function optimizeSteps(sourcePath: string, plan: ExecutablePlan): Array<"iso_remux" | "mux" | "encode"> {
+  const steps: Array<"iso_remux" | "mux" | "encode"> = [];
+  if (isIsoPath(sourcePath)) steps.push("iso_remux");
+  if (needsMux(plan) || plan.audio.some((op) => op.op === "add_downmix" || op.op === "replace_aac" || op.op === "replace_downmix")) {
+    steps.push("mux");
   }
-  for (const op of plan.subtitles) {
-    if (op.op === "remove") continue;
-    args.push("-map", `0:${op.index}`);
+  if (planHasVideoTranscode(plan)) steps.push("encode");
+  return steps;
+}
+
+export function isBlurayIso(path: string): boolean {
+  return /bdmv|br-disk|bd-disk|bluray|blu-ray/i.test(path);
+}
+
+export function isoDemuxArgs(source: string, force?: "bluray" | "plain"): string[] {
+  if (force === "plain") return ["-i", source];
+  if (force === "bluray" || isBlurayIso(source)) return ["-f", "bluray", "-i", source];
+  return ["-i", source];
+}
+
+export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, force?: "bluray" | "plain"): string[] {
+  return [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-analyzeduration",
+    "100M",
+    "-probesize",
+    "100M",
+    ...isoDemuxArgs(source, force),
+    "-map",
+    "0",
+    "-c",
+    "copy",
+    dest,
+  ];
+}
+
+async function remuxIso(ffmpeg: string, source: string, dest: string, plan: ExecutablePlan): Promise<void> {
+  const preferred: Array<"bluray" | "plain"> = isBlurayIso(source) ? ["bluray", "plain"] : ["plain", "bluray"];
+  let lastError: unknown;
+  for (const mode of preferred) {
+    try {
+      await run(ffmpeg, isoRemuxArgs(source, dest, plan, mode));
+      return;
+    } catch (error) {
+      lastError = error;
+    }
   }
-  args.push("-c", "copy", dest);
-  return args;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("ffmpeg could not remux this disc image into a Matroska file.");
 }
 
 export function audioAacArgs(source: string, dest: string, index: number, channels: number, bitrate: string): string[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audioAacArgs, encodeArgs, formatToolError, isoRemuxArgs, muxArgs, planFromSuggestion } from "./optimize.ts";
+import { audioAacArgs, encodeArgs, formatToolError, isoDemuxArgs, isoRemuxArgs, muxArgs, optimizeSteps, planFromSuggestion } from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
 
@@ -147,11 +147,22 @@ describe("ffmpeg encode arguments", () => {
 describe("ISO remux and custom audio arguments", () => {
   it("copies video for ISO remux and does not pick an encoder", () => {
     const plan = planFromSuggestion(suggestion);
-    const args = isoRemuxArgs("/mnt/nas/disc.iso", "/tmp/out.mkv", plan);
-    expect(args).toContain("/mnt/nas/disc.iso");
+    const args = isoRemuxArgs("/mnt/nas/discs/Example.iso", "/tmp/out.mkv", plan);
+    expect(args).toContain("/mnt/nas/discs/Example.iso");
     expect(args).toContain("-c");
     expect(args).toContain("copy");
     expect(args.join(" ")).not.toMatch(/nvenc|vaapi/);
+  });
+
+  it("uses the Blu-ray demuxer for BR-DISK images", () => {
+    const args = isoDemuxArgs("/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games (2012) {imdb-tt1392170}[BR-DISK][bit][]-F13.iso");
+    expect(args.slice(0, 3)).toEqual(["-f", "bluray", "-i"]);
+  });
+
+  it("remuxes an ISO to Matroska before a video encode", () => {
+    const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
+    expect(optimizeSteps("/mnt/nas/Movies/Cars 3.iso", plan)).toEqual(["iso_remux", "encode"]);
+    expect(optimizeSteps("/mnt/nas/Movies/Cars 3.mkv", plan)).toEqual(["encode"]);
   });
 
   it("builds AAC from a selected source stream", () => {

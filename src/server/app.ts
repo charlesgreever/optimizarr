@@ -24,7 +24,7 @@ import { isIsoPath, parseFfprobe, parseFfmpegListing, unlistedIsoReport } from "
 import { buildSuggestion } from "./suggest.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService, withTitles } from "./jobs.ts";
-import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
+import { ffmpegOptimizer, isBlurayIso, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
@@ -859,15 +859,31 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
-  try {
-    const { stdout, stderr } = await run(ffmpeg, ["-hide_banner", "-i", path], { timeout: 15_000, maxBuffer: 1024 * 512 });
-    return `${stderr}\n${stdout}`;
-  } catch (error) {
-    const err = error as { stdout?: string; stderr?: string };
-    const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
-    if (text.includes("Stream #")) return text;
-    throw error;
+  const attempts = isBlurayIso(path)
+    ? [
+        ["-hide_banner", "-f", "bluray", "-i", path],
+        ["-hide_banner", "-i", path],
+      ]
+    : [
+        ["-hide_banner", "-i", path],
+        ["-hide_banner", "-f", "bluray", "-i", path],
+      ];
+  let lastText = "";
+  for (const args of attempts) {
+    try {
+      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 15_000, maxBuffer: 1024 * 512 });
+      const text = `${stderr}\n${stdout}`;
+      if (text.includes("Stream #")) return text;
+      lastText = text;
+    } catch (error) {
+      const err = error as { stdout?: string; stderr?: string };
+      const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
+      if (text.includes("Stream #")) return text;
+      lastText = text;
+    }
   }
+  if (lastText.includes("Stream #")) return lastText;
+  throw new Error("ffmpeg could not list streams on this disc image.");
 }
 
 void basename;
