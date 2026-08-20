@@ -332,13 +332,23 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
 }
 
 export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"] | undefined): number {
-  const hours = req.report.durationSec / 3600;
-  const duration = req.report.durationSec > 1 ? req.report.durationSec : Math.max(hours, 1) * 3600;
+  const durationSec = req.report.durationSec;
+  if (!(durationSec > 1)) {
+    throw new Error("Cannot pick a bitrate from the target file size because the file has no duration.");
+  }
+  const hours = durationSec / 3600;
   const targetBytes = video?.kind === "size"
     ? Math.max(1_000_000, video.targetBytes - 80_000_000)
-    : (req.suggestion?.after.sizePerHourGb ?? 2.5) * Math.max(hours, 1) * 1024 ** 3;
-  const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / duration));
-  return Math.min(bitrate, 80_000_000);
+    : (req.suggestion?.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3;
+  const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / durationSec));
+  if (bitrate > 300_000_000) {
+    const gb = (targetBytes / 1024 ** 3).toFixed(1);
+    const minutes = Math.max(1, Math.round(durationSec / 60));
+    throw new Error(
+      `A ${gb} GB target over ${minutes} minutes needs ${(bitrate / 1_000_000).toFixed(0)} Mbps, which the hardware encoder will reject. The remux is probably a short title, not the feature.`,
+    );
+  }
+  return bitrate;
 }
 
 async function run(bin: string, args: string[]): Promise<void> {
