@@ -180,24 +180,31 @@ describe("ffmpeg encode arguments", () => {
     expect(maps.some((part) => part === "0" || part.startsWith("0:v:1"))).toBe(false);
   });
 
-  it("caps NVENC bitrate when the disc listing has no duration", () => {
-    const plan = planFromSuggestion({
-      ...suggestion,
-      actions: ["transcode"],
-      now: { ...suggestion.now, sizeBytes: 25_000_000_000, sizePerHourGb: 0, codec: "h264" },
-      after: { ...suggestion.after, sizePerHourGb: 2.5 },
-    });
+  it("picks NVENC bitrate from the target file size and the feature duration", () => {
+    const targetBytes = 20 * 1024 ** 3;
+    const durationSec = 8500;
     const args = encodeArgs("/tmp/hunger-games.mkv", "/tmp/out.mkv", {
       sourcePath: "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games.iso",
       reviewDir: "/tmp/review",
-      plan,
+      plan: {
+        origin: "custom",
+        video: { kind: "size", codec: "hevc", targetBytes, downscale1080p: false, bitDepth: 8 },
+        audio: [],
+        subtitles: [],
+        container: "mkv",
+        writeMode: "sidecar",
+        warning: null,
+        reasons: ["Target 20 GB"],
+        estimatedOutputBytes: targetBytes,
+        category: "movie1080p",
+      },
       report: {
         sourceSig: "p|1",
         sourceMethod: "iso_ffmpeg",
         listingState: "complete",
-        durationSec: 0,
-        sizeBytes: 25_000_000_000,
-        sizePerHourGb: 0,
+        durationSec,
+        sizeBytes: 40_000_000_000,
+        sizePerHourGb: 16,
         videoCodec: "h264",
         width: 1920,
         height: 1080,
@@ -216,8 +223,54 @@ describe("ffmpeg encode arguments", () => {
       conservative: false,
     });
     const bitrate = Number(args[args.indexOf("-b:v") + 1]);
-    expect(bitrate).toBeGreaterThan(0);
-    expect(bitrate).toBeLessThanOrEqual(80_000_000);
+    const expected = Math.round(((targetBytes - 80_000_000) * 8) / durationSec);
+    expect(bitrate).toBe(expected);
+    expect(bitrate).toBeGreaterThan(15_000_000);
+    expect(bitrate).toBeLessThan(25_000_000);
+  });
+
+  it("does not invent a bitrate when duration is unknown", () => {
+    expect(() =>
+      encodeArgs("/tmp/hunger-games.mkv", "/tmp/out.mkv", {
+        sourcePath: "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games.iso",
+        reviewDir: "/tmp/review",
+        plan: {
+          origin: "custom",
+          video: { kind: "size", codec: "hevc", targetBytes: 20 * 1024 ** 3, downscale1080p: false, bitDepth: 8 },
+          audio: [],
+          subtitles: [],
+          container: "mkv",
+          writeMode: "sidecar",
+          warning: null,
+          reasons: ["Target 20 GB"],
+          estimatedOutputBytes: 20 * 1024 ** 3,
+          category: "movie1080p",
+        },
+        report: {
+          sourceSig: "p|1",
+          sourceMethod: "iso_ffmpeg",
+          listingState: "complete",
+          durationSec: 0,
+          sizeBytes: 40_000_000_000,
+          sizePerHourGb: 0,
+          videoCodec: "h264",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [],
+          subtitles: [],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "cuda",
+        ffmpeg: "ffmpeg",
+        ffprobe: "ffprobe",
+        mkvmerge: "mkvmerge",
+        conservative: false,
+      }),
+    ).toThrow(/duration/i);
   });
 });
 
