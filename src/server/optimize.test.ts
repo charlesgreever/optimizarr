@@ -142,6 +142,83 @@ describe("ffmpeg encode arguments", () => {
     expect(args).not.toContain("-b:v");
     expect(args).toContain("scale=1920:1080");
   });
+
+  it("encodes only the first video stream so Blu-ray menu titles do not hit NVENC", () => {
+    const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
+    const args = encodeArgs(source, "/tmp/out.mkv", {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      suggestion,
+      plan,
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "iso_ffmpeg",
+        listingState: "complete",
+        durationSec: 8500,
+        sizeBytes: 25_000_000_000,
+        sizePerHourGb: 10,
+        videoCodec: "h264",
+        width: 1920,
+        height: 1080,
+        bitDepth: 8,
+        hdr: "none",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    expect(args).toContain("0:v:0");
+    const maps = args.filter((part, i) => args[i - 1] === "-map");
+    expect(maps).toContain("0:v:0");
+    expect(maps.some((part) => part === "0" || part.startsWith("0:v:1"))).toBe(false);
+  });
+
+  it("caps NVENC bitrate when the disc listing has no duration", () => {
+    const plan = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode"],
+      now: { ...suggestion.now, sizeBytes: 25_000_000_000, sizePerHourGb: 0, codec: "h264" },
+      after: { ...suggestion.after, sizePerHourGb: 2.5 },
+    });
+    const args = encodeArgs("/tmp/hunger-games.mkv", "/tmp/out.mkv", {
+      sourcePath: "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games.iso",
+      reviewDir: "/tmp/review",
+      plan,
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "iso_ffmpeg",
+        listingState: "complete",
+        durationSec: 0,
+        sizeBytes: 25_000_000_000,
+        sizePerHourGb: 0,
+        videoCodec: "h264",
+        width: 1920,
+        height: 1080,
+        bitDepth: 8,
+        hdr: "none",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    const bitrate = Number(args[args.indexOf("-b:v") + 1]);
+    expect(bitrate).toBeGreaterThan(0);
+    expect(bitrate).toBeLessThanOrEqual(80_000_000);
+  });
 });
 
 describe("ISO remux and custom audio arguments", () => {
