@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.ts";
 import { loadEnv } from "./env.ts";
 import { isoListedFfmpeg } from "./fixtures/index.ts";
@@ -291,10 +291,14 @@ describe("public HTTP behavior", () => {
   it("ends inspect after unreadable files and does not leave pending work", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-"));
     const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    let missingReads = 0;
     const created = createApp({
       env,
       hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
-      readable: async (path) => !path.includes("missing"),
+      readable: async (path) => {
+        if (path.includes("missing")) missingReads += 1;
+        return !path.includes("missing");
+      },
       probe: async () => ({
         format: { duration: "3600" },
         streams: [{ codec_type: "video", codec_name: "h264", width: 1920, height: 1080 }],
@@ -359,5 +363,79 @@ describe("public HTTP behavior", () => {
     expect(state.failed).toBe(1);
     expect(created.store.getInspection(`${instanceId}:movie:ok`)).toBeTruthy();
     expect(created.store.listErrors().some((e) => e.path.includes("missing"))).toBe(true);
+    expect(missingReads).toBe(1);
+    await created.inspectPending();
+    expect(missingReads).toBe(1);
+    expect(created.store.getInspectState().pending).toBe(0);
+    expect(created.store.getInspectState().walking).toBe(false);
+  });
+
+  it("does not reset leftover count when inspect is already walking", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let probes = 0;
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => {
+        probes += 1;
+        if (probes === 2) await gate;
+        return {
+          format: { duration: "3600" },
+          streams: [{ codec_type: "video", codec_name: "h264", width: 1920, height: 1080 }],
+        };
+      },
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    for (const name of ["one", "two"] as const) {
+      created.store.upsertItem({
+        id: `${instanceId}:movie:${name}`,
+        instanceId,
+        arrId: name === "one" ? 1 : 2,
+        arrSeriesId: null,
+        arrEpisodeFileId: null,
+        type: "movie",
+        title: name,
+        showTitle: null,
+        season: null,
+        episode: null,
+        episodeTitle: null,
+        path: `/mnt/nas/${name}.mkv`,
+        sizeBytes: 1_000,
+        quality: "HD",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+    }
+    const first = created.inspectPending();
+    await vi.waitFor(() => {
+      expect(created.store.getInspectState().pending).toBe(1);
+    });
+    const during = created.store.getInspectState().pending;
+    const second = created.inspectPending();
+    expect(created.store.getInspectState().pending).toBe(during);
+    release();
+    await first;
+    await second;
+    expect(probes).toBe(2);
+    expect(created.store.getInspectState().pending).toBe(0);
+    expect(created.store.getInspectState().walking).toBe(false);
   });
 });
