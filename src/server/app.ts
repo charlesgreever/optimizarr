@@ -873,12 +873,13 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const run = promisify(execFile);
   const attempts = isBlurayIso(path)
     ? [
+        ["-hide_banner", "-i", `bluray:${path}`],
         ["-hide_banner", "-f", "bluray", "-i", path],
         ["-hide_banner", "-i", path],
       ]
     : [
         ["-hide_banner", "-i", path],
-        ["-hide_banner", "-f", "bluray", "-i", path],
+        ["-hide_banner", "-i", `bluray:${path}`],
       ];
   let lastText = "";
   for (const args of attempts) {

@@ -154,9 +154,12 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args.join(" ")).not.toMatch(/nvenc|vaapi/);
   });
 
-  it("uses the Blu-ray demuxer for BR-DISK images", () => {
-    const args = isoDemuxArgs("/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games (2012) {imdb-tt1392170}[BR-DISK][bit][]-F13.iso");
-    expect(args.slice(0, 3)).toEqual(["-f", "bluray", "-i"]);
+  it("uses the bluray protocol for BR-DISK images", () => {
+    const path =
+      "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games (2012) {imdb-tt1392170}[BR-DISK][bit][]-F13.iso";
+    const args = isoDemuxArgs(path);
+    expect(args).toEqual(["-i", `bluray:${path}`]);
+    expect(args.join(" ")).not.toContain("-f bluray");
   });
 
   it("remuxes an ISO to Matroska before a video encode", () => {

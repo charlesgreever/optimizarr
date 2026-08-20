@@ -199,7 +199,7 @@ export function isBlurayIso(path: string): boolean {
 
 export function isoDemuxArgs(source: string, force?: "bluray" | "plain"): string[] {
   if (force === "plain") return ["-i", source];
-  if (force === "bluray" || isBlurayIso(source)) return ["-f", "bluray", "-i", source];
+  if (force === "bluray" || isBlurayIso(source)) return ["-i", `bluray:${source}`];
   return ["-i", source];
 }
 
