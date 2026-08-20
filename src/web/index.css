@@ -404,6 +404,59 @@ tr:last-child td {
   font-size: 14px;
 }
 
+.series-block {
+  padding: 12px;
+}
+
+.series-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.series-toggle {
+  flex: 1 1 14rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.series-toggle:hover,
+.series-toggle:focus-visible {
+  color: var(--accent);
+}
+
+.series-chevron {
+  color: var(--accent);
+  width: 1rem;
+  flex-shrink: 0;
+}
+
+.series-title {
+  display: block;
+  font-weight: 650;
+}
+
+.series-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.series-table-wrap {
+  overflow-x: auto;
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;

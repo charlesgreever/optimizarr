@@ -94,9 +94,10 @@ export function TitlePage() {
             <label className="block text-sm">Codec
               <select className="ml-2" value={codec} onChange={(e) => setCodec(e.target.value as "hevc" | "av1")}>
                 <option value="hevc">HEVC</option>
-                {av1 && <option value="av1">AV1</option>}
+                <option value="av1">AV1</option>
               </select>
             </label>
+            {!av1 && codec === "av1" && <p className="help">ffmpeg on this host has not listed an AV1 hardware encoder. Queue will fail until it does.</p>}
             {is4k && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={downscale} onChange={(e) => setDownscale(e.target.checked)} /> Downscale 4K to 1080p</label>}
           </>
         )}

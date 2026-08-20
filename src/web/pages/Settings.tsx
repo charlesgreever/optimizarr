@@ -92,12 +92,12 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       </div>
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Encode</h2>
-        <p className="help">Detected hardware: {hw ? `${hw.backend}${hw.av1 ? ", AV1 available" : ", AV1 hidden"}` : "checking…"}</p>
+        <p className="help">Detected hardware: {hw ? `${hw.backend}${hw.av1 ? ", AV1 encoder listed" : ", AV1 encoder not listed"}` : "checking…"}</p>
         <label className="block text-sm">
           Target
           <select className="ml-2" value={data.videoTarget} onChange={(e) => setData({ ...data, videoTarget: e.target.value })}>
             <option value="hevc">HEVC</option>
-            {hw?.av1 && <option value="av1">AV1</option>}
+            <option value="av1">AV1</option>
           </select>
         </label>
         <label className="block text-sm">

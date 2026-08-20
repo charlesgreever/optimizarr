@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audioAacArgs, encodeArgs, formatToolError, isoDemuxArgs, isoRemuxArgs, muxArgs, optimizeSteps, planFromSuggestion } from "./optimize.ts";
+import { audioAacArgs, encodeArgs, formatToolError, isoDemuxArgs, isoInputAttempts, isoRemuxArgs, muxArgs, optimizeSteps, planFromSuggestion } from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
 
@@ -160,6 +160,16 @@ describe("ISO remux and custom audio arguments", () => {
     const args = isoDemuxArgs(path);
     expect(args).toEqual(["-i", `bluray:${path}`]);
     expect(args.join(" ")).not.toContain("-f bluray");
+  });
+
+  it("tries bluray protocol then playlists before a raw ISO file", () => {
+    const path =
+      "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games (2012) {imdb-tt1392170}[BR-DISK][bit][]-F13.iso";
+    const attempts = isoInputAttempts(path);
+    expect(attempts[0]).toEqual(["-i", `bluray:${path}`]);
+    expect(attempts.some((args) => args.includes("-playlist") && args.includes("0"))).toBe(true);
+    expect(attempts.some((args) => args.includes("-playlist") && args.includes("1"))).toBe(true);
+    expect(attempts.at(-1)).toEqual(["-i", path]);
   });
 
   it("remuxes an ISO to Matroska before a video encode", () => {
