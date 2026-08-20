@@ -203,6 +203,15 @@ export function isoDemuxArgs(source: string, force?: "bluray" | "plain"): string
   return ["-i", source];
 }
 
+export function isoInputAttempts(source: string): string[][] {
+  const bluray = ["-i", `bluray:${source}`];
+  const blurayFmt = ["-f", "bluray", "-i", source];
+  const plain = ["-i", source];
+  const playlists = [0, 1].map((n) => ["-playlist", String(n), "-i", `bluray:${source}`]);
+  if (isBlurayIso(source)) return [bluray, ...playlists, blurayFmt, plain];
+  return [plain, bluray, ...playlists];
+}
+
 export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, force?: "bluray" | "plain"): string[] {
   return [
     "-hide_banner",
@@ -223,12 +232,31 @@ export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePla
   ];
 }
 
-async function remuxIso(ffmpeg: string, source: string, dest: string, plan: ExecutablePlan): Promise<void> {
-  const preferred: Array<"bluray" | "plain"> = isBlurayIso(source) ? ["bluray", "plain"] : ["plain", "bluray"];
+export function isoRemuxArgSets(source: string, dest: string): string[][] {
+  return isoInputAttempts(source).map((input) => [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-analyzeduration",
+    "100M",
+    "-probesize",
+    "100M",
+    ...input,
+    "-map",
+    "0",
+    "-c",
+    "copy",
+    dest,
+  ]);
+}
+
+async function remuxIso(ffmpeg: string, source: string, dest: string, _plan: ExecutablePlan): Promise<void> {
   let lastError: unknown;
-  for (const mode of preferred) {
+  for (const args of isoRemuxArgSets(source, dest)) {
     try {
-      await run(ffmpeg, isoRemuxArgs(source, dest, plan, mode));
+      await run(ffmpeg, args);
       return;
     } catch (error) {
       lastError = error;

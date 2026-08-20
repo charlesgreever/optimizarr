@@ -6,22 +6,26 @@ const execFileAsync = promisify(execFile);
 
 export type HardwareProbe = () => Promise<HardwareInfo>;
 
+export function parseEncoders(text: string): HardwareInfo {
+  const lower = text.toLowerCase();
+  const cuda = /\b(hevc_nvenc|h264_nvenc)\b/.test(lower);
+  const vaapi = /\b(hevc_vaapi|h264_vaapi)\b/.test(lower);
+  const av1 = /\b(av1_nvenc|av1_vaapi|av1_qsv)\b/.test(lower);
+  const backend: HardwareBackend = cuda ? "cuda" : vaapi ? "vaapi" : "none";
+  return {
+    backend,
+    cuda,
+    vaapi,
+    av1,
+    reason: backend === "none" ? "No CUDA or VAAPI hardware encoder is visible to ffmpeg." : null,
+  };
+}
+
 export function detectHardware(ffmpeg = "ffmpeg"): HardwareProbe {
   return async () => {
     try {
       const { stderr, stdout } = await execFileAsync(ffmpeg, ["-hide_banner", "-encoders"], { timeout: 8000 });
-      const text = `${stdout}\n${stderr}`.toLowerCase();
-      const cuda = text.includes("hevc_nvenc") || text.includes("h264_nvenc");
-      const vaapi = text.includes("hevc_vaapi") || text.includes("h264_vaapi");
-      const av1 = text.includes("av1_nvenc") || text.includes("av1_vaapi") || text.includes("av1_qsv");
-      const backend: HardwareBackend = cuda ? "cuda" : vaapi ? "vaapi" : "none";
-      return {
-        backend,
-        cuda,
-        vaapi,
-        av1,
-        reason: backend === "none" ? "No CUDA or VAAPI hardware encoder is visible to ffmpeg." : null,
-      };
+      return parseEncoders(`${stdout}\n${stderr}`);
     } catch (error) {
       return {
         backend: "none",

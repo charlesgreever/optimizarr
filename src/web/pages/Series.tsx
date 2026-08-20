@@ -23,7 +23,7 @@ export function SeriesPage() {
   const groups = useMemo(() => {
     const map = new Map<string, LibraryRow[]>();
     for (const item of items) {
-      const key = `${item.instanceName}::${item.showTitle ?? item.displayTitle}`;
+      const key = `${item.instanceId}::${item.showTitle ?? item.displayTitle}`;
       map.set(key, [...(map.get(key) ?? []), item]);
     }
     return [...map.entries()];
@@ -55,7 +55,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={load} />
       </PageHead>
-      <Help>Click a series header to hide its episode table. Optimize all episodes still queues that show without collapsing it.</Help>
+      <Help>Use Collapse on a show, or click the show title, to hide its episode table. Optimize all episodes queues that show without collapsing it.</Help>
       {groups.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
@@ -68,16 +68,21 @@ export function SeriesPage() {
           const head = eps[0];
           const open = !collapsed.has(key);
           return (
-            <div key={key} className="glass mt-5 overflow-x-auto p-3">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
+            <div key={key} className="glass series-block mt-5">
+              <div className="series-head">
+                <button type="button" className="series-toggle" aria-expanded={open} onClick={() => toggle(key)}>
+                  <span className="series-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+                  <span>
+                    <span className="series-title">{head.showTitle}</span>
+                    <span className="series-meta">{head.instanceName} · {eps.length} episodes</span>
+                  </span>
+                </button>
                 <button
+                  className="btn-secondary"
                   type="button"
-                  className="min-w-0 flex-1 text-left"
-                  aria-expanded={open}
                   onClick={() => toggle(key)}
                 >
-                  <div className="font-semibold">{head.showTitle}</div>
-                  <div className="text-xs text-slate-400">{head.instanceName} · {eps.length} episodes{open ? "" : " · collapsed"}</div>
+                  {open ? "Collapse" : "Expand"}
                 </button>
                 <button
                   className="btn"
@@ -94,38 +99,40 @@ export function SeriesPage() {
                 </button>
               </div>
               {open && (
-                <table className="dense">
-                  <thead>
-                    <tr>
-                      <th>Episode</th>
-                      <th>Video</th>
-                      <th>Audio</th>
-                      <th>Subs</th>
-                      <th>Quality</th>
-                      <th>Size</th>
-                      <th>Plan</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {eps.map((item) => (
-                      <tr key={item.id} id={item.id}>
-                        <td>
-                          <Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link>
-                        </td>
-                        <td className="text-sm">{item.videoLabel || "—"}</td>
-                        <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
-                        <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
-                        <td>{item.quality || "—"}</td>
-                        <td>{formatSize(item.sizeBytes)}</td>
-                        <td className="text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
-                        <td>
-                          <RowActions item={item} onDone={load} />
-                        </td>
+                <div className="series-table-wrap">
+                  <table className="dense">
+                    <thead>
+                      <tr>
+                        <th>Episode</th>
+                        <th>Video</th>
+                        <th>Audio</th>
+                        <th>Subs</th>
+                        <th>Quality</th>
+                        <th>Size</th>
+                        <th>Plan</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {eps.map((item) => (
+                        <tr key={item.id} id={item.id}>
+                          <td>
+                            <Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link>
+                          </td>
+                          <td className="text-sm">{item.videoLabel || "—"}</td>
+                          <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
+                          <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
+                          <td>{item.quality || "—"}</td>
+                          <td>{formatSize(item.sizeBytes)}</td>
+                          <td className="text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
+                          <td>
+                            <RowActions item={item} onDone={load} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           );
