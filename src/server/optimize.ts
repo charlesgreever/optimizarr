@@ -106,9 +106,13 @@ export function ffmpegOptimizer(): Optimizer {
       if (planHasVideoTranscode(plan)) {
         if (req.isCancelled?.()) throw new CancelledError();
         req.onPhase?.("transcoding", 0.5);
+        const encodeReport = await probeOutput(req.ffprobe, current).catch(() => req.report);
         const encoded = join(workDir, `${Date.now()}-enc.mkv`);
         temps.push(encoded);
-        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan }));
+        const encodePlan = plan.video.kind === "copy"
+          ? plan
+          : { ...plan, video: { ...plan.video, bitDepth: encodeReport.bitDepth || plan.video.bitDepth } };
+        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: encodeReport.durationSec > 1 ? encodeReport : req.report }));
         current = encoded;
       }
       req.onPhase?.("finishing", 0.9);
@@ -313,22 +317,28 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
   const tenBit = (video && video.kind !== "copy" ? video.bitDepth : req.report.bitDepth) >= 10;
   const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source];
   if (req.backend === "vaapi") args.push("-vaapi_device", "/dev/dri/renderD128");
+  args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?");
   if (video?.kind !== "copy" && video?.downscale1080p) args.push("-vf", "scale=1920:1080");
   args.push("-c:v", encoder);
   if (tenBit && encoder.includes("nvenc")) args.push("-profile:v", "main10");
   if (video?.kind === "quality") {
     if (req.backend === "vaapi") args.push("-qp", String(video.quality));
-    else args.push("-cq", String(video.quality));
+    else args.push("-cq", String(video.quality), "-rc", "vbr");
   } else {
-    const hours = req.report.durationSec / 3600 || 1;
-    const targetBytes = video?.kind === "size"
-      ? Math.max(1_000_000, video.targetBytes - 80_000_000)
-      : (req.suggestion?.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3;
-    const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / Math.max(req.report.durationSec, 1)));
-    args.push("-b:v", String(bitrate));
+    args.push("-b:v", String(nvencBitrate(req, video)));
   }
   args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p", "-c:a", "copy", "-c:s", "copy", dest);
   return args;
+}
+
+export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"] | undefined): number {
+  const hours = req.report.durationSec / 3600;
+  const duration = req.report.durationSec > 1 ? req.report.durationSec : Math.max(hours, 1) * 3600;
+  const targetBytes = video?.kind === "size"
+    ? Math.max(1_000_000, video.targetBytes - 80_000_000)
+    : (req.suggestion?.after.sizePerHourGb ?? 2.5) * Math.max(hours, 1) * 1024 ** 3;
+  const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / duration));
+  return Math.min(bitrate, 80_000_000);
 }
 
 async function run(bin: string, args: string[]): Promise<void> {
