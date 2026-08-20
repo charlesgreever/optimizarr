@@ -377,9 +377,19 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true, errors, inspect: store.getInspectState() });
   });
 
+  let inspectWalk: Promise<void> | null = null;
+
   async function inspectPending(): Promise<void> {
+    if (inspectWalk) return inspectWalk;
+    inspectWalk = runInspectWalk().finally(() => {
+      inspectWalk = null;
+    });
+    return inspectWalk;
+  }
+
+  async function runInspectWalk(): Promise<void> {
     const items = store.listItems();
-    const pending = items.filter((item) => store.getInspectionSig(item.id) !== `${item.path}|${item.sizeBytes}`);
+    const pending = items.filter((item) => inspectStillOpen(item));
     publishInspect(true, pending.length, items.length);
     let remaining = pending.length;
     for (const item of pending) {
