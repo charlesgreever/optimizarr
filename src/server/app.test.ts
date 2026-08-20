@@ -287,4 +287,77 @@ describe("public HTTP behavior", () => {
     const body = (await empty.json()) as { errors?: Array<{ field: string }> };
     expect(body.errors?.[0]?.field).toBe("plan");
   });
+
+  it("ends inspect after unreadable files and does not leave pending work", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async (path) => !path.includes("missing"),
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [{ codec_type: "video", codec_name: "h264", width: 1920, height: 1080 }],
+      }),
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:movie:ok`,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Ok",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/ok.mkv",
+      sizeBytes: 1_000,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    created.store.upsertItem({
+      id: `${instanceId}:movie:missing`,
+      instanceId,
+      arrId: 2,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Missing",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/missing.mkv",
+      sizeBytes: 1_000,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    await created.inspectPending();
+    const state = created.store.getInspectState();
+    expect(state.walking).toBe(false);
+    expect(state.pending).toBe(0);
+    expect(state.failed).toBe(1);
+    expect(created.store.getInspection(`${instanceId}:movie:ok`)).toBeTruthy();
+    expect(created.store.listErrors().some((e) => e.path.includes("missing"))).toBe(true);
+  });
 });

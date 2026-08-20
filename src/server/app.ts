@@ -380,16 +380,14 @@ export function createApp(opts: AppOptions) {
   async function inspectPending(): Promise<void> {
     const items = store.listItems();
     const pending = items.filter((item) => store.getInspectionSig(item.id) !== `${item.path}|${item.sizeBytes}`);
-    store.setInspectState({
-      walking: pending.length > 0,
-      pending: pending.length,
-      inspected: items.length - pending.length,
-      failed: store.listErrors().length,
-    });
+    publishInspect(true, pending.length, items.length);
+    let remaining = pending.length;
     for (const item of pending) {
       const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
       if (!readable) {
         store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
+        remaining -= 1;
+        publishInspect(true, remaining, items.length);
         continue;
       }
       try {
@@ -401,30 +399,44 @@ export function createApp(opts: AppOptions) {
           store.saveInspection(item.id, report);
           store.clearFileError(item.path);
           if (report.listingState === "complete") recomputeSuggestion(item.id);
-          continue;
+        } else {
+          const raw = opts.probe
+            ? await opts.probe(item.path, item.sizeBytes)
+            : await defaultProbe(opts.env.ffprobe, item.path);
+          const report = parseFfprobe(item.path, item.sizeBytes, raw);
+          store.saveInspection(item.id, report);
+          store.clearFileError(item.path);
+          recomputeSuggestion(item.id);
         }
-        const raw = opts.probe
-          ? await opts.probe(item.path, item.sizeBytes)
-          : await defaultProbe(opts.env.ffprobe, item.path);
-        const report = parseFfprobe(item.path, item.sizeBytes, raw);
-        store.saveInspection(item.id, report);
-        store.clearFileError(item.path);
-        recomputeSuggestion(item.id);
       } catch (error) {
         if (isIsoPath(item.path)) {
           store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
           store.clearFileError(item.path);
-          continue;
+        } else {
+          const message = error instanceof Error ? error.message : "ffprobe failed.";
+          store.setFileError(item.path, item.id, message);
         }
-        const message = error instanceof Error ? error.message : "ffprobe failed.";
-        store.setFileError(item.path, item.id, message);
       }
+      remaining -= 1;
+      publishInspect(true, remaining, items.length);
     }
-    const left = store.listItems().filter((item) => store.getInspectionSig(item.id) !== `${item.path}|${item.sizeBytes}`);
+    publishInspect(false, leftoverCount(), store.listItems().length);
+  }
+
+  function inspectStillOpen(item: NonNullable<ReturnType<Store["getItem"]>>): boolean {
+    if (store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
+    return !store.listErrors().some((error) => error.itemId === item.id);
+  }
+
+  function leftoverCount(): number {
+    return store.listItems().filter((item) => inspectStillOpen(item)).length;
+  }
+
+  function publishInspect(walking: boolean, pending: number, total: number): void {
     store.setInspectState({
-      walking: false,
-      pending: left.length,
-      inspected: store.listItems().length - left.length,
+      walking: walking && pending > 0,
+      pending,
+      inspected: Math.max(0, total - pending - store.listErrors().length),
       failed: store.listErrors().length,
     });
   }
