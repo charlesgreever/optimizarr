@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, formatSize, type LibraryRow } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
@@ -8,6 +8,10 @@ import { RowActions } from "../components/RowActions";
 export function SeriesPage() {
   const [items, setItems] = useState<LibraryRow[]>([]);
   const [msg, setMsg] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [searchParams] = useSearchParams();
+  const focus = searchParams.get("focus");
+
   const load = () => void api.series().then((r) => setItems(r.items)).catch((e: Error) => setMsg(e.message));
   useEffect(() => {
     void api.refresh().then(load).catch((e: Error) => {
@@ -25,12 +29,33 @@ export function SeriesPage() {
     return [...map.entries()];
   }, [items]);
 
+  useEffect(() => {
+    if (!focus) return;
+    const match = groups.find(([, eps]) => eps.some((ep) => ep.id === focus));
+    if (!match) return;
+    setCollapsed((current) => {
+      if (!current.has(match[0])) return current;
+      const next = new Set(current);
+      next.delete(match[0]);
+      return next;
+    });
+  }, [focus, groups]);
+
+  function toggle(key: string) {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   return (
     <section>
       <PageHead title="Series">
         <RefreshLibrary onDone={load} />
       </PageHead>
-      <Help>Episode rows stay dense. Open an episode for custom work. Optimize all episodes queues every episode that already has open work.</Help>
+      <Help>Click a series header to hide its episode table. Optimize all episodes still queues that show without collapsing it.</Help>
       {groups.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
@@ -41,17 +66,24 @@ export function SeriesPage() {
       ) : (
         groups.map(([key, eps]) => {
           const head = eps[0];
+          const open = !collapsed.has(key);
           return (
             <div key={key} className="glass mt-5 overflow-x-auto p-3">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2">
-                <div>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  aria-expanded={open}
+                  onClick={() => toggle(key)}
+                >
                   <div className="font-semibold">{head.showTitle}</div>
-                  <div className="text-xs text-slate-400">{head.instanceName} · {eps.length} episodes</div>
-                </div>
+                  <div className="text-xs text-slate-400">{head.instanceName} · {eps.length} episodes{open ? "" : " · collapsed"}</div>
+                </button>
                 <button
                   className="btn"
                   type="button"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
                     void api.optimizeShow(head.instanceId, head.showTitle ?? "").then((r) => {
                       setMsg(`Queued ${Number((r as { queued: number }).queued)}. Skipped ${Number((r as { skipped: number }).skipped)}.`);
                       load();
@@ -61,38 +93,40 @@ export function SeriesPage() {
                   Optimize all episodes
                 </button>
               </div>
-              <table className="dense">
-                <thead>
-                  <tr>
-                    <th>Episode</th>
-                    <th>Video</th>
-                    <th>Audio</th>
-                    <th>Subs</th>
-                    <th>Quality</th>
-                    <th>Size</th>
-                    <th>Plan</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {eps.map((item) => (
-                    <tr key={item.id} id={item.id}>
-                      <td>
-                        <Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link>
-                      </td>
-                      <td className="text-sm">{item.videoLabel || "—"}</td>
-                      <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
-                      <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
-                      <td>{item.quality || "—"}</td>
-                      <td>{formatSize(item.sizeBytes)}</td>
-                      <td className="text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
-                      <td>
-                        <RowActions item={item} onDone={load} />
-                      </td>
+              {open && (
+                <table className="dense">
+                  <thead>
+                    <tr>
+                      <th>Episode</th>
+                      <th>Video</th>
+                      <th>Audio</th>
+                      <th>Subs</th>
+                      <th>Quality</th>
+                      <th>Size</th>
+                      <th>Plan</th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {eps.map((item) => (
+                      <tr key={item.id} id={item.id}>
+                        <td>
+                          <Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link>
+                        </td>
+                        <td className="text-sm">{item.videoLabel || "—"}</td>
+                        <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
+                        <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
+                        <td>{item.quality || "—"}</td>
+                        <td>{formatSize(item.sizeBytes)}</td>
+                        <td className="text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
+                        <td>
+                          <RowActions item={item} onDone={load} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           );
         })
