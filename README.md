@@ -12,12 +12,15 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 ## What it does
 
 - Syncs movies from Radarr and episodes from Sonarr over their APIs
+- Refreshes Arr libraries at startup, every 15 minutes, and on request without overlapping a running refresh
 - Opens the network path each Arr reports
 - Inspects MKV with ffprobe and ISO disc images with ffmpeg
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
+- Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions
 - Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check
+- Checks review-volume free space before work and returns interrupted jobs to the queue after restart
 - Can create named Arr quality profiles from the current size caps without starting a search
 
 ## Installation

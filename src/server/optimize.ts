@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { copyFile, mkdir, stat, unlink } from "node:fs/promises";
+import { copyFile, mkdir, stat, statfs, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { isIsoPath, parseFfprobe } from "./inspect.ts";
@@ -74,13 +74,17 @@ export function resolvePlan(value: Suggestion | ExecutablePlan | undefined, writ
   return planFromSuggestion(value, writeMode);
 }
 
-export function ffmpegOptimizer(): Optimizer {
+export type CapacityProbe = (path: string) => Promise<number>;
+
+export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Optimizer {
   return async (req) => {
     const plan = resolvePlan(req.plan ?? req.suggestion);
     if (req.backend === "none" && planHasVideoTranscode(plan)) {
       throw new Error("Hardware encode is unavailable. Optimizarr will not fall back to a software encode.");
     }
     await mkdir(req.reviewDir, { recursive: true });
+    const plannedBytes = plan.estimatedOutputBytes ?? req.report.sizeBytes;
+    await assertReviewCapacity(req.reviewDir, Math.max(req.report.sizeBytes, plannedBytes) + 256 * 1024 ** 2, options.capacity);
     const workDir = join(req.reviewDir, ".work");
     await mkdir(workDir, { recursive: true });
     const sidecarPath = join(req.reviewDir, `${basename(req.sourcePath).replace(/\.[^.]+$/, "")}.mkv`);
@@ -203,9 +207,27 @@ export function muxPlanArgs(source: string, dest: string, plan: ExecutablePlan, 
   const args = ["-o", dest];
   if (audio.length) args.push("--audio-tracks", [...new Set(audio)].join(","));
   if (keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
+  else if (plan.subtitles.some((op) => op.op === "remove")) args.push("--no-subtitles");
   args.push(source);
   args.push(...extras);
   return args;
+}
+
+export async function assertReviewCapacity(
+  reviewDir: string,
+  requiredBytes: number,
+  capacity: CapacityProbe = availableBytes,
+): Promise<void> {
+  const freeBytes = await capacity(reviewDir);
+  if (freeBytes >= requiredBytes) return;
+  const needGb = (requiredBytes / 1024 ** 3).toFixed(1);
+  const freeGb = (freeBytes / 1024 ** 3).toFixed(1);
+  throw new Error(`The review volume has ${freeGb} GB of free space, but this job needs about ${needGb} GB.`);
+}
+
+async function availableBytes(path: string): Promise<number> {
+  const info = await statfs(path);
+  return Number(info.bavail) * Number(info.bsize);
 }
 
 export function optimizeSteps(sourcePath: string, plan: ExecutablePlan): Array<"iso_remux" | "mux" | "encode"> {

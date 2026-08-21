@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSonarrEpisodes } from "./arr.ts";
+import { parseRadarrMovies, parseRootFolders, parseSonarrEpisodes } from "./arr.ts";
 
 describe("Arr identity", () => {
   it("keeps Sonarr series id and episode file id separate from the episode id", () => {
@@ -34,5 +34,23 @@ describe("Arr identity", () => {
       [],
     );
     expect(episodes).toEqual([]);
+  });
+
+  it("prefers the Arr-hosted poster path over an external remote URL", () => {
+    const movies = parseRadarrMovies([{
+      id: 1,
+      title: "Film",
+      movieFile: { path: "/movies/film.mkv", size: 1 },
+      images: [{ coverType: "poster", url: "/MediaCover/1/poster.jpg", remoteUrl: "https://cdn.example/poster.jpg" }],
+    }]);
+
+    expect(movies[0]?.posterUrl).toBe("/MediaCover/1/poster.jpg");
+  });
+
+  it("parses authoritative Arr library roots", () => {
+    expect(parseRootFolders([{ id: 1, path: "/mnt/nas/movies" }, { id: 2, path: "/mnt/nas/uhd" }])).toEqual([
+      "/mnt/nas/movies",
+      "/mnt/nas/uhd",
+    ]);
   });
 });

@@ -4,7 +4,7 @@ import type { Store } from "./store.ts";
 import type { HardwareInfo, Job, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
-import { CancelledError, isExecutablePlan, resolvePlan } from "./optimize.ts";
+import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
 import { promote } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
@@ -28,6 +28,7 @@ export class JobService {
   constructor(private readonly opts: JobServiceOptions) {}
 
   start(): void {
+    this.opts.store.recoverInterruptedJobs();
     this.timer = setInterval(() => void this.tick(), 500);
   }
 
@@ -45,6 +46,8 @@ export class JobService {
       return { error: "This title already has an active job.", status: 409 };
     }
     const id = randomUUID();
+    const writeMode = this.opts.store.getSettings().writeMode;
+    const plan = planFromSuggestion(suggestion, writeMode);
     this.opts.store.insertJob({
       id,
       itemId,
@@ -56,7 +59,8 @@ export class JobService {
       warning: suggestion.warning,
       runNow,
       createdAt: this.now(),
-      plan: suggestion,
+      writeMode,
+      plan,
     });
     void this.tick();
     return { id };

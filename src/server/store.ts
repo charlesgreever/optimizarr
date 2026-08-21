@@ -2,8 +2,8 @@ import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type {
   ActivityOutcome,
-  ArrInstance,
   ExclusionKind,
+  ExecutablePlan,
   FileError,
   HistoryRow,
   InspectionReport,
@@ -11,15 +11,16 @@ import type {
   JobPhase,
   JobStatus,
   LibraryItem,
-  PlayerInstance,
   ReviewItem,
   ReviewStatus,
   Settings,
   Suggestion,
 } from "./types.ts";
-import { DEFAULT_SETTINGS } from "./types.ts";
 import { normalizeInspection } from "./inspect.ts";
 import { displayTitle, tokenize } from "./titles.ts";
+import { parseStoredSettings } from "./settings.ts";
+import type { SuggestionFilters } from "./suggestion-filters.ts";
+import { suggestionTrackComparison } from "./tracks.ts";
 
 export type Page<T> = { items: T[]; nextOffset: number | null; total: number };
 
@@ -30,12 +31,23 @@ export type LibrarySnapshot = {
   error: string | null;
 };
 
+type JobPlan = Suggestion | ExecutablePlan;
+
 export type SeriesSummaryRecord = {
   instanceId: string;
   instanceName: string;
   arrSeriesId: number;
   showTitle: string;
   episodeCount: number;
+};
+
+export type StoredInstance = {
+  id: string;
+  kind: "radarr" | "sonarr" | "plex" | "jellyfin";
+  name: string;
+  url: string;
+  secret: string | null;
+  enabled: boolean;
 };
 
 export class Store {
@@ -144,6 +156,11 @@ export class Store {
         kind TEXT NOT NULL,
         value TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS library_roots (
+        instance_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (instance_id, path)
+      );
       CREATE TABLE IF NOT EXISTS inspect_state (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         walking INTEGER NOT NULL DEFAULT 0,
@@ -187,18 +204,12 @@ export class Store {
 
   getSettings(): Settings {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = 'app'").get() as { value: string } | undefined;
-    const parsed = row ? (JSON.parse(row.value) as Record<string, unknown>) : {};
-    const writeMode = parsed.writeMode === "direct" ? "direct" : "sidecar";
-    return {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...((parsed.sizeCaps as object) ?? {}) },
-      suggestionDefaults: {
-        ...DEFAULT_SETTINGS.suggestionDefaults,
-        ...((parsed.suggestionDefaults as object) ?? {}),
-      },
-      writeMode,
-    } as Settings;
+    if (!row) return parseStoredSettings({});
+    try {
+      return parseStoredSettings(JSON.parse(row.value));
+    } catch {
+      return parseStoredSettings({});
+    }
   }
 
   saveSettings(next: Settings): void {
@@ -255,7 +266,7 @@ export class Store {
 
   upsertInstance(row: {
     id?: string;
-    kind: string;
+    kind: StoredInstance["kind"];
     name: string;
     url: string;
     secret?: string | null;
@@ -273,18 +284,35 @@ export class Store {
     return id;
   }
 
-  listInstances(): Array<ArrInstance | PlayerInstance & { secret: string | null; kind: string }> {
-    return this.db.prepare("SELECT * FROM instances").all() as Array<ArrInstance | PlayerInstance & { secret: string | null; kind: string }>;
+  listInstances(): StoredInstance[] {
+    return (this.db.prepare("SELECT * FROM instances").all() as Record<string, unknown>[]).map(mapInstance);
   }
 
-  getInstance(id: string): { id: string; kind: string; name: string; url: string; secret: string | null; enabled: number } | undefined {
-    return this.db.prepare("SELECT * FROM instances WHERE id = ?").get(id) as
-      | { id: string; kind: string; name: string; url: string; secret: string | null; enabled: number }
-      | undefined;
+  getInstance(id: string): StoredInstance | undefined {
+    const row = this.db.prepare("SELECT * FROM instances WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? mapInstance(row) : undefined;
   }
 
   deleteInstance(id: string): void {
-    this.db.prepare("DELETE FROM instances WHERE id = ?").run(id);
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM library_roots WHERE instance_id = ?").run(id);
+      this.db.prepare("DELETE FROM instances WHERE id = ?").run(id);
+    })();
+  }
+
+  replaceLibraryRoots(instanceId: string, paths: string[]): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM library_roots WHERE instance_id = ?").run(instanceId);
+      const insert = this.db.prepare("INSERT INTO library_roots (instance_id, path) VALUES (?, ?)");
+      for (const path of new Set(paths)) insert.run(instanceId, path);
+    })();
+  }
+
+  listLibraryRoots(instanceId?: string): string[] {
+    const rows = instanceId
+      ? this.db.prepare("SELECT path FROM library_roots WHERE instance_id = ? ORDER BY path").all(instanceId)
+      : this.db.prepare("SELECT path FROM library_roots ORDER BY path").all();
+    return (rows as Array<{ path: string }>).map((row) => row.path);
   }
 
   upsertItem(item: Omit<LibraryItem, "hasPoster" | "instanceName"> & { posterBytes?: Buffer | null }): string {
@@ -474,28 +502,30 @@ export class Store {
     );
   }
 
-  suggestionPage(offset: number, limit: number, query = ""): Page<Suggestion & { displayTitle: string; instanceName?: string; type?: LibraryItem["type"]; quality?: string; hasPoster: boolean }> {
-    const tokens = tokenize(query);
-    const search = tokens.map(() => `LOWER(COALESCE(i.title, '') || ' ' || COALESCE(i.show_title, '') || ' ' || COALESCE(i.episode_title, '') || ' ' || COALESCE(i.quality, '') || ' ' || COALESCE(n.name, '') || ' ' || CASE WHEN i.type = 'episode' THEN printf('s%02de%02d %dx%d', i.season, i.episode, i.season, i.episode) ELSE '' END) LIKE ?`).join(" AND ");
-    const where = `s.dismissed = 0${search ? ` AND ${search}` : ""}`;
-    const params = tokens.map((token) => `%${token}%`);
-    const total = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM suggestions s LEFT JOIN library_items i ON i.id = s.item_id LEFT JOIN instances n ON n.id = i.instance_id WHERE ${where}`).get(...params) as { n: number }).n);
+  suggestionPage(offset: number, limit: number, query = "", filters: SuggestionFilters = {}): Page<Suggestion & { displayTitle: string; instanceName?: string; type?: LibraryItem["type"]; quality?: string; hasPoster: boolean }> {
+    const filtered = suggestionWhere(query, filters, this.getSettings());
+    const joins = "FROM suggestions s LEFT JOIN library_items i ON i.id = s.item_id LEFT JOIN instances n ON n.id = i.instance_id LEFT JOIN inspections ins ON ins.item_id = i.id";
+    const total = Number((this.db.prepare(`SELECT COUNT(*) AS n ${joins} WHERE ${filtered.where}`).get(...filtered.params) as { n: number }).n);
     const rows = this.db.prepare(
       `SELECT s.payload, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
               i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title,
               i.quality AS item_quality, i.poster_bytes AS item_poster_bytes, i.poster_remote AS item_poster_remote,
-              n.name AS item_instance_name
-       FROM suggestions s
-       LEFT JOIN library_items i ON i.id = s.item_id
-       LEFT JOIN instances n ON n.id = i.instance_id
-       WHERE ${where}
+              n.name AS item_instance_name, ins.report AS inspection_report
+       ${joins}
+       WHERE ${filtered.where}
        ORDER BY LOWER(COALESCE(i.show_title, i.title, s.item_id)), i.season, i.episode, s.id
        LIMIT ? OFFSET ?`,
-    ).all(...params, limit, offset) as Record<string, unknown>[];
+    ).all(...filtered.params, limit, offset) as Record<string, unknown>[];
     return page(rows.map((row) => {
       const suggestion = JSON.parse(String(row.payload)) as Suggestion;
+      const report = row.inspection_report == null
+        ? null
+        : normalizeInspection(JSON.parse(String(row.inspection_report)) as Record<string, unknown>);
+      const tracks = suggestionTrackComparison(report, suggestion);
       return {
         ...suggestion,
+        now: { ...suggestion.now, tracks: tracks.nowTracks },
+        after: { ...suggestion.after, tracks: tracks.afterTracks },
         displayTitle: joinedDisplayTitle(row, suggestion.itemId),
         instanceName: row.item_instance_name == null ? undefined : String(row.item_instance_name),
         type: row.item_type === "episode" ? "episode" : row.item_type === "movie" ? "movie" : undefined,
@@ -503,6 +533,19 @@ export class Store {
         hasPoster: Boolean(row.item_poster_bytes || row.item_poster_remote),
       };
     }), total, offset, limit);
+  }
+
+  suggestionIds(query = "", filters: SuggestionFilters = {}): string[] {
+    const filtered = suggestionWhere(query, filters, this.getSettings());
+    const rows = this.db.prepare(
+      `SELECT s.id FROM suggestions s
+       LEFT JOIN library_items i ON i.id = s.item_id
+       LEFT JOIN instances n ON n.id = i.instance_id
+       LEFT JOIN inspections ins ON ins.item_id = i.id
+       WHERE ${filtered.where}
+       ORDER BY s.id`,
+    ).all(...filtered.params) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
   }
 
   setFileError(path: string, itemId: string | null, reason: string): void {
@@ -613,11 +656,11 @@ export class Store {
       );
   }
 
-  listJobs(): Array<Job & { plan: Suggestion }> {
+  listJobs(): Array<Job & { plan: JobPlan }> {
     return (this.db.prepare("SELECT * FROM jobs WHERE queue_visible = 1 ORDER BY position ASC").all() as Record<string, unknown>[]).map(mapJob);
   }
 
-  jobPage(offset: number, limit: number): Page<Job & { plan: Suggestion }> {
+  jobPage(offset: number, limit: number): Page<Job & { plan: JobPlan }> {
     const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE queue_visible = 1").get() as { n: number }).n);
     const rows = this.db.prepare(
       `SELECT j.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
@@ -628,12 +671,12 @@ export class Store {
     return page(rows.map((row) => ({ ...mapJob(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit);
   }
 
-  getJob(id: string): (Job & { plan: Suggestion }) | undefined {
+  getJob(id: string): (Job & { plan: JobPlan }) | undefined {
     const row = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? mapJob(row) : undefined;
   }
 
-  activeJobForItem(itemId: string): (Job & { plan: Suggestion }) | undefined {
+  activeJobForItem(itemId: string): (Job & { plan: JobPlan }) | undefined {
     const row = this.db
       .prepare("SELECT * FROM jobs WHERE item_id = ? AND status IN ('queued','held','paused','running')")
       .get(itemId) as Record<string, unknown> | undefined;
@@ -655,6 +698,12 @@ export class Store {
       return rows.map((row) => row.id);
     });
     return cancel();
+  }
+
+  recoverInterruptedJobs(): number {
+    return this.db.prepare(
+      "UPDATE jobs SET status = 'queued', phase = 'queued', progress = 0, error = 'Recovered after Optimizarr restarted.' WHERE status = 'running'",
+    ).run().changes;
   }
 
   removeFinishedJob(id: string): "removed" | "active" | "missing" {
@@ -741,7 +790,7 @@ export class Store {
       id: String(r.id),
       itemId: String(r.item_id),
       displayTitle: this.getItem(String(r.item_id))?.title ?? String(r.item_id),
-      outcome: r.outcome as ActivityOutcome,
+      outcome: activityOutcome(r.outcome),
       bytesSaved: Number(r.bytes_saved),
       createdAt: Number(r.created_at),
     }));
@@ -759,7 +808,7 @@ export class Store {
       id: String(row.id),
       itemId: String(row.item_id),
       displayTitle: joinedDisplayTitle(row, String(row.item_id)),
-      outcome: row.outcome as ActivityOutcome,
+      outcome: activityOutcome(row.outcome),
       bytesSaved: Number(row.bytes_saved),
       createdAt: Number(row.created_at),
     })), total, offset, limit);
@@ -771,7 +820,7 @@ export class Store {
     review: number;
     errors: number;
     failed: number;
-    running: (Job & { plan: Suggestion }) | null;
+    running: (Job & { plan: JobPlan }) | null;
   } {
     const counts = this.db.prepare(
       `SELECT
@@ -840,7 +889,7 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     arrId: Number(row.arr_id),
     arrSeriesId: row.arr_series_id == null ? null : Number(row.arr_series_id),
     arrEpisodeFileId: row.arr_episode_file_id == null ? null : Number(row.arr_episode_file_id),
-    type: row.type === "episode" ? "episode" : "movie",
+    type: mediaType(row.type),
     title: String(row.title),
     showTitle: row.show_title == null ? null : String(row.show_title),
     season: row.season == null ? null : Number(row.season),
@@ -851,7 +900,7 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     quality: String(row.quality ?? ""),
     resolution: String(row.resolution ?? ""),
     profile: String(row.profile ?? ""),
-    tags: JSON.parse(String(row.tags ?? "[]")) as string[],
+    tags: stringList(JSON.parse(String(row.tags ?? "[]"))),
     posterRemoteUrl: row.poster_remote == null ? null : String(row.poster_remote),
     hasPoster: Boolean(row.poster_bytes || row.poster_remote),
     sizeExempt: Number(row.size_exempt) === 1,
@@ -871,14 +920,14 @@ function mapLibrarySnapshot(row: Record<string, unknown>): LibrarySnapshot {
   };
 }
 
-function mapJob(row: Record<string, unknown>): Job & { plan: Suggestion } {
+function mapJob(row: Record<string, unknown>): Job & { plan: JobPlan } {
   return {
     id: String(row.id),
     itemId: String(row.item_id),
     suggestionId: row.suggestion_id == null ? null : String(row.suggestion_id),
     displayTitle: "",
-    status: row.status as JobStatus,
-    phase: row.phase as JobPhase,
+    status: jobStatus(row.status),
+    phase: jobPhase(row.phase),
     progress: Number(row.progress),
     error: row.error == null ? null : String(row.error),
     warning: row.warning == null ? null : String(row.warning),
@@ -886,7 +935,7 @@ function mapJob(row: Record<string, unknown>): Job & { plan: Suggestion } {
     createdAt: Number(row.created_at),
     writeMode: row.write_mode === "direct" ? "direct" : "sidecar",
     promoteError: row.promote_error == null ? null : String(row.promote_error),
-    plan: JSON.parse(String(row.plan)) as Suggestion,
+    plan: JSON.parse(String(row.plan)) as JobPlan,
   };
 }
 
@@ -897,7 +946,7 @@ function mapReview(row: Record<string, unknown>): ReviewItem {
     jobId: String(row.job_id),
     itemId: String(row.item_id),
     displayTitle: "",
-    status: row.status as ReviewStatus,
+    status: reviewStatus(row.status),
     flagged: Number(row.flagged) === 1,
     flagReason: row.flag_reason == null ? null : String(row.flag_reason),
     sourcePath: String(row.source_path),
@@ -906,6 +955,50 @@ function mapReview(row: Record<string, unknown>): ReviewItem {
     sidecar: compare.sidecar,
     error: row.error == null ? null : String(row.error),
   };
+}
+
+function mapInstance(row: Record<string, unknown>): StoredInstance {
+  const kind = row.kind;
+  if (kind !== "radarr" && kind !== "sonarr" && kind !== "plex" && kind !== "jellyfin") {
+    throw new Error(`The saved integration kind ${String(kind)} is invalid.`);
+  }
+  return {
+    id: String(row.id),
+    kind,
+    name: String(row.name),
+    url: String(row.url),
+    secret: row.secret == null ? null : String(row.secret),
+    enabled: Number(row.enabled) === 1,
+  };
+}
+
+function mediaType(value: unknown): LibraryItem["type"] {
+  if (value === "movie" || value === "episode") return value;
+  throw new Error(`The saved media type ${String(value)} is invalid.`);
+}
+
+function jobStatus(value: unknown): JobStatus {
+  if (value === "queued" || value === "held" || value === "paused" || value === "running" || value === "succeeded" || value === "failed" || value === "cancelled") return value;
+  throw new Error(`The saved job status ${String(value)} is invalid.`);
+}
+
+function jobPhase(value: unknown): JobPhase {
+  if (value === "queued" || value === "held" || value === "paused" || value === "copying" || value === "muxing" || value === "creating_stereo" || value === "transcoding" || value === "finishing" || value === "idle") return value;
+  throw new Error(`The saved job phase ${String(value)} is invalid.`);
+}
+
+function reviewStatus(value: unknown): ReviewStatus {
+  if (value === "pending" || value === "keeping" || value === "discarding") return value;
+  throw new Error(`The saved review status ${String(value)} is invalid.`);
+}
+
+function activityOutcome(value: unknown): ActivityOutcome {
+  if (value === "kept" || value === "discarded" || value === "flagged" || value === "failed" || value === "cancelled") return value;
+  throw new Error(`The saved activity outcome ${String(value)} is invalid.`);
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function page<T>(items: T[], total: number, offset: number, limit: number): Page<T> {
@@ -923,4 +1016,52 @@ function joinedDisplayTitle(row: Record<string, unknown>, fallback: string): str
     episode: row.item_episode == null ? null : Number(row.item_episode),
     episodeTitle: row.item_episode_title == null ? null : String(row.item_episode_title),
   });
+}
+
+function suggestionWhere(query: string, filters: SuggestionFilters, settings: Settings): { where: string; params: unknown[] } {
+  const conditions = ["s.dismissed = 0"];
+  const params: unknown[] = [];
+  for (const token of tokenize(query)) {
+    conditions.push(`LOWER(COALESCE(i.title, '') || ' ' || COALESCE(i.show_title, '') || ' ' || COALESCE(i.episode_title, '') || ' ' || COALESCE(i.quality, '') || ' ' || COALESCE(n.name, '') || ' ' || CASE WHEN i.type = 'episode' THEN printf('s%02de%02d %dx%d', i.season, i.episode, i.season, i.episode) ELSE '' END) LIKE ?`);
+    params.push(`%${token}%`);
+  }
+  if (filters.type) {
+    conditions.push("i.type = ?");
+    params.push(filters.type);
+  }
+  if (filters.resolution === "4k") {
+    conditions.push("(LOWER(i.resolution) LIKE '%2160%' OR LOWER(i.resolution) LIKE '%4k%' OR CAST(json_extract(ins.report, '$.height') AS INTEGER) >= 2160)");
+  }
+  if (filters.resolution === "1080p") {
+    conditions.push("(LOWER(i.resolution) LIKE '%1080%' OR CAST(json_extract(ins.report, '$.height') AS INTEGER) BETWEEN 1000 AND 2159)");
+  }
+  if (filters.hdr === "hdr") conditions.push("json_extract(ins.report, '$.hdr') <> 'none'");
+  if (filters.hdr === "sdr") conditions.push("json_extract(ins.report, '$.hdr') = 'none'");
+  if (filters.codec) {
+    const codecCondition = filters.codec === "hevc"
+      ? "(LOWER(json_extract(ins.report, '$.videoCodec')) LIKE '%hevc%' OR LOWER(json_extract(ins.report, '$.videoCodec')) LIKE '%h265%')"
+      : `LOWER(json_extract(ins.report, '$.videoCodec')) LIKE ?`;
+    conditions.push(codecCondition);
+    if (filters.codec !== "hevc") params.push(`%${filters.codec}%`);
+  }
+  if (filters.overCap !== undefined) {
+    const comparison = filters.overCap ? ">" : "<=";
+    conditions.push(`CAST(json_extract(ins.report, '$.sizePerHourGb') AS REAL) ${comparison} CASE json_extract(s.payload, '$.category')
+      WHEN 'movie1080p' THEN ? WHEN 'movie4kSdr' THEN ? WHEN 'movie4kHdr' THEN ? WHEN 'tv1080p' THEN ? WHEN 'tv4k' THEN ? END`);
+    params.push(
+      settings.sizeCaps.movie1080p,
+      settings.sizeCaps.movie4kSdr,
+      settings.sizeCaps.movie4kHdr,
+      settings.sizeCaps.tv1080p,
+      settings.sizeCaps.tv4k,
+    );
+  }
+  if (filters.extraTracks !== undefined) {
+    conditions.push(`${filters.extraTracks ? "" : "NOT "}EXISTS (SELECT 1 FROM json_each(s.payload, '$.actions') WHERE value = 'tracks')`);
+  }
+  if (filters.exempt !== undefined) conditions.push(`i.size_exempt = ${filters.exempt ? 1 : 0}`);
+  if (filters.hardwareWarning !== undefined) {
+    conditions.push(`${filters.hardwareWarning ? "" : "NOT "}COALESCE(json_extract(s.payload, '$.warning'), '') LIKE 'Hardware encode is unavailable.%'`);
+  }
+  return { where: conditions.join(" AND "), params };
 }

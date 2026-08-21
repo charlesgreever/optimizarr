@@ -19,6 +19,7 @@ export type SuggestInput = {
   forceStereo?: boolean;
   videoTarget: VideoTarget;
   av1Available: boolean;
+  hardwareAvailable?: boolean;
 };
 
 export function sizeCategory(item: LibraryItem, report: InspectionReport): SizeCategory {
@@ -82,10 +83,14 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   if (stripSubs.length) reasons.push("Drop subtitle tracks that are not in your preferred language.");
   if (addStereo) reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");
 
-  let warning: string | null = null;
-  if (transcode && (report.hdr === "dolby_vision" || report.hdr === "hdr10plus")) {
-    warning = "Dolby Vision or HDR10+ metadata may be lost when this file is re-encoded.";
+  const warnings: string[] = [];
+  if (transcode && input.hardwareAvailable === false) {
+    warnings.push("Hardware encode is unavailable. This transcode will fail until CUDA or VAAPI is available.");
   }
+  if (transcode && (report.hdr === "dolby_vision" || report.hdr === "hdr10plus")) {
+    warnings.push("Dolby Vision or HDR10+ metadata may be lost when this file is re-encoded.");
+  }
+  const warning = warnings.length > 0 ? warnings.join(" ") : null;
 
   const afterCodec = transcode ? target.toUpperCase() : report.videoCodec;
   const estimated = transcode && overCap ? Math.max(0, report.sizeBytes - Math.round(cap * (report.durationSec / 3600) * 1024 ** 3)) : null;

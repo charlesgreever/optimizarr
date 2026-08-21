@@ -70,6 +70,12 @@ describe("custom plan validation", () => {
     if (!result.ok) expect(result.errors[0]?.field).toBe("plan");
   });
 
+  it("does not count changing only the output policy as media work", () => {
+    const result = check({ writeMode: "direct" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((error) => error.field === "plan")).toBe(true);
+  });
+
   it("allows removing one audio and subtitle track", () => {
     const result = check({ audio: [{ index: 2, action: "remove" }], subtitles: [{ index: 3, action: "remove" }] });
     expect(result.ok).toBe(true);

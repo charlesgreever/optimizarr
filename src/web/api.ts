@@ -40,7 +40,15 @@ export const api = {
   syncProfiles: () => req<{ results: Array<{ created: string[]; updated: string[]; failed: string[] }> }>("/api/settings/profiles/sync", { method: "POST" }),
   inspect: () => req<InspectState>("/api/inspect/status"),
   errors: (offset = 0, limit = 50) => req<LibraryPage<FileError>>(`/api/errors?offset=${offset}&limit=${limit}`),
-  suggestions: (q = "", offset = 0, limit = 50) => req<LibraryPage<SuggestionRow>>(`/api/suggestions?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
+  suggestions: (q = "", filters: SuggestionFilters = {}, offset = 0, limit = 50) => {
+    const params = new URLSearchParams({ q, offset: String(offset), limit: String(limit) });
+    for (const [key, value] of Object.entries(filters)) if (value !== undefined) params.set(key, String(value));
+    return req<LibraryPage<SuggestionRow>>(`/api/suggestions?${params}`);
+  },
+  queueFiltered: (q: string, filters: SuggestionFilters) =>
+    req<{ queued: number; skipped: number }>("/api/suggestions/queue-filtered", {
+      method: "POST", body: JSON.stringify({ q, filters }),
+    }),
   dismiss: (id: string) => req(`/api/suggestions/${id}/dismiss`, { method: "POST" }),
   queue: (body: Record<string, unknown>) => req("/api/queue", { method: "POST", body: JSON.stringify(body) }),
   jobs: (offset = 0, limit = 50) => req<LibraryPage<JobRow>>(`/api/jobs?offset=${offset}&limit=${limit}`),
@@ -61,6 +69,10 @@ export const api = {
   exempt: (id: string, exempt: boolean) => req(`/api/library/items/${id}/exempt`, { method: "POST", body: JSON.stringify({ exempt }) }),
   optimizeShow: (instanceId: string, seriesId: number) =>
     req(`/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/optimize`, { method: "POST" }),
+  exclusions: () => req<{ exclusions: Exclusion[] }>("/api/exclusions"),
+  addExclusion: (kind: Exclusion["kind"], value: string) =>
+    req<{ exclusions: Exclusion[] }>("/api/exclusions", { method: "POST", body: JSON.stringify({ kind, value }) }),
+  deleteExclusion: (id: string) => req<{ exclusions: Exclusion[] }>(`/api/exclusions/${id}`, { method: "DELETE" }),
 };
 
 export type LibraryPage<T> = { items: T[]; nextOffset: number | null; total: number };
@@ -75,7 +87,8 @@ export type SeriesSummary = {
 };
 
 export type FirstRun = { hasAdmin: boolean; languageConfirmed: boolean; hasReviewPath: boolean; hasArr: boolean; complete: boolean };
-export type Hardware = { backend: string; cuda: boolean; vaapi: boolean; av1: boolean; reason: string | null };
+export type HardwareBackend = "cuda" | "vaapi" | "none";
+export type Hardware = { backend: HardwareBackend; cuda: boolean; vaapi: boolean; av1: boolean; reason: string | null };
 export type SettingsPayload = {
   preferredLanguage: string;
   languageConfirmed: boolean;
@@ -87,7 +100,7 @@ export type SettingsPayload = {
     addStereo: boolean;
     transcodeToSizeCap: boolean;
   };
-  videoTarget: string;
+  videoTarget: "hevc" | "av1";
   concurrency: number;
   conservativeMode: boolean;
   offPeakEnabled: boolean;
@@ -96,7 +109,7 @@ export type SettingsPayload = {
   localAuthBypass: boolean;
   writeMode: "sidecar" | "direct";
   profileAutoAssign: boolean;
-  instances: Array<{ id: string; kind: string; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
+  instances: Array<{ id: string; kind: "radarr" | "sonarr" | "plex" | "jellyfin"; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
   profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;
 };
@@ -139,21 +152,41 @@ export type SuggestionRow = {
   reasons: string[];
   warning: string | null;
   estimatedSavingsBytes: number | null;
-  now: { codec: string | null; quality: string | null; sizeBytes: number | null; sizePerHourGb: number | null };
-  after: { codec: string | null; quality: string | null; sizeBytes: number | null; sizePerHourGb: number | null };
+  now: { codec: string | null; quality: string | null; sizeBytes: number | null; sizePerHourGb: number | null; tracks: string[] };
+  after: { codec: string | null; quality: string | null; sizeBytes: number | null; sizePerHourGb: number | null; tracks: string[] };
 };
-export type JobRow = { id: string; displayTitle: string; status: string; phase: string; progress: number; error: string | null };
+export type SuggestionFilters = {
+  type?: "movie" | "episode";
+  resolution?: "1080p" | "4k";
+  hdr?: "hdr" | "sdr";
+  codec?: "h264" | "hevc" | "av1";
+  overCap?: boolean;
+  extraTracks?: boolean;
+  exempt?: boolean;
+  hardwareWarning?: boolean;
+};
+export type Exclusion = { id: string; kind: "path" | "profile" | "tag" | "title"; value: string };
+export type JobRow = {
+  id: string;
+  displayTitle: string;
+  status: "queued" | "held" | "paused" | "running" | "succeeded" | "failed" | "cancelled";
+  phase: "queued" | "held" | "paused" | "copying" | "muxing" | "creating_stereo" | "transcoding" | "finishing" | "idle";
+  progress: number;
+  error: string | null;
+  warning: string | null;
+  promoteError: string | null;
+};
 export type ReviewRow = {
   id: string;
   displayTitle: string;
-  status: string;
+  status: "pending" | "keeping" | "discarding";
   flagged: boolean;
   flagReason: string | null;
   source: { codec: string | null; sizeBytes: number | null; sizePerHourGb: number | null; durationSec: number; tracks: string };
   sidecar: { codec: string | null; sizeBytes: number | null; sizePerHourGb: number | null; durationSec: number; tracks: string };
   error: string | null;
 };
-export type HistoryRow = { id: string; displayTitle: string; outcome: string; bytesSaved: number; createdAt: number };
+export type HistoryRow = { id: string; displayTitle: string; outcome: "kept" | "discarded" | "flagged" | "failed" | "cancelled"; bytesSaved: number; createdAt: number };
 export type HomePayload = {
   filesOptimized: number;
   spaceSavedBytes: number;
@@ -166,7 +199,7 @@ export type HomePayload = {
 };
 export type FileError = { itemId: string | null; path: string; fileName: string; displayTitle: string; reason: string };
 export type InspectState = { walking: boolean; pending: number; inspected: number; failed: number };
-export type SearchHit = { itemId: string; type: string; displayTitle: string; instanceName: string; href: string };
+export type SearchHit = { itemId: string; type: "movie" | "episode"; displayTitle: string; instanceName: string; href: string };
 export type InspectionReport = {
   listingState: string;
   sourceMethod: string;

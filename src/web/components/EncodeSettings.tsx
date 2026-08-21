@@ -22,7 +22,10 @@ export function EncodeSettings({
       <p className="help">Detected hardware: {hardwareLabel}</p>
       <label className="block text-sm">
         Target
-        <select className="ml-2" value={data.videoTarget} onChange={(event) => onChange({ videoTarget: event.target.value })}>
+        <select className="ml-2" value={data.videoTarget} onChange={(event) => {
+          const target = event.target.value;
+          if (target === "hevc" || target === "av1") onChange({ videoTarget: target });
+        }}>
           <option value="hevc">HEVC</option>
           <option value="av1">AV1</option>
         </select>

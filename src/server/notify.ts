@@ -11,7 +11,9 @@ export async function notifyPlayers(players: PlayerNotify[], httpFetch: typeof f
   for (const player of players) {
     try {
       if (player.kind === "plex") {
-        const res = await httpFetch(`${trimUrl(player.url)}/library/sections/all/refresh?X-Plex-Token=${encodeURIComponent(player.token)}`);
+        const res = await httpFetch(`${trimUrl(player.url)}/library/sections/all/refresh`, {
+          headers: { "X-Plex-Token": player.token },
+        });
         if (!res.ok) errors.push(`Plex at ${player.url} returned HTTP ${res.status}.`);
       } else {
         const res = await httpFetch(`${trimUrl(player.url)}/Library/Refresh`, {

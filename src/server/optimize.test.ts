@@ -8,12 +8,14 @@ import {
   isoRemuxArgs,
   isoRemuxIsShort,
   muxArgs,
+  muxPlanArgs,
   nvencBitrate,
   optimizeSteps,
   parseFfmpegProgress,
   parseMkvmergeProgress,
   planFromSuggestion,
   scaleProgress,
+  assertReviewCapacity,
 } from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
@@ -64,6 +66,11 @@ describe("mkvmerge arguments", () => {
     expect(message).not.toContain("Command failed:");
   });
 
+  it("passes --no-subtitles when every subtitle is removed", () => {
+    const plan = planFromSuggestion({ ...suggestion, keepSubs: [], stripSubs: [3, 4] });
+    expect(muxPlanArgs(source, "/tmp/out.mkv", plan)).toContain("--no-subtitles");
+  });
+
   it("skips the ffmpeg version banner and keeps the encoder error", () => {
     const message = formatToolError("ffmpeg", {
       stderr: [
@@ -78,6 +85,12 @@ describe("mkvmerge arguments", () => {
     expect(message).toContain("ffmpeg failed");
     expect(message).not.toMatch(/ffmpeg version 5\.1\.9/);
     expect(message).toMatch(/libnvidia-encode|opening encoder/i);
+  });
+});
+
+describe("review capacity", () => {
+  it("fails before work when the review volume cannot hold the planned output", async () => {
+    await expect(assertReviewCapacity("/review", 2_000, async () => 1_000)).rejects.toThrow(/free space/i);
   });
 });
 

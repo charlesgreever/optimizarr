@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LibraryPage } from "./api";
-import { retainedNextOffset } from "./library-pages";
+import { refreshFirstPageByKey, retainedNextOffset } from "./library-pages";
 
 type LoadMode = "reset" | "append" | "poll";
 
@@ -46,7 +46,7 @@ export function usePagedList<T>(options: {
           ? result.items
           : mode === "append"
             ? mergeByKey(current, result.items, keyRef.current)
-            : refreshByKey(current, result.items, pageSize, result.total, keyRef.current);
+            : refreshFirstPageByKey(current, result.items, pageSize, result.total, keyRef.current);
       itemsRef.current = nextItems;
       setItems(nextItems);
       setNextOffset(mode === "poll" ? retainedNextOffset(nextItems.length, result.total) : result.nextOffset);
@@ -66,12 +66,12 @@ export function usePagedList<T>(options: {
   }, [pageSize]);
   runRef.current = run;
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     generationRef.current += 1;
@@ -103,11 +103,4 @@ function mergeByKey<T>(current: T[], incoming: T[], keyOf: (row: T) => string): 
   const rows = new Map(current.map((row) => [keyOf(row), row]));
   for (const row of incoming) rows.set(keyOf(row), row);
   return [...rows.values()];
-}
-
-function refreshByKey<T>(current: T[], incoming: T[], pageSize: number, total: number, keyOf: (row: T) => string): T[] {
-  const firstKeys = new Set(current.slice(0, pageSize).map(keyOf));
-  const incomingKeys = new Set(incoming.map(keyOf));
-  const tail = current.filter((row) => !firstKeys.has(keyOf(row)) && !incomingKeys.has(keyOf(row)));
-  return [...incoming, ...tail].slice(0, total);
 }

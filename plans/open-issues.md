@@ -2,6 +2,10 @@
 
 Audit date: 2026-08-21. Baseline: `main` at `e045d76`.
 
+## Full-Main Review Follow-Up
+
+The later full-main review produced an 18-finding remediation plan. All seven phases are implemented in the working tree: request and secret security, domain parsing, Strict Mode paging, queue and output safety, automatic library sync, Suggestions completion, and documentation. [Main Branch Review Remediation](../docs/main-review-remediation.md) maps each behavior to its public regression evidence.
+
 This document covers every GitHub issue that was open during the audit. The audit compared each acceptance list with the public HTTP behavior, server modules, web pages, tests, and commit history. Passing tests support a classification; they do not replace a missing acceptance behavior.
 
 ## Status
@@ -17,7 +21,7 @@ This document covers every GitHub issue that was open during the audit. The audi
 | [#38: Heavy screens load slowly](https://github.com/charlesgreever/optimizarr/issues/38) | Fixed; closed | Batched bounded reads replace the per-row query path. Movies, Suggestions, Queue, Review, Errors, and History return progressive pages; Series returns paged headers first and fetches bounded episode pages only on expansion. Queue and Review suppress overlapping polls while retaining loaded pages. Home and the widget use aggregate counts. The 5,000-episode benchmark reduced the first Series payload from 3,787,645 bytes to 7,023 bytes. |
 | [#39: Concurrent jobs will not save](https://github.com/charlesgreever/optimizarr/issues/39) | Fixed; ready to close | This issue was filed after the initial audit. The persistence API was already correct; Encode lacked a local Save control. Encode now has an explicit Save encode settings action with a focused rendered-component regression test. |
 
-The focused audit run passed 58 tests across `inspect`, `inspection-runner`, `suggest`, `optimize`, `arr-profiles`, and `app`. The full baseline passed 103 tests, typecheck, and the production build. The current implementation gate passes 106 tests across 19 files, typecheck, and the production build.
+The focused issue-audit run passed 58 tests across `inspect`, `inspection-runner`, `suggest`, `optimize`, `arr-profiles`, and `app`. The full baseline passed 103 tests, typecheck, and the production build. After the full-main review follow-up, the current gate passes 127 tests across 22 files, typecheck, the production build, the production dependency audit, and the diff whitespace check.
 
 ## Execution Results
 

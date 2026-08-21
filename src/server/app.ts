@@ -1,9 +1,10 @@
-import { Hono } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import argon2 from "argon2";
 import type { Env } from "./env.ts";
 import { Store } from "./store.ts";
@@ -11,10 +12,6 @@ import { decryptSecret, encryptSecret, loadOrCreateSecret } from "./secrets.ts";
 import { detectHardware, type HardwareProbe } from "./hardware.ts";
 import { isLocalAddress, requestAddress } from "./net.ts";
 import {
-  fetchJson,
-  parseRadarrMovies,
-  parseSonarrEpisodes,
-  parseSonarrSeries,
   testRadarr,
   testSonarr,
   trimUrl,
@@ -29,6 +26,9 @@ import { validateCustomPlan } from "./custom-plan.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { createInspectionRunner } from "./inspection-runner.ts";
 import { createLibraryReadModel } from "./library-read-model.ts";
+import { updateSettings } from "./settings.ts";
+import { LibrarySync, pathsOverlap } from "./library-sync.ts";
+import { parseSuggestionFilters } from "./suggestion-filters.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
 const GENERIC_LOGIN = "Username or password is wrong.";
@@ -43,6 +43,8 @@ export type AppOptions = {
   listIso?: (path: string, size: number) => Promise<string>;
   clock?: () => number;
   readable?: (path: string) => Promise<boolean>;
+  clientAddress?: (context: Context) => string | undefined;
+  syncIntervalMs?: number;
 };
 
 export function createApp(opts: AppOptions) {
@@ -70,20 +72,36 @@ export function createApp(opts: AppOptions) {
     reinspectChangedItem: inspections.reinspectChangedItem,
   });
   jobs.start();
+  const sync = new LibrarySync({
+    store,
+    fetch: httpFetch,
+    decrypt: (packed) => decryptSecret(secret, packed),
+    inspectPending: inspections.inspectPending,
+    intervalMs: opts.syncIntervalMs,
+  });
   const library = createLibraryReadModel(store);
 
   const app = new Hono();
 
   const cookieOpts = { httpOnly: true, path: "/", sameSite: "Lax" as const };
 
-  async function currentUser(c: { req: { header: (n: string) => string | undefined; raw?: { headers?: Headers } } }, rawIp?: string) {
+  function clientAddress(c: Context): string | undefined {
+    if (opts.clientAddress) return opts.clientAddress(c);
+    try {
+      return getConnInfo(c).remote.address;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function currentUser(c: Context) {
     const sid = getCookie(c as never, "optimizarr");
     if (sid) {
       const session = store.getSession(sid, opts.clock?.() ?? Date.now());
       if (session) return { userId: session.userId, sessionId: sid };
     }
     const settings = store.getSettings();
-    const ip = requestAddress(rawIp, c.req.header("x-forwarded-for"), opts.env.trustProxy);
+    const ip = requestAddress(clientAddress(c), c.req.header("x-forwarded-for"), opts.env.trustProxy);
     if (settings.localAuthBypass && isLocalAddress(ip) && store.userCount() > 0) {
       const user = store.onlyUser();
       if (user) return { userId: user.id, sessionId: "local" };
@@ -120,7 +138,7 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/api/auth/status", async (c) => {
-    const user = await currentUser(c, c.req.header("x-real-ip") ?? c.req.header("x-forwarded-for"));
+    const user = await currentUser(c);
     return c.json({
       authenticated: Boolean(user),
       firstRun: firstRunState(),
@@ -155,8 +173,8 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true });
   });
 
-  const authed = async (c: { req: { header: (n: string) => string | undefined }; json: (b: unknown, s?: number) => Response }, next: () => Promise<void>) => {
-    const user = await currentUser(c, c.req.header("x-real-ip"));
+  const authed: MiddlewareHandler = async (c, next) => {
+    const user = await currentUser(c);
     if (!user) return c.json({ error: "Sign in to continue." }, 401);
     await next();
   };
@@ -168,6 +186,8 @@ export function createApp(opts: AppOptions) {
   app.use("/api/inspect/*", authed);
   app.use("/api/suggestions", authed);
   app.use("/api/suggestions/*", authed);
+  app.use("/api/exclusions", authed);
+  app.use("/api/exclusions/*", authed);
   app.use("/api/jobs", authed);
   app.use("/api/jobs/*", authed);
   app.use("/api/review", authed);
@@ -220,26 +240,14 @@ export function createApp(opts: AppOptions) {
   });
 
   app.put("/api/settings", async (c) => {
-    const body = await c.req.json<Partial<Settings>>();
+    const body: unknown = await c.req.json();
     const current = store.getSettings();
-    const next: Settings = {
-      preferredLanguage: body.preferredLanguage ?? current.preferredLanguage,
-      languageConfirmed: body.languageConfirmed ?? current.languageConfirmed,
-      reviewPath: body.reviewPath ?? current.reviewPath,
-      sizeCaps: { ...current.sizeCaps, ...(body.sizeCaps ?? {}) },
-      suggestionDefaults: { ...current.suggestionDefaults, ...(body.suggestionDefaults ?? {}) },
-      videoTarget: body.videoTarget === "av1" ? "av1" : body.videoTarget === "hevc" ? "hevc" : current.videoTarget,
-      concurrency: body.concurrency ?? current.concurrency,
-      conservativeMode: body.conservativeMode ?? current.conservativeMode,
-      offPeakEnabled: body.offPeakEnabled ?? current.offPeakEnabled,
-      offPeakStart: body.offPeakStart ?? current.offPeakStart,
-      offPeakEnd: body.offPeakEnd ?? current.offPeakEnd,
-      localAuthBypass: body.localAuthBypass ?? current.localAuthBypass,
-      inspectConcurrency: body.inspectConcurrency ?? current.inspectConcurrency,
-      writeMode: body.writeMode === "direct" ? "direct" : body.writeMode === "sidecar" ? "sidecar" : current.writeMode,
-      profileAutoAssign: body.profileAutoAssign ?? current.profileAutoAssign,
-    };
-    if (next.reviewPath && unsafeReviewPath(next.reviewPath, store.listItems().map((i) => i.path))) {
+    const parsed = updateSettings(current, body);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    const next = parsed.settings;
+    const knownRoots = store.listLibraryRoots();
+    const guardedPaths = [...knownRoots, ...store.listItems().map((item) => dirnameOf(item.path))];
+    if (next.reviewPath && unsafeReviewPath(next.reviewPath, guardedPaths)) {
       return c.json({ error: "The review folder cannot sit inside an Arr library folder." }, 400);
     }
     const suggestionsChanged = suggestionSettingsChanged(current, next);
@@ -275,6 +283,9 @@ export function createApp(opts: AppOptions) {
       id?: string;
     }>();
     if (!body.kind || !body.name || !body.url) return c.json({ error: "Kind, name, and URL are required." }, 400);
+    if (!["radarr", "sonarr", "plex", "jellyfin"].includes(body.kind)) {
+      return c.json({ error: "That integration kind is invalid." }, 400);
+    }
     const secretPlain = body.apiKey ?? body.token;
     const id = store.upsertInstance({
       id: body.id,
@@ -313,84 +324,8 @@ export function createApp(opts: AppOptions) {
   });
 
   app.post("/api/library/refresh", async (c) => {
-    const started = Date.now();
-    const errors: string[] = [];
-    for (const inst of store.listInstances()) {
-      if (!inst.enabled) continue;
-      const full = store.getInstance(inst.id);
-      if (!full?.secret) continue;
-      const key = decryptSecret(secret, full.secret);
-      try {
-        if (inst.kind === "radarr") {
-          const movies = parseRadarrMovies(await fetchJson(`${trimUrl(inst.url)}/api/v3/movie`, key, httpFetch));
-          for (const movie of movies) {
-            store.upsertItem({
-              id: `${inst.id}:movie:${movie.id}`,
-              instanceId: inst.id,
-              arrId: movie.id,
-              arrSeriesId: null,
-              arrEpisodeFileId: null,
-              type: "movie",
-              title: movie.title,
-              showTitle: null,
-              season: null,
-              episode: null,
-              episodeTitle: null,
-              path: movie.path,
-              sizeBytes: movie.size,
-              quality: movie.quality,
-              resolution: movie.resolution,
-              profile: movie.profile,
-              tags: movie.tags,
-              posterRemoteUrl: movie.posterUrl,
-              sizeExempt: store.getItem(`${inst.id}:movie:${movie.id}`)?.sizeExempt ?? false,
-            });
-          }
-        }
-        if (inst.kind === "sonarr") {
-          const series = parseSonarrSeries(await fetchJson(`${trimUrl(inst.url)}/api/v3/series`, key, httpFetch));
-          for (const show of series) {
-            const episodes = parseSonarrEpisodes(
-              await fetchJson(`${trimUrl(inst.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, httpFetch),
-              show.title,
-              show.posterUrl,
-              show.profile,
-              show.tags,
-            );
-            for (const ep of episodes) {
-              const id = `${inst.id}:episode:${ep.id}`;
-              store.upsertItem({
-                id,
-                instanceId: inst.id,
-                arrId: ep.id,
-                arrSeriesId: ep.seriesId,
-                arrEpisodeFileId: ep.episodeFileId,
-                type: "episode",
-                title: ep.seriesTitle,
-                showTitle: ep.seriesTitle,
-                season: ep.season,
-                episode: ep.episode,
-                episodeTitle: ep.episodeTitle,
-                path: ep.path,
-                sizeBytes: ep.size,
-                quality: ep.quality,
-                resolution: ep.resolution,
-                profile: ep.profile,
-                tags: ep.tags,
-                posterRemoteUrl: ep.posterUrl,
-                sizeExempt: store.getItem(id)?.sizeExempt ?? false,
-              });
-            }
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Sync failed.";
-        errors.push(`${inst.name}: ${message}`);
-      }
-    }
-    void started;
-    void inspections.inspectPending();
-    return c.json({ ok: true, errors, inspect: store.getInspectState() });
+    const result = await sync.refresh();
+    return c.json({ ...result, inspect: store.getInspectState() });
   });
 
   function recomputeSuggestion(itemId: string): Suggestion | null {
@@ -408,6 +343,7 @@ export function createApp(opts: AppOptions) {
       excluded,
       videoTarget: settings.videoTarget,
       av1Available: hw.av1,
+      hardwareAvailable: hw.backend !== "none",
     });
     return store.saveSuggestion(itemId, suggestion) ?? null;
   }
@@ -415,6 +351,7 @@ export function createApp(opts: AppOptions) {
   let lastHardware: HardwareInfo = { backend: "none", cuda: false, vaapi: false, av1: false, reason: null };
   void hardware().then((h) => {
     lastHardware = h;
+    for (const suggestion of store.listSuggestions()) recomputeSuggestion(suggestion.itemId);
   });
 
   function isExcluded(item: ReturnType<Store["getItem"]>): boolean {
@@ -471,6 +408,7 @@ export function createApp(opts: AppOptions) {
       forceTranscode: true,
       videoTarget: settings.videoTarget,
       av1Available: lastHardware.av1,
+      hardwareAvailable: lastHardware.backend !== "none",
     });
     if (!suggestion) return c.json({ error: "Force did not create work for this title." }, 400);
     const saved = store.saveSuggestion(item.id, suggestion);
@@ -497,6 +435,7 @@ export function createApp(opts: AppOptions) {
       forceStereo: true,
       videoTarget: settings.videoTarget,
       av1Available: lastHardware.av1,
+      hardwareAvailable: lastHardware.backend !== "none",
     });
     if (!suggestion?.actions.includes("add_stereo")) {
       return c.json({ error: "Add stereo did not change the plan." }, 400);
@@ -584,12 +523,63 @@ export function createApp(opts: AppOptions) {
 
   app.get("/api/suggestions", (c) => {
     const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
-    return c.json(store.suggestionPage(offset, limit, c.req.query("q") ?? ""));
+    const parsed = suggestionFiltersFromQuery((name) => c.req.query(name));
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    return c.json(store.suggestionPage(offset, limit, c.req.query("q") ?? "", parsed.filters));
+  });
+
+  app.post("/api/suggestions/queue-filtered", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const body: unknown = await c.req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "The filtered queue request is invalid." }, 400);
+    const raw = body as Record<string, unknown>;
+    const parsed = parseSuggestionFilters(raw.filters);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    if (raw.q !== undefined && typeof raw.q !== "string") return c.json({ error: "The suggestion search is invalid." }, 400);
+    let queued = 0;
+    let skipped = 0;
+    for (const id of store.suggestionIds(typeof raw.q === "string" ? raw.q : "", parsed.filters)) {
+      const suggestion = store.getSuggestion(id);
+      if (!suggestion || suggestion.dismissed) {
+        skipped += 1;
+        continue;
+      }
+      const result = jobs.enqueue(suggestion.itemId, suggestion);
+      if ("id" in result) queued += 1;
+      else skipped += 1;
+    }
+    return c.json({ queued, skipped });
   });
 
   app.post("/api/suggestions/:id/dismiss", (c) => {
+    if (!store.getSuggestion(c.req.param("id"))) return c.json({ error: "That suggestion does not exist." }, 404);
     store.dismissSuggestion(c.req.param("id"));
     return c.json({ ok: true });
+  });
+
+  app.get("/api/exclusions", (c) => c.json({ exclusions: store.listExclusions() }));
+
+  app.post("/api/exclusions", async (c) => {
+    const body: unknown = await c.req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "An exclusion kind and value are required." }, 400);
+    const raw = body as Record<string, unknown>;
+    if (raw.kind !== "path" && raw.kind !== "profile" && raw.kind !== "tag" && raw.kind !== "title") {
+      return c.json({ error: "That exclusion kind is invalid." }, 400);
+    }
+    if (typeof raw.value !== "string" || !raw.value.trim()) return c.json({ error: "Enter a value to exclude." }, 400);
+    const id = store.addExclusion(raw.kind, raw.value.trim());
+    for (const item of store.listItems()) recomputeSuggestion(item.id);
+    return c.json({ ok: true, id, exclusions: store.listExclusions() });
+  });
+
+  app.delete("/api/exclusions/:id", (c) => {
+    if (!store.listExclusions().some((rule) => rule.id === c.req.param("id"))) {
+      return c.json({ error: "That exclusion does not exist." }, 404);
+    }
+    store.deleteExclusion(c.req.param("id"));
+    for (const item of store.listItems()) recomputeSuggestion(item.id);
+    return c.json({ ok: true, exclusions: store.listExclusions() });
   });
 
   app.post("/api/queue", async (c) => {
@@ -631,7 +621,12 @@ export function createApp(opts: AppOptions) {
   });
 
   app.post("/api/jobs/:id/run-now", (c) => {
-    store.updateJob(c.req.param("id"), { runNow: true, status: "queued", phase: "queued" });
+    const job = store.getJob(c.req.param("id"));
+    if (!job) return c.json({ error: "That job does not exist." }, 404);
+    if (job.status !== "queued" && job.status !== "held" && job.status !== "paused") {
+      return c.json({ error: "Only waiting jobs can run now." }, 409);
+    }
+    store.updateJob(job.id, { runNow: true, status: "queued", phase: "queued" });
     return c.json({ ok: true });
   });
 
@@ -723,9 +718,9 @@ export function createApp(opts: AppOptions) {
     return c.json({ key: raw });
   });
 
-  const widget = async (c: { req: { header: (n: string) => string | undefined }; json: (b: unknown, s?: number) => Response }) => {
+  const widget = async (c: Context) => {
     const settings = store.getSettings();
-    const ip = requestAddress(c.req.header("x-real-ip"), c.req.header("x-forwarded-for"), opts.env.trustProxy);
+    const ip = requestAddress(clientAddress(c), c.req.header("x-forwarded-for"), opts.env.trustProxy);
     const presented = c.req.header("x-api-key") ?? c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
     const envKey = opts.env.widgetKeyEnv;
     const hash = store.widgetKeyHash();
@@ -752,13 +747,22 @@ export function createApp(opts: AppOptions) {
   app.get("/api/homepage", widget);
 
   app.get("/api/library/:id/poster", async (c) => {
-    const user = await currentUser(c, c.req.header("x-real-ip"));
+    const user = await currentUser(c);
     if (!user) return c.json({ error: "Sign in to continue." }, 401);
     const item = store.getItem(c.req.param("id"));
     if (!item?.posterRemoteUrl) return c.body(null, 404);
     const inst = store.getInstance(item.instanceId);
     if (!inst?.secret) return c.body(null, 404);
-    const res = await httpFetch(item.posterRemoteUrl, { headers: { "X-Api-Key": decryptSecret(secret, inst.secret) } });
+    let posterUrl: URL;
+    let arrOrigin: string;
+    try {
+      posterUrl = new URL(item.posterRemoteUrl, `${trimUrl(inst.url)}/`);
+      arrOrigin = new URL(inst.url).origin;
+    } catch {
+      return c.body(null, 404);
+    }
+    const headers = posterUrl.origin === arrOrigin ? { "X-Api-Key": decryptSecret(secret, inst.secret) } : undefined;
+    const res = await httpFetch(posterUrl, { headers });
     if (!res.ok) return c.body(null, 404);
     return new Response(res.body, { headers: { "Content-Type": res.headers.get("content-type") ?? "image/jpeg", "Cache-Control": "private, max-age=86400" } });
   });
@@ -771,23 +775,19 @@ export function createApp(opts: AppOptions) {
   function publicInstances() {
     return store.listInstances().map((i) => {
       const full = store.getInstance(i.id)!;
-      const base = { id: full.id, kind: full.kind, name: full.name, url: full.url, enabled: Boolean(full.enabled) };
+      const base = { id: full.id, kind: full.kind, name: full.name, url: full.url, enabled: full.enabled };
       if (full.kind === "radarr" || full.kind === "sonarr") return { ...base, hasApiKey: Boolean(full.secret) };
       return { ...base, hasToken: Boolean(full.secret) };
     });
   }
 
+  sync.start();
   void inspections.inspectPending();
-  return { app, store, jobs, inspectPending: inspections.inspectPending, secret };
+  return { app, store, jobs, sync, inspectPending: inspections.inspectPending, secret };
 }
 
-function unsafeReviewPath(reviewPath: string, libraryPaths: string[]): boolean {
-  const review = resolve(reviewPath);
-  return libraryPaths.some((p) => {
-    if (!p) return false;
-    const lib = resolve(dirnameOf(p));
-    return review === lib || review.startsWith(`${lib}/`) || lib.startsWith(`${review}/`);
-  });
+function unsafeReviewPath(reviewPath: string, libraryRoots: string[]): boolean {
+  return libraryRoots.some((path) => path.length > 0 && pathsOverlap(reviewPath, path));
 }
 
 function dirnameOf(path: string): string {
@@ -810,4 +810,26 @@ function pageRequest(rawOffset: string | undefined, rawLimit: string | undefined
     offset: Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0,
     limit: Number.isSafeInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50,
   };
+}
+
+function suggestionFiltersFromQuery(query: (name: string) => string | undefined) {
+  const booleanValue = (name: string): boolean | undefined | "invalid" => {
+    const value = query(name);
+    if (value === undefined || value === "") return undefined;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return "invalid";
+  };
+  const raw: Record<string, unknown> = {
+    type: query("type"),
+    resolution: query("resolution"),
+    hdr: query("hdr"),
+    codec: query("codec"),
+  };
+  for (const name of ["overCap", "extraTracks", "exempt", "hardwareWarning"] as const) {
+    const value = booleanValue(name);
+    if (value === "invalid") return { ok: false as const, error: `The ${name} suggestion filter is invalid.` };
+    if (value !== undefined) raw[name] = value;
+  }
+  return parseSuggestionFilters(raw);
 }

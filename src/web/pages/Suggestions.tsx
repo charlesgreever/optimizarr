@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, formatSize, type SuggestionRow } from "../api";
+import { api, formatSize, type SuggestionFilters, type SuggestionRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
 import { usePagedList } from "../use-paged-list";
@@ -11,6 +11,7 @@ export function SuggestionsPage() {
   const [debouncedQ, setDebouncedQ] = useState(q);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
+  const [filters, setFilters] = useState<SuggestionFilters>({});
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -21,8 +22,8 @@ export function SuggestionsPage() {
     return () => clearTimeout(t);
   }, [q, setParams]);
   const list = usePagedList({
-    queryKey: debouncedQ,
-    loadPage: (offset, limit) => api.suggestions(debouncedQ, offset, limit),
+    queryKey: JSON.stringify([debouncedQ, filters]),
+    loadPage: (offset, limit) => api.suggestions(debouncedQ, filters, offset, limit),
     keyOf: (row: SuggestionRow) => row.id,
   });
   const items = list.items;
@@ -35,6 +36,28 @@ export function SuggestionsPage() {
       </Help>
       <div className="filter-row">
         <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
+        <select value={filters.type ?? ""} onChange={(event) => setFilter("type", event.target.value)}>
+          <option value="">Movies and TV</option><option value="movie">Movies</option><option value="episode">TV episodes</option>
+        </select>
+        <select value={filters.resolution ?? ""} onChange={(event) => setFilter("resolution", event.target.value)}>
+          <option value="">Any resolution</option><option value="1080p">1080p</option><option value="4k">4K</option>
+        </select>
+        <select value={filters.hdr ?? ""} onChange={(event) => setFilter("hdr", event.target.value)}>
+          <option value="">HDR and SDR</option><option value="hdr">HDR</option><option value="sdr">SDR</option>
+        </select>
+        <select value={filters.codec ?? ""} onChange={(event) => setFilter("codec", event.target.value)}>
+          <option value="">Any codec</option><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option>
+        </select>
+        {(["overCap", "extraTracks", "exempt", "hardwareWarning"] as const).map((key) => (
+          <label key={key} className="flex items-center gap-1 text-xs">
+            <input type="checkbox" checked={filters[key] === true} onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.checked || undefined }))} />
+            {filterLabel(key)}
+          </label>
+        ))}
+        <button className="btn-secondary" type="button" onClick={() => void api.queueFiltered(debouncedQ, filters).then((result) => {
+          setMsg(`Queued ${result.queued}; skipped ${result.skipped}.`);
+          return list.reload();
+        }).catch((error: Error) => setMsg(error.message))}>Queue filtered</button>
         <button
           className="btn"
           type="button"
@@ -78,14 +101,16 @@ export function SuggestionsPage() {
                   </td>
                   <td className="max-w-sm text-sm">{item.reasons.join(" ")}</td>
                   <td className="text-sm">
-                    {item.now.codec} · {formatSize(item.now.sizeBytes)}
+                    {item.now.codec}{item.now.quality ? ` · ${item.now.quality}` : ""} · {formatSize(item.now.sizeBytes)}
                     {item.now.sizePerHourGb != null ? ` · ${item.now.sizePerHourGb.toFixed(2)} GB/hr` : ""}
+                    {item.now.tracks.map((track, index) => <div key={`${index}-${track}`} className="text-xs text-slate-400">{track}</div>)}
                   </td>
                   <td className="text-sm">
-                    {item.after.codec ?? "—"}
+                    {item.after.codec ?? "—"}{item.after.quality ? ` · ${item.after.quality}` : ""}
                     {item.after.sizeBytes != null ? ` · ${formatSize(item.after.sizeBytes)}` : ""}
-                    {item.after.sizePerHourGb != null ? ` · ${item.after.sizePerHourGb.toFixed(2)} GB/hr` : " · same video size"}
+                    {item.after.sizePerHourGb != null ? ` · ${item.after.sizePerHourGb.toFixed(2)} GB/hr` : ""}
                     {item.estimatedSavingsBytes ? ` · save ${formatSize(item.estimatedSavingsBytes)}` : ""}
+                    {item.after.tracks.map((track, index) => <div key={`${index}-${track}`} className="text-xs text-slate-400">{track}</div>)}
                   </td>
                   <td>
                     <button className="btn" type="button" onClick={() => void api.queue({ suggestionId: item.id }).then(() => setMsg("Added to queue."))}>
@@ -105,4 +130,24 @@ export function SuggestionsPage() {
       {msg && <p className="mt-3 text-sm">{msg}</p>}
     </section>
   );
+
+  function setFilter(key: "type" | "resolution" | "hdr" | "codec", value: string) {
+    setSelected({});
+    if (key === "type" && (value === "" || value === "movie" || value === "episode")) {
+      setFilters((current) => ({ ...current, type: value || undefined }));
+    }
+    if (key === "resolution" && (value === "" || value === "1080p" || value === "4k")) {
+      setFilters((current) => ({ ...current, resolution: value || undefined }));
+    }
+    if (key === "hdr" && (value === "" || value === "hdr" || value === "sdr")) {
+      setFilters((current) => ({ ...current, hdr: value || undefined }));
+    }
+    if (key === "codec" && (value === "" || value === "h264" || value === "hevc" || value === "av1")) {
+      setFilters((current) => ({ ...current, codec: value || undefined }));
+    }
+  }
+}
+
+function filterLabel(key: "overCap" | "extraTracks" | "exempt" | "hardwareWarning"): string {
+  return { overCap: "Over cap", extraTracks: "Extra tracks", exempt: "Exempt", hardwareWarning: "Hardware warnings" }[key];
 }

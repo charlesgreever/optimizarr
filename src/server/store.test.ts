@@ -90,6 +90,13 @@ describe("store schema migration", () => {
     });
   });
 
+  it("falls back to defaults when the persisted Settings JSON is corrupt", () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-corrupt-settings-")), "optimizarr.db"));
+    stores.push(store);
+    store.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('app', ?)").run("{broken");
+    expect(store.getSettings()).toMatchObject({ writeMode: "sidecar", concurrency: 1, videoTarget: "hevc" });
+  });
+
   it("defaults profile auto-assign on for existing installs and persists an opt-out", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-profile-settings-"));
     const path = join(dir, "optimizarr.db");
@@ -140,5 +147,24 @@ describe("store schema migration", () => {
     expect(loaded?.writeMode).toBe("direct");
     expect(loaded?.promoteError).toBe("Radarr rejected the profile assign.");
     expect((loaded?.plan as { origin?: string }).origin).toBe("custom");
+  });
+
+  it("returns interrupted running jobs to the queue after restart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-recovery-"));
+    const store = new Store(join(dir, "optimizarr.db"));
+    stores.push(store);
+    store.insertJob({
+      id: "job-running", itemId: "item-1", suggestionId: null, status: "running", phase: "transcoding",
+      progress: 0.5, error: null, warning: null, runNow: false, createdAt: 1,
+      plan: { id: "suggestion", itemId: "item-1", actions: [], reasons: [], warning: null, category: "movie1080p",
+        estimatedSavingsBytes: null, now: { codec: null, quality: null, sizeBytes: null, sizePerHourGb: null },
+        after: { codec: null, quality: null, sizeBytes: null, sizePerHourGb: null }, dismissed: false,
+        keepAudio: [], stripAudio: [], keepSubs: [], stripSubs: [] },
+    });
+
+    expect(store.recoverInterruptedJobs()).toBe(1);
+    expect(store.getJob("job-running")).toMatchObject({
+      status: "queued", phase: "queued", progress: 0, error: "Recovered after Optimizarr restarted.",
+    });
   });
 });

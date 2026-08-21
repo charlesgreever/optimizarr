@@ -68,6 +68,21 @@ describe("suggestion engine", () => {
     expect(suggestion?.warning).toMatch(/Dolby Vision/);
   });
 
+  it("marks a transcode when no hardware encoder is available", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({ hdr: "none" }),
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+      hardwareAvailable: false,
+    });
+
+    expect(suggestion?.warning).toMatch(/Hardware encode is unavailable/);
+  });
+
   it("keeps preferred tracks and suggests stereo for Atmos", () => {
     const suggestion = buildSuggestion({
       item: movie,

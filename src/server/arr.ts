@@ -101,6 +101,13 @@ export function parseSonarrEpisodes(payload: unknown, seriesTitle: string, poste
     .filter((row): row is ArrEpisode => Boolean(row));
 }
 
+export function parseRootFolders(payload: unknown): string[] {
+  if (!Array.isArray(payload)) throw shape("Arr root-folder list");
+  return payload
+    .map((raw) => str(asRecord(raw).path, "").trim())
+    .filter((path) => path.length > 0);
+}
+
 export async function testRadarr(url: string, apiKey: string, httpFetch: typeof fetch): Promise<ConnectionResult> {
   try {
     const payload = await fetchJson(`${trimUrl(url)}/api/v3/system/status`, apiKey, httpFetch);
@@ -159,7 +166,7 @@ function resolutionFrom(quality: string, file: Record<string, unknown>): string 
 function posterFrom(images: unknown): string | null {
   if (!Array.isArray(images)) return null;
   const poster = images.map(asRecord).find((img) => String(img.coverType) === "poster");
-  const url = poster ? str(poster.remoteUrl ?? poster.url, "") : "";
+  const url = poster ? str(poster.url ?? poster.remoteUrl, "") : "";
   return url || null;
 }
 

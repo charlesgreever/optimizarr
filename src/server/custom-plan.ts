@@ -47,8 +47,7 @@ export function validateCustomPlan(input: CustomPlanInput): CustomPlanResult {
   const remux = iso && (draft.remuxToMkv !== false);
   const trackWork = audioOps.some((op) => op.op !== "keep") || subOps.some((op) => op.op !== "keep");
   const videoWork = video.kind !== "copy";
-  const writeWork = writeMode !== settings.writeMode;
-  const hasWork = remux || trackWork || videoWork || writeWork;
+  const hasWork = remux || trackWork || videoWork;
   if (!hasWork) {
     errors.push({ field: "plan", message: "This plan does not change the file. Choose a track, remux, or encode option before Queue." });
   }

@@ -1,5 +1,6 @@
 import type { Store, LibrarySnapshot } from "./store.ts";
 import { displayTitle } from "./titles.ts";
+import { audioTrackLabel, subtitleTrackLabel } from "./tracks.ts";
 
 export type Page<T> = {
   items: T[];
@@ -73,21 +74,8 @@ export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false) {
     listingState: report?.listingState ?? null,
     sourceMethod: report?.sourceMethod ?? null,
     videoLabel: report ? `${report.videoCodec} · ${report.width}x${report.height}` : null,
-    audioLabels: report?.audio.map((track) => `${track.language} ${track.codec} ${audioLayout(track.channels)}`) ?? [],
-    subtitleLabels: report?.subtitles.map((track) => {
-      const labels = [track.language, track.codec];
-      if (track.forced) labels.push("Forced");
-      if (track.sdh) labels.push("SDH");
-      return labels.join(" ");
-    }) ?? [],
+    audioLabels: report?.audio.map((track) => audioTrackLabel(track).replace(/^Audio: /, "")) ?? [],
+    subtitleLabels: report?.subtitles.map((track) => subtitleTrackLabel(track).replace(/^Subtitle: /, "")) ?? [],
     trackEditingAvailable: report?.listingState === "complete",
   };
-}
-
-function audioLayout(channels: number): string {
-  if (channels === 1) return "Mono";
-  if (channels === 2) return "2.0";
-  if (channels === 6) return "5.1";
-  if (channels === 8) return "7.1";
-  return channels > 0 ? `${channels} ch` : "Unknown layout";
 }

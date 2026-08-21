@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type FirstRun, type Hardware, type SettingsPayload } from "../api";
+import { api, type Exclusion, type FirstRun, type Hardware, type SettingsPayload } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { EncodeSettings } from "../components/EncodeSettings";
@@ -9,11 +9,14 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
   const [hw, setHw] = useState<Hardware | null>(null);
   const [msg, setMsg] = useState("");
   const [inst, setInst] = useState({ kind: "radarr", name: "", url: "", apiKey: "" });
+  const [exclusions, setExclusions] = useState<Exclusion[]>([]);
+  const [exclusion, setExclusion] = useState<{ kind: Exclusion["kind"]; value: string }>({ kind: "path", value: "" });
 
   const load = () => void api.settings().then(setData);
   useEffect(() => {
     load();
     void api.hardware().then(setHw);
+    void api.exclusions().then((result) => setExclusions(result.exclusions));
   }, []);
 
   const save = () => {
@@ -157,6 +160,31 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         onChange={(patch) => setData({ ...data, ...patch })}
         onSave={save}
       />
+      <div className="glass space-y-3 p-4">
+        <h2 className="font-semibold">Suggestion exclusions</h2>
+        <p className="help">An exclusion hides matching files from Suggestions. It does not delete files or cancel queued work.</p>
+        <div className="flex flex-wrap gap-2">
+          <select value={exclusion.kind} onChange={(event) => {
+            const kind = event.target.value;
+            if (kind === "path" || kind === "profile" || kind === "tag" || kind === "title") {
+              setExclusion({ ...exclusion, kind });
+            }
+          }}>
+            <option value="path">Path starts with</option><option value="profile">Quality profile</option><option value="tag">Tag id</option><option value="title">Title</option>
+          </select>
+          <input value={exclusion.value} onChange={(event) => setExclusion({ ...exclusion, value: event.target.value })} placeholder="Value to exclude" />
+          <button className="btn" type="button" disabled={!exclusion.value.trim()} onClick={() => void api.addExclusion(exclusion.kind, exclusion.value).then((result) => {
+            setExclusions(result.exclusions);
+            setExclusion({ ...exclusion, value: "" });
+          }).catch((error: Error) => setMsg(error.message))}>Add exclusion</button>
+        </div>
+        <ul className="space-y-2 text-sm">
+          {exclusions.map((rule) => <li key={rule.id} className="flex items-center justify-between gap-2">
+            <span>{rule.kind}: {rule.value}</span>
+            <button className="btn-secondary danger" type="button" onClick={() => void api.deleteExclusion(rule.id).then((result) => setExclusions(result.exclusions))}>Remove</button>
+          </li>)}
+        </ul>
+      </div>
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Connections</h2>
         <div className="grid gap-2 sm:grid-cols-2">

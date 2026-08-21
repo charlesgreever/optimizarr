@@ -243,6 +243,21 @@ describe("public HTTP behavior", () => {
     ).json()) as { items: Array<{ id: string }>; nextOffset: number | null; total: number };
     expect(episodes).toMatchObject({ nextOffset: 1, total: 2 });
     expect(episodes.items).toEqual([expect.objectContaining({ id: "episode-101-1" })]);
+
+    const movieSuggestions = (await (
+      await ctx.app.app.request("/api/suggestions?type=movie", { headers })
+    ).json()) as { items: Array<{ now: { tracks: string[] }; after: { tracks: string[] } }>; total: number };
+    expect(movieSuggestions.total).toBe(1);
+    expect(movieSuggestions.items[0]?.now.tracks).toEqual([
+      "Audio: eng truehd 7.1",
+      "Subtitle: eng pgs Forced SDH",
+    ]);
+    expect(movieSuggestions.items[0]?.after.tracks).toEqual([
+      "Audio: eng truehd 7.1",
+      "Subtitle: eng pgs Forced SDH",
+    ]);
+    const episodeSuggestions = await ctx.app.app.request("/api/suggestions?type=episode", { headers });
+    expect(await episodeSuggestions.json()).toMatchObject({ items: [], total: 0 });
   });
 
   it("bounds every work-list response and exposes continuation metadata", async () => {
@@ -284,7 +299,7 @@ describe("public HTTP behavior", () => {
         itemId,
         actions: ["transcode"],
         reasons: ["Over the size cap."],
-        warning: null,
+        warning: index === 1 ? "Hardware encode is unavailable. This transcode will fail until CUDA is available." : null,
         category: "movie1080p",
         estimatedSavingsBytes: 500,
         now: { codec: "h264", quality: "HD", sizeBytes: 1_000, sizePerHourGb: 1 },
@@ -350,6 +365,20 @@ describe("public HTTP behavior", () => {
     ).json()) as { items: Array<{ displayTitle: string }>; nextOffset: number | null; total: number };
     expect(matching).toMatchObject({ nextOffset: null, total: 1 });
     expect(matching.items.map((item) => item.displayTitle)).toEqual(["List Film 3"]);
+    const warnings = (await (
+      await ctx.app.app.request("/api/suggestions?hardwareWarning=true", { headers })
+    ).json()) as { items: Array<{ id: string }>; total: number };
+    expect(warnings).toMatchObject({ total: 1, items: [{ id: "list-suggestion-1" }] });
+
+    ctx.store.saveSettings({
+      ...ctx.store.getSettings(), languageConfirmed: true, reviewPath: join(ctx.dir, "review"),
+    });
+    const filtered = await ctx.app.app.request("/api/suggestions/queue-filtered", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ filters: { type: "movie" }, q: "List Film" }),
+    });
+    expect(await filtered.json()).toEqual({ queued: 0, skipped: 3 });
   });
 
   it("rejects a wrong login with one generic error", async () => {
@@ -393,7 +422,7 @@ describe("public HTTP behavior", () => {
     expect(list.items[0]?.path).toBe("/mnt/nas/movies/underdog.mkv");
   });
 
-  it("accepts enqueue while a runner is still working and rejects a second Keep", async () => {
+  it("persists the global direct-write policy on a bulk queue job", async () => {
     const ctx = await setup();
     apps.push(ctx);
     const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
@@ -406,7 +435,7 @@ describe("public HTTP behavior", () => {
     await ctx.app.app.request("/api/settings", {
       method: "PUT",
       headers,
-      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review"), writeMode: "direct" }),
     });
     await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
     await ctx.app.inspectPending();
@@ -415,6 +444,12 @@ describe("public HTTP behavior", () => {
     expect(sug.items.length).toBeGreaterThan(0);
     const queued = await ctx.app.app.request("/api/queue", { method: "POST", headers, body: JSON.stringify({ suggestionId: sug.items[0].id }) });
     expect(queued.status).toBe(200);
+    const queuedBody = (await queued.json()) as { id: string };
+    expect(ctx.store.getJob(queuedBody.id)).toMatchObject({
+      writeMode: "direct",
+      plan: { origin: "bulk", writeMode: "direct" },
+    });
+    await vi.waitFor(() => expect(["failed", "succeeded"]).toContain(ctx.store.getJob(queuedBody.id)?.status));
   });
 
   it("cancels all active jobs and removes Queue rows without deleting History, Review, or media", async () => {
@@ -649,6 +684,130 @@ describe("public HTTP behavior", () => {
     });
     const res = await ctx.app.app.request("/api/queue", { method: "POST", body: JSON.stringify({ itemId: "missing" }) });
     expect(res.status).toBe(401);
+  });
+
+  it("does not trust client address headers when proxy trust is disabled", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    ctx.store.saveSettings({ ...ctx.store.getSettings(), localAuthBypass: true });
+
+    const res = await ctx.app.app.request("/api/home", {
+      headers: { "x-real-ip": "127.0.0.1", "x-forwarded-for": "127.0.0.1" },
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("does not send an Arr API key to an external poster host", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-poster-"));
+    const requests: Array<{ url: string; key: string | null }> = [];
+    const created = createApp({
+      env: loadEnv({ CONFIG_DIR: dir, PORT: "7373" }),
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      fetch: (async (input, init) => {
+        requests.push({ url: String(input), key: new Headers(init?.headers).get("X-Api-Key") });
+        return new Response("poster", { headers: { "content-type": "image/jpeg" } });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "secret", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]!.id;
+    created.store.upsertItem({
+      id: "poster-item", instanceId, arrId: 1, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: "Film", showTitle: null, season: null, episode: null, episodeTitle: null,
+      path: "/movies/film.mkv", sizeBytes: 1, quality: "HD", resolution: "1080", profile: "HD", tags: [],
+      posterRemoteUrl: "https://cdn.example/poster.jpg", sizeExempt: false,
+    });
+
+    expect((await created.app.request("/api/library/poster-item/poster", { headers })).status).toBe(200);
+    expect(requests.at(-1)).toEqual({ url: "https://cdn.example/poster.jpg", key: null });
+  });
+
+  it("rejects a review folder that is a sibling of a title inside an Arr root", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    ctx.store.replaceLibraryRoots("radarr-a", ["/mnt/nas/movies"]);
+
+    const res = await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers: { cookie: cookie(setupRes) },
+      body: JSON.stringify({ reviewPath: "/mnt/nas/movies/review" }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects malformed Settings input without changing saved values", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const before = ctx.store.getSettings();
+
+    const res = await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers: { cookie: cookie(setupRes) },
+      body: JSON.stringify({ concurrency: "many", writeMode: "overwrite" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(ctx.store.getSettings()).toEqual(before);
+  });
+
+  it("returns not found for missing suggestion and job mutations", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+
+    expect((await ctx.app.app.request("/api/suggestions/missing/dismiss", { method: "POST", headers })).status).toBe(404);
+    expect((await ctx.app.app.request("/api/jobs/missing/run-now", { method: "POST", headers })).status).toBe(404);
+    ctx.store.insertJob({
+      id: "finished", itemId: "missing", suggestionId: null, status: "succeeded", phase: "idle", progress: 1,
+      error: null, warning: null, runNow: false, createdAt: 1, plan: {},
+    });
+    expect((await ctx.app.app.request("/api/jobs/finished/run-now", { method: "POST", headers })).status).toBe(409);
+  });
+
+  it("creates, lists, and removes suggestion exclusions", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    const added = await ctx.app.app.request("/api/exclusions", {
+      method: "POST", headers, body: JSON.stringify({ kind: "path", value: "/archive" }),
+    });
+    const addedBody = (await added.json()) as { id: string };
+    expect((await (await ctx.app.app.request("/api/exclusions", { headers })).json())).toMatchObject({
+      exclusions: [{ id: addedBody.id, kind: "path", value: "/archive" }],
+    });
+    expect((await ctx.app.app.request(`/api/exclusions/${addedBody.id}`, { method: "DELETE", headers })).status).toBe(200);
+    expect(await (await ctx.app.app.request("/api/exclusions", { headers })).json()).toEqual({ exclusions: [] });
   });
 
   it("rejects minting a widget key without a session", async () => {

@@ -89,6 +89,8 @@ export function QueuePage() {
                       </button>
                     )}
                     {job.error && <div className="text-xs text-rose-400">{job.error}</div>}
+                    {job.warning && <div className="text-xs text-amber-300">{job.warning}</div>}
+                    {job.promoteError && <div className="text-xs text-amber-300">{job.promoteError}</div>}
                   </td>
                 </tr>
               ))}

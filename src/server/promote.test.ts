@@ -129,4 +129,34 @@ describe("promotion", () => {
     expect(result.warning).toMatch(/HTTP 500/);
     expect(readFileSync(original, "utf8")).toBe("NEW");
   });
+
+  it("sends a Plex token in a header instead of the refresh URL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-promote-plex-"));
+    const original = join(dir, "movie.mkv");
+    const output = join(dir, "sidecar.mkv");
+    writeFileSync(original, "OLD");
+    writeFileSync(output, "NEW");
+    const requests: Array<{ url: string; token: string | null }> = [];
+    await promote({
+      item: {
+        id: "m1", instanceId: "radarr", instanceName: "Radarr", arrId: 10, arrSeriesId: null,
+        arrEpisodeFileId: null, type: "movie", title: "Film", showTitle: null, season: null, episode: null,
+        episodeTitle: null, path: original, sizeBytes: 3, quality: "HD", resolution: "1080", profile: "HD",
+        tags: [], posterRemoteUrl: null, hasPoster: false, sizeExempt: false,
+      },
+      outputPath: output,
+      sourceSize: 3,
+      outputSize: 2,
+      decrypt: () => "arr-key",
+      fetch: (async (input, init) => {
+        requests.push({ url: String(input), token: new Headers(init?.headers).get("X-Plex-Token") });
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
+      instance: { kind: "radarr", url: "http://radarr", secret: "enc" },
+      players: [{ kind: "plex", url: "http://plex:32400", token: "plex-secret" }],
+    });
+
+    const plex = requests.find((request) => request.url.includes("plex"));
+    expect(plex).toEqual({ url: "http://plex:32400/library/sections/all/refresh", token: "plex-secret" });
+  });
 });
