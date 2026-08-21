@@ -73,6 +73,23 @@ describe("store schema migration", () => {
     expect(again.getSettings().writeMode).toBe("direct");
   });
 
+  it("fills missing automatic suggestion defaults from older settings", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-suggestion-settings-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    store.db
+      .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('app', ?)")
+      .run(JSON.stringify({ suggestionDefaults: { addStereo: false } }));
+
+    expect(store.getSettings().suggestionDefaults).toEqual({
+      removeNonPreferredSubtitles: true,
+      removeNonPreferredAudio: true,
+      addStereo: false,
+      transcodeToSizeCap: true,
+    });
+  });
+
   it("persists a custom executable plan, write mode, and promote error", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-job-plan-"));
     const path = join(dir, "optimizarr.db");

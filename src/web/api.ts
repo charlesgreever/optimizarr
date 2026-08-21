@@ -64,6 +64,12 @@ export type SettingsPayload = {
   languageConfirmed: boolean;
   reviewPath: string;
   sizeCaps: Record<string, number>;
+  suggestionDefaults: {
+    removeNonPreferredSubtitles: boolean;
+    removeNonPreferredAudio: boolean;
+    addStereo: boolean;
+    transcodeToSizeCap: boolean;
+  };
   videoTarget: string;
   concurrency: number;
   conservativeMode: boolean;

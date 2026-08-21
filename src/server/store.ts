@@ -173,6 +173,10 @@ export class Store {
       ...DEFAULT_SETTINGS,
       ...parsed,
       sizeCaps: { ...DEFAULT_SETTINGS.sizeCaps, ...((parsed.sizeCaps as object) ?? {}) },
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        ...((parsed.suggestionDefaults as object) ?? {}),
+      },
       writeMode,
     } as Settings;
   }

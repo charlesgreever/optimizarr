@@ -85,7 +85,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 ### Bulk Suggestions and ISO inspect
 
 53. As a library owner, I want Suggestions to remain the automatic work list, so that I can still approve a pile of titles I do not care to curate.
-54. As a library owner, I want bulk plans to keep using category GB/hr caps, preferred language, and Atmos stereo rules, so that v1 suggestion behavior does not change.
+54. As a library owner, I want Settings toggles for non-preferred subtitle cleanup, non-preferred audio cleanup, automatic stereo, and size-cap transcode, so that Suggestions only offer the automatic operations I want. These toggles do not remove Force, Add stereo, or custom title plans.
 55. As a library owner, I want inspect to never run ffprobe on a `.iso` path (any case), so that disc images do not fail or hang the walker.
 56. As a library owner, I want inspect to list ISO streams with ffmpeg into the same inspection report shape as MKV, so that bulk and custom share one document.
 57. As a library owner, I want a readable ISO that ffmpeg listed to get bulk suggestions (size, tracks, stereo) from that report, so that disc images are not skipped only because ffprobe failed.
@@ -102,9 +102,9 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 65. As a library owner, I want the override and the global default to be visible on the title page and in job details, so that I know whether Review will see this job.
 66. As a library owner, I want direct write to integrity-check the output, then replace the library file, and not create a Review card, so that Review is not full of already-applied work.
 67. As a library owner, I want a failed direct write to leave the original library file in place and delete partial output, so that a crash is not a silent replace.
-68. As a library owner, I want Keep of a sidecar to keep v1 replace, Arr refresh, and player notify behavior, so that custom work does not invent a second promote path.
-69. As a library owner, I want direct write, after a successful replace, to run the same Arr refresh and player notify as Keep, so that Plex is not left on the old file.
-70. As a library owner, I want a failed Arr refresh or profile assign after direct write or Keep not to roll back the new file, so that a Radarr outage does not undo a good encode.
+68. As a library owner, I want Keep of a sidecar to replace the file, refresh the originating Arr and every configured player, and re-inspect the promoted path before Keep finishes, so that Optimizarr does not show the new file as uninspected.
+69. As a library owner, I want direct write, after a successful replace, to run the same Arr refresh, player notification, and targeted reinspection as Keep, so that every promote path finishes with current media details.
+70. As a library owner, I want a failed Arr refresh, profile assign, player notification, or post-promote inspection not to roll back the new file, so that a follow-up outage does not undo a good encode and the failure remains visible.
 71. As a library owner, I want Discard, Cancel, off-peak, concurrency, and run-now to apply to custom jobs the same as bulk jobs, so that the queue stays one queue.
 72. As a library owner, I want space saved and files optimized to count successful Keep and successful direct write, so that skipping Review does not hide savings.
 73. As a library owner, I want a flagged-over-target sidecar (larger than source, or far from the size target) to still be Keepable, so that I decide, including after a custom size-mode job.
@@ -147,15 +147,15 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - Inspect: ffprobe for non-ISO. For `.iso` (any case), never ffprobe. List streams with ffmpeg into the same inspection report. Bulk Suggestions consume that report. If listing fails, record a distinct reason, do not loop retries, and do not pretend ffprobe failed. The title page may still remux or encode.
 - ISO remux: ffmpeg reads the ISO and writes Matroska. No video encode when size mode and quality mode are both off. Track edits on an ISO still write MKV. `mkvmerge` is not the ISO demuxer. After a working file is MKV, `mkvmerge` may mux tracks as in v1.
 - Video transcode on a custom plan: hardware HEVC by default; AV1 only if capability is on. Size mode aims at a **total file size**. Quality mode aims at encoder quality. Setting one clears the other. Job details name the mode. Optional 4K→1080p is an encode-only flag. Bit depth of the source is preserved. Estimate is a heuristic, not a sample encode.
-- Bulk Suggestions still encode to category GB/hr. Custom size mode does not change those caps.
+- Bulk Suggestions still use category GB/hr caps, preferred language, and Atmos stereo rules when their Settings toggles are enabled. The four toggles ship enabled to preserve existing installations. Custom size mode, Force, Add stereo, and custom track choices do not inherit these automatic-operation toggles.
 - Audio generate: ffmpeg AAC only, from an existing audio stream. **Codec replace**: same channel layout, replaces the source track. **Downmix**: smaller layout down to stereo (offer each step the source can drop to, at least 5.1 and stereo when the source is wider); operator chooses replace or additional. No external files, no uploads.
 - Subtitle custom work is remove-only. Adding subtitle files is out of scope.
 - Write mode: default sidecar + Review + Keep (ENG-09). Settings global direct write applies to bulk and custom. Title page override applies to that custom job only and is stored on the plan. Direct write: encode to temp, integrity (duration present; do not copy source duration onto the result), then replace library file, no Review row. Failure deletes temp and leaves the original. Cancel of a direct-write job must not leave a half-written library file.
-- Promote after transcode Keep or transcode direct write: assign suggested Arr profile; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, and ISO remux-only do not assign. Size-exempt does not assign. Failed assign does not undo replace.
+- Promote after transcode Keep or transcode direct write: assign suggested Arr profile; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, and ISO remux-only do not assign. Size-exempt does not assign. Failed assign does not undo replace. After either promote path updates Optimizarr's stored path and size, invalidate the old inspection and suggestion, inspect that promoted path, and recompute its suggestion before marking the background operation complete. A failed reinspection records an Errors row and a follow-up warning without restoring the old file.
 - Suggested profiles: one per size category, stable Optimizarr-prefixed names, create/update only on explicit Settings sync. Do not overwrite unrelated profiles. Do not silently rewrite global Arr quality definitions (MB/min is help text and preview).
 - Hardware video failure still fails the job. No software video fallback (ENG-05).
 - ffmpeg, ffprobe, and `mkvmerge` still `execFile` argument arrays (ENG-08). ISO paths are file operands, not shell fragments.
-- Modules: keep v1 modules. Add **Custom plan**. Extend Inspector (ISO listing), Suggestion engine (ISO reports), Optimize runner (ISO remux, size XOR quality, codec replace, downmix add/replace, 4K→1080p), Promote (direct write, Arr profile assign), Settings (direct write, profile sync), Web UI (dense tables, collapsible series, title pages). Inspector and custom plan still do not encode. Promote still does not encode.
+- Modules: keep v1 modules. Add **Custom plan**. Extend Inspector (ISO listing and targeted post-promote reinspection), Suggestion engine (ISO reports and automatic-operation settings), Optimize runner (ISO remux, size XOR quality, codec replace, downmix add/replace, 4K→1080p), Promote (direct write, Arr profile assign), Settings (direct write, profile sync, suggestion defaults), Web UI (dense tables, collapsible series, title pages). Inspector and custom plan still do not encode. Promote still does not encode.
 - Named ENG-09 break: direct write, when the operator enabled it globally or overrode it on the title page, replaces the library file without Keep. Sidecar remains the shipped default.
 
 ## Testing Decisions
@@ -163,16 +163,17 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - A good test asserts public behavior: inspection reports, custom-plan drafts, job payloads, sidecar vs library path, Arr HTTP, and user-visible sentences. Tests do not lock ffmpeg flag order, SQL tables, or React internals (ENG-04).
 - Tests will be written for every v2 module in the sketch: Inspector (ISO and non-ISO), Suggestion engine, Custom plan, Optimize runner, Promote, Arr profiles, Settings write-mode, Web UI/HTTP for library rows and title pages. No live NAS, GPU, or Radarr.
 - Prior art: existing inspect fixtures, `buildSuggestion` tables, fake optimizer in app/jobs tests, fake Arr HTTP, fake ffmpeg/`mkvmerge` in optimize tests. Extend those styles; do not import the retired Optimizarr suite.
-- Inspector: `.iso` path never calls ffprobe; ffmpeg listing fixture yields audio/subs; listing failure is a bounded error; `.mkv` still uses ffprobe.
+- Inspector: `.iso` path never calls ffprobe; ffmpeg listing fixture yields audio/subs; listing failure is a bounded error; `.mkv` still uses ffprobe; Keep and direct write target the promoted path and leave a visible error without rolling back when that probe fails.
+- Suggestion defaults: legacy Settings load all four toggles enabled; each toggle independently removes its automatic action and its reason; Force, Add stereo, and custom plans remain available; saving Settings recomputes Suggestions from stored inspections without probing unchanged files.
 - Custom plan: empty draft cannot queue; size XOR quality; 4K→1080p rejected on remux-only; codec replace is replace-only; downmix add vs replace; ISO remux when no size/quality; queueing custom clears the automatic suggestion.
 - Runner: ISO remux does not video-encode; size-mode and quality-mode encode are distinct; downscale requires encode; AAC replace vs extra downmix; hardware miss still fails video encode.
-- Promote: sidecar Keep unchanged; direct write skips Review and replaces; failed direct write leaves original; profile assign on transcode only; assign failure does not undo replace.
+- Promote: sidecar Keep and direct write both refresh integrations and finish targeted reinspection; direct write skips Review and replaces; failed direct write leaves original; profile assign on transcode only; follow-up failures do not undo replace.
 - Library HTTP: two reasons both appear; uninspected dashes; unreadable error; series collapse is UI-only and does not require a server flag.
 - Arr profiles: fake GET/POST qualityprofile and PUT movie/series; no search command.
 
 ## Out of Scope
 
-- Replacing v1 bulk Suggestions, first-run, auth, Home, Queue, Review (except jobs that direct-wrote), History, Errors, Homepage widget, or the GB/hr cap model for bulk work.
+- Redesigning bulk Suggestions, first-run, auth, Home, Queue, Review (except jobs that direct-wrote), History, Errors, Homepage widget, or the GB/hr cap model for bulk work.
 - External or uploaded audio/subtitle files; copying tracks from another title.
 - Same-layout AAC as an additional track (codec replace is replacement only).
 - Software (CPU) video encode fallback.

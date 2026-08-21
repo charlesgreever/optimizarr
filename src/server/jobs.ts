@@ -17,6 +17,7 @@ export type JobServiceOptions = {
   tools: { ffmpeg: string; ffprobe: string; mkvmerge: string };
   decrypt: (packed: string) => string;
   fetch: typeof fetch;
+  reinspectChangedItem: (itemId: string, oldPath: string) => Promise<{ ok: true } | { ok: false; warning: string }>;
 };
 
 export class JobService {
@@ -176,9 +177,9 @@ export class JobService {
           return;
         }
         this.opts.store.updateItemFile(item.id, outcome.destPath, result.output.sizeBytes);
-        this.opts.store.deleteInspection(item.id);
-        this.opts.store.clearFileError(item.path);
-        this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1, promoteError: outcome.warning });
+        const reinspection = await this.opts.reinspectChangedItem(item.id, item.path);
+        const warning = appendWarning(outcome.warning, reinspection.ok ? null : `The new file could not be inspected: ${reinspection.warning}`);
+        this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1, promoteError: warning });
         this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
         return;
       }
@@ -253,10 +254,10 @@ export class JobService {
     }
     this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
     this.opts.store.updateItemFile(item.id, outcome.destPath, review.sidecar.sizeBytes ?? item.sizeBytes);
-    this.opts.store.deleteInspection(item.id);
-    this.opts.store.clearFileError(item.path);
+    const reinspection = await this.opts.reinspectChangedItem(item.id, item.path);
     this.opts.store.deleteReview(reviewId);
-    if (outcome.warning && job) this.opts.store.updateJob(job.id, { promoteError: outcome.warning });
+    const warning = appendWarning(outcome.warning, reinspection.ok ? null : `The new file could not be inspected: ${reinspection.warning}`);
+    if (warning && job) this.opts.store.updateJob(job.id, { promoteError: warning });
   }
 
   private async promoteOutput(
@@ -349,6 +350,12 @@ async function safeUnlink(path: string): Promise<void> {
   } catch {
     // Partial output may not exist.
   }
+}
+
+function appendWarning(current: string | null, next: string | null): string | null {
+  if (!current) return next;
+  if (!next) return current;
+  return `${current} ${next}`;
 }
 
 export function withTitles(jobs: Job[], store: Store): Job[] {

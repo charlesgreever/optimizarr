@@ -85,6 +85,73 @@ describe("suggestion engine", () => {
     expect(suggestion?.after.sizePerHourGb).toBeNull();
   });
 
+  it("keeps non-preferred audio when automatic audio cleanup is disabled", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc" }),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        suggestionDefaults: {
+          ...DEFAULT_SETTINGS.suggestionDefaults,
+          removeNonPreferredAudio: false,
+        },
+      },
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion?.keepAudio).toEqual([1, 2]);
+    expect(suggestion?.stripAudio).toEqual([]);
+    expect(suggestion?.stripSubs).toEqual([3]);
+    expect(suggestion?.reasons.some((reason) => /audio/i.test(reason))).toBe(false);
+  });
+
+  it("disables every automatic operation without disabling manual overrides", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      suggestionDefaults: {
+        removeNonPreferredSubtitles: false,
+        removeNonPreferredAudio: false,
+        addStereo: false,
+        transcodeToSizeCap: false,
+      },
+    };
+    const automatic = buildSuggestion({
+      item: movie,
+      report: report(),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const forcedStereo = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc" }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      forceStereo: true,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const forcedTranscode = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1 }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      forceTranscode: true,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+
+    expect(automatic).toBeNull();
+    expect(forcedStereo?.actions).toEqual(["add_stereo"]);
+    expect(forcedTranscode?.actions).toEqual(["transcode"]);
+  });
+
   it("does not suggest HEVC for AV1 sources", () => {
     const suggestion = buildSuggestion({
       item: movie,

@@ -1,0 +1,213 @@
+import { access } from "node:fs/promises";
+import type { Store } from "./store.ts";
+import type { InspectionReport, LibraryItem } from "./types.ts";
+import { isIsoPath, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
+import { isoInputAttempts } from "./optimize.ts";
+
+export type InspectionRunnerOptions = {
+  store: Store;
+  ffmpeg: string;
+  ffprobe: string;
+  readable?: (path: string) => Promise<boolean>;
+  probe?: (path: string, size: number) => Promise<Record<string, unknown>>;
+  listIso?: (path: string, size: number) => Promise<string>;
+  recomputeSuggestion: (itemId: string) => unknown;
+};
+
+export type ReinspectionResult =
+  | { ok: true; report: InspectionReport }
+  | { ok: false; warning: string; report?: undefined };
+
+export function createInspectionRunner(opts: InspectionRunnerOptions) {
+  let requestedVersion = 0;
+  let completedVersion = 0;
+  let walkPromise: Promise<void> | null = null;
+  const priority = new Set<string>();
+
+  function inspectPending(): Promise<void> {
+    requestedVersion += 1;
+    if (!walkPromise) walkPromise = drainWalks();
+    return walkPromise;
+  }
+
+  async function drainWalks(): Promise<void> {
+    try {
+      while (completedVersion < requestedVersion) {
+        const targetVersion = requestedVersion;
+        await runInspectWalk();
+        completedVersion = targetVersion;
+      }
+    } finally {
+      walkPromise = null;
+    }
+  }
+
+  async function runInspectWalk(): Promise<void> {
+    try {
+      await walkPending();
+    } catch (error) {
+      if (error instanceof Error && /not open/i.test(error.message)) return;
+      throw error;
+    }
+  }
+
+  async function walkPending(): Promise<void> {
+    for (;;) {
+      const items = opts.store.listItems();
+      const pending = items
+        .filter((item) => inspectStillOpen(item))
+        .sort((a, b) => Number(priority.has(b.id)) - Number(priority.has(a.id)));
+      if (pending.length === 0) {
+        publishInspect(false, 0, items.length);
+        return;
+      }
+      publishInspect(true, pending.length, items.length);
+      let remaining = pending.length;
+      for (const item of pending) {
+        remaining -= 1;
+        publishInspect(true, remaining, items.length);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await inspectItem(item);
+        priority.delete(item.id);
+      }
+      const leftover = leftoverCount();
+      if (leftover === 0 || leftover >= pending.length) {
+        publishInspect(false, leftover, opts.store.listItems().length);
+        return;
+      }
+    }
+  }
+
+  async function inspectItem(item: LibraryItem): Promise<ReinspectionResult> {
+    if (!item.path) return { ok: false, warning: "This title has no file path to inspect." };
+    let readable: boolean;
+    try {
+      readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
+    } catch (error) {
+      const warning = error instanceof Error ? error.message : "The file path could not be checked.";
+      opts.store.setFileError(item.path, item.id, warning);
+      return { ok: false, warning };
+    }
+    if (!readable) {
+      const warning = "This path is not readable inside the container. Check the volume mount.";
+      opts.store.setFileError(item.path, item.id, warning);
+      return { ok: false, warning };
+    }
+    try {
+      const report = isIsoPath(item.path)
+        ? parseFfmpegListing(
+            item.path,
+            item.sizeBytes,
+            opts.listIso
+              ? await opts.listIso(item.path, item.sizeBytes)
+              : await defaultIsoListing(opts.ffmpeg, item.path),
+          )
+        : parseFfprobe(
+            item.path,
+            item.sizeBytes,
+            opts.probe
+              ? await opts.probe(item.path, item.sizeBytes)
+              : await defaultProbe(opts.ffprobe, item.path),
+          );
+      opts.store.saveInspection(item.id, report);
+      opts.store.clearFileError(item.path);
+      opts.recomputeSuggestion(item.id);
+      return { ok: true, report };
+    } catch (error) {
+      if (isIsoPath(item.path)) {
+        const report = unlistedIsoReport(item.path, item.sizeBytes);
+        opts.store.saveInspection(item.id, report);
+        opts.store.clearFileError(item.path);
+        opts.recomputeSuggestion(item.id);
+        return { ok: true, report };
+      }
+      const warning = error instanceof Error ? error.message : "ffprobe failed.";
+      opts.store.setFileError(item.path, item.id, warning);
+      return { ok: false, warning };
+    }
+  }
+
+  async function reinspectChangedItem(itemId: string, oldPath: string): Promise<ReinspectionResult> {
+    const item = opts.store.getItem(itemId);
+    if (!item) return { ok: false, warning: "The promoted title is no longer in the library." };
+    opts.store.deleteInspection(itemId);
+    opts.store.saveSuggestion(itemId, null);
+    opts.store.clearFileError(oldPath);
+    opts.store.clearFileError(item.path);
+    priority.add(itemId);
+    try {
+      await inspectPending();
+    } catch (error) {
+      const warning = error instanceof Error ? error.message : "The promoted file could not be inspected.";
+      opts.store.setFileError(item.path, item.id, warning);
+      return { ok: false, warning };
+    }
+    const report = opts.store.getInspection(itemId);
+    if (report?.sourceSig === `${item.path}|${item.sizeBytes}`) return { ok: true, report };
+    const error = opts.store.listErrors().find((row) => row.itemId === itemId);
+    return { ok: false, warning: error?.reason ?? "The promoted file could not be inspected." };
+  }
+
+  function inspectStillOpen(item: LibraryItem): boolean {
+    if (!item.path) return false;
+    if (opts.store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
+    return !opts.store.listErrors().some((error) => error.itemId === item.id);
+  }
+
+  function leftoverCount(): number {
+    return opts.store.listItems().filter((item) => inspectStillOpen(item)).length;
+  }
+
+  function publishInspect(walking: boolean, pending: number, total: number): void {
+    opts.store.setInspectState({
+      walking,
+      pending,
+      inspected: Math.max(0, total - pending - opts.store.listErrors().length),
+      failed: opts.store.listErrors().length,
+    });
+  }
+
+  return { inspectPending, reinspectChangedItem, leftoverCount };
+}
+
+async function isReadable(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function defaultProbe(ffprobe: string, path: string): Promise<Record<string, unknown>> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  const { stdout } = await run(ffprobe, ["-v", "quiet", "-threads", "1", "-print_format", "json", "-show_format", "-show_streams", path], {
+    maxBuffer: 1024 * 512,
+  });
+  return JSON.parse(stdout) as Record<string, unknown>;
+}
+
+async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  let lastText = "";
+  for (const input of isoInputAttempts(path).slice(0, 2)) {
+    const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
+    try {
+      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
+      const text = `${stderr}\n${stdout}`;
+      if (text.includes("Stream #")) return text;
+      lastText = text;
+    } catch (error) {
+      const err = error as { stdout?: string; stderr?: string };
+      const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
+      if (text.includes("Stream #")) return text;
+      lastText = text;
+    }
+  }
+  if (lastText.includes("Stream #")) return lastText;
+  throw new Error("ffmpeg could not list streams on this disc image.");
+}

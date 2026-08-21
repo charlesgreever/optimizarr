@@ -28,6 +28,13 @@ export type SizeCaps = {
   tv4k: number;
 };
 
+export type SuggestionDefaults = {
+  removeNonPreferredSubtitles: boolean;
+  removeNonPreferredAudio: boolean;
+  addStereo: boolean;
+  transcodeToSizeCap: boolean;
+};
+
 export const DEFAULT_SIZE_CAPS: SizeCaps = {
   movie1080p: 2.5,
   movie4kSdr: 6,
@@ -36,11 +43,19 @@ export const DEFAULT_SIZE_CAPS: SizeCaps = {
   tv4k: 4.0,
 };
 
+export const DEFAULT_SUGGESTION_DEFAULTS: SuggestionDefaults = {
+  removeNonPreferredSubtitles: true,
+  removeNonPreferredAudio: true,
+  addStereo: true,
+  transcodeToSizeCap: true,
+};
+
 export type Settings = {
   preferredLanguage: string;
   languageConfirmed: boolean;
   reviewPath: string;
   sizeCaps: SizeCaps;
+  suggestionDefaults: SuggestionDefaults;
   videoTarget: VideoTarget;
   concurrency: number;
   conservativeMode: boolean;
@@ -57,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   languageConfirmed: false,
   reviewPath: "",
   sizeCaps: { ...DEFAULT_SIZE_CAPS },
+  suggestionDefaults: { ...DEFAULT_SUGGESTION_DEFAULTS },
   videoTarget: "hevc",
   concurrency: 1,
   conservativeMode: false,

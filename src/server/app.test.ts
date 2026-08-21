@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -145,6 +145,120 @@ describe("public HTTP behavior", () => {
     expect(queued.status).toBe(200);
   });
 
+  it("finishes an ISO Keep with the promoted MKV inspected and integrations refreshed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-keep-"));
+    const reviewDir = mkdtempSync(join(tmpdir(), "opt-review-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const isoPath = join(dir, "movie.iso");
+    const sidecarPath = join(reviewDir, "movie-sidecar.mkv");
+    writeFileSync(isoPath, "ORIGINAL-ISO");
+    const calls: string[] = [];
+    const probed: string[] = [];
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      listIso: async () => isoListedFfmpeg,
+      probe: async (path) => {
+        probed.push(path);
+        return {
+          format: { duration: "3600" },
+          streams: [
+            { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+            { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+          ],
+        };
+      },
+      optimizer: async (req) => {
+        writeFileSync(sidecarPath, "PROMOTED-MKV");
+        return {
+          sidecarPath,
+          output: { ...req.report, videoCodec: "hevc", sizeBytes: 12, sizePerHourGb: 0.01 },
+        };
+      },
+      fetch: (async (url, init) => {
+        const text = String(url);
+        calls.push(`${init?.method ?? "GET"} ${text}`);
+        if (text.endsWith("/api/v3/movie")) {
+          return new Response(JSON.stringify([
+            {
+              id: 10,
+              title: "Disc Film",
+              path: isoPath,
+              sizeOnDisk: 12,
+              movieFile: { path: isoPath, size: 12, quality: { quality: { name: "Bluray-1080p" } } },
+            },
+          ]));
+        }
+        if (text.endsWith("/api/v3/qualityprofile")) {
+          return new Response(JSON.stringify([
+            {
+              id: 1,
+              name: "No Upgrades",
+              upgradeAllowed: false,
+              items: [{ allowed: true, quality: { name: "Bluray-1080p" } }],
+            },
+          ]));
+        }
+        if (text.endsWith("/api/v3/movie/10")) {
+          return new Response(JSON.stringify({ id: 10, title: "Disc Film", monitored: true, movieFile: { quality: { quality: { name: "Bluray-1080p" } } } }));
+        }
+        return new Response("{}", { status: 201 });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "jellyfin", name: "Jellyfin", url: "http://jellyfin", token: "t", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: reviewDir }),
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as { items: Array<{ id: string; itemId: string }> };
+    await created.app.request("/api/queue", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ suggestionId: suggestions.items[0]?.id }),
+    });
+    await vi.waitFor(async () => {
+      const review = (await (await created.app.request("/api/review", { headers })).json()) as { items: Array<{ id: string }> };
+      expect(review.items).toHaveLength(1);
+    });
+    const review = (await (await created.app.request("/api/review", { headers })).json()) as { items: Array<{ id: string }> };
+    const keep = await created.app.request(`/api/review/${review.items[0]?.id}/keep`, { method: "POST", headers });
+    expect(keep.status).toBe(202);
+    await vi.waitFor(async () => {
+      const pending = (await (await created.app.request("/api/review", { headers })).json()) as { items: unknown[] };
+      expect(pending.items).toHaveLength(0);
+    });
+
+    const title = (await (await created.app.request(`/api/library/items/${suggestions.items[0]?.itemId}`, { headers })).json()) as {
+      item: { path: string; inspected: boolean; report?: { sourceMethod?: string; sourceSig?: string } };
+    };
+    expect(title.item.path).toBe(join(dir, "movie.mkv"));
+    expect(title.item.inspected).toBe(true);
+    expect(title.item.report?.sourceMethod).toBe("ffprobe");
+    expect(title.item.report?.sourceSig).toBe(`${join(dir, "movie.mkv")}|12`);
+    expect(probed).toEqual([join(dir, "movie.mkv")]);
+    expect(calls.some((call) => call.includes("POST http://radarr/api/v3/command"))).toBe(true);
+    expect(calls.some((call) => call.includes("POST http://jellyfin/Library/Refresh"))).toBe(true);
+  });
+
   it("rejects enqueue without a session after first-run is complete", async () => {
     const ctx = await setup();
     apps.push(ctx);
@@ -260,6 +374,56 @@ describe("public HTTP behavior", () => {
     expect(settings.profilePreviews?.[0]?.name).toMatch(/^Optimizarr /);
     const search = (await (await ctx.app.app.request("/api/search?q=underdog", { headers })).json()) as { items: Array<{ href: string }> };
     expect(search.items[0]?.href).toMatch(/^\/movies\//);
+  });
+
+  it("recomputes automatic suggestions when their settings are disabled", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    expect(((await (await ctx.app.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(1);
+    const probesBeforeSave = ctx.probeCalls();
+
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        suggestionDefaults: {
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+          transcodeToSizeCap: false,
+        },
+      }),
+    });
+
+    const settings = (await (await ctx.app.app.request("/api/settings", { headers })).json()) as {
+      suggestionDefaults?: Record<string, boolean>;
+    };
+    const suggestions = (await (await ctx.app.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] };
+    expect(settings.suggestionDefaults).toEqual({
+      removeNonPreferredSubtitles: false,
+      removeNonPreferredAudio: false,
+      addStereo: false,
+      transcodeToSizeCap: false,
+    });
+    expect(suggestions.items).toHaveLength(0);
+    expect(ctx.probeCalls()).toBe(probesBeforeSave);
   });
 
   it("rejects a do-nothing custom plan with a field error", async () => {

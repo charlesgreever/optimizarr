@@ -44,14 +44,18 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const cap = settings.sizeCaps[category];
   const overCap = report.sizePerHourGb > cap + 0.01;
   const lang = normalizeLang(settings.preferredLanguage);
-  const keepAudio = report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length));
+  const keepAudio = settings.suggestionDefaults.removeNonPreferredAudio
+    ? report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length))
+    : report.audio;
   const stripAudio = report.audio.filter((t) => !keepAudio.includes(t));
-  const keepSubs = report.subtitles.filter((t) => t.language === lang || (t.untagged && report.subtitles.length === 1));
+  const keepSubs = settings.suggestionDefaults.removeNonPreferredSubtitles
+    ? report.subtitles.filter((t) => t.language === lang || (t.untagged && report.subtitles.length === 1))
+    : report.subtitles;
   const stripSubs = report.subtitles.filter((t) => !keepSubs.includes(t));
   const extraTracks = stripAudio.length + stripSubs.length > 0;
   const alreadyStereo = report.audio.some((t) => t.channels <= 2 && (t.language === lang || t.language === "und"));
   const layoutNeedsStereo = report.audio.some((t) => t.channels > 6 || /atmos|truehd|eac3/i.test(`${t.codec} ${t.title}`));
-  const addStereo = (input.forceStereo || layoutNeedsStereo) && !alreadyStereo;
+  const addStereo = (input.forceStereo || (settings.suggestionDefaults.addStereo && layoutNeedsStereo)) && !alreadyStereo;
   const codec = report.videoCodec.toLowerCase();
   const alreadyAv1 = codec.includes("av1");
   const inefficient = !alreadyAv1 && !/hevc|h265|av1/.test(codec);
@@ -59,7 +63,8 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const transcode =
     !alreadyAv1 &&
     !input.sizeExempt &&
-    (input.forceTranscode || (overCap && (inefficient || /hevc|h265/.test(codec))));
+    (input.forceTranscode ||
+      (settings.suggestionDefaults.transcodeToSizeCap && overCap && (inefficient || /hevc|h265/.test(codec))));
 
   const actions: SuggestionAction[] = [];
   if (transcode) actions.push("transcode");
@@ -73,7 +78,8 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   } else if (transcode && input.forceTranscode) {
     reasons.push(`Re-encode to ${target.toUpperCase()} because you asked to force this title.`);
   }
-  if (extraTracks) reasons.push("Drop extra audio and subtitle tracks that are not in your preferred language.");
+  if (stripAudio.length) reasons.push("Drop audio tracks that are not in your preferred language.");
+  if (stripSubs.length) reasons.push("Drop subtitle tracks that are not in your preferred language.");
   if (addStereo) reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");
 
   let warning: string | null = null;

@@ -3,8 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { access } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import argon2 from "argon2";
 import type { Env } from "./env.ts";
 import { Store } from "./store.ts";
@@ -20,17 +19,16 @@ import {
   testSonarr,
   trimUrl,
 } from "./arr.ts";
-import { isIsoPath, parseFfprobe, parseFfmpegListing, unlistedIsoReport } from "./inspect.ts";
 import { buildSuggestion } from "./suggest.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService, withTitles } from "./jobs.ts";
-import { ffmpegOptimizer, isoInputAttempts, type Optimizer } from "./optimize.ts";
+import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
 import { decodePngBase64, safeScreenshotFilename, uploadGithubIssueScreenshot } from "./github-report.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
-import { DEFAULT_SETTINGS } from "./types.ts";
+import { createInspectionRunner } from "./inspection-runner.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
 const GENERIC_LOGIN = "Username or password is wrong.";
@@ -52,6 +50,15 @@ export function createApp(opts: AppOptions) {
   const secret = loadOrCreateSecret(opts.env.secretPath);
   const httpFetch = opts.fetch ?? fetch;
   const hardware = opts.hardware ?? detectHardware(opts.env.ffmpeg);
+  const inspections = createInspectionRunner({
+    store,
+    ffmpeg: opts.env.ffmpeg,
+    ffprobe: opts.env.ffprobe,
+    readable: opts.readable,
+    probe: opts.probe,
+    listIso: opts.listIso,
+    recomputeSuggestion,
+  });
   const jobs = new JobService({
     store,
     optimizer: opts.optimizer ?? ffmpegOptimizer(),
@@ -60,6 +67,7 @@ export function createApp(opts: AppOptions) {
     tools: { ffmpeg: opts.env.ffmpeg, ffprobe: opts.env.ffprobe, mkvmerge: opts.env.mkvmerge },
     decrypt: (packed) => decryptSecret(secret, packed),
     fetch: httpFetch,
+    reinspectChangedItem: inspections.reinspectChangedItem,
   });
   jobs.start();
 
@@ -221,6 +229,7 @@ export function createApp(opts: AppOptions) {
       languageConfirmed: body.languageConfirmed ?? current.languageConfirmed,
       reviewPath: body.reviewPath ?? current.reviewPath,
       sizeCaps: { ...current.sizeCaps, ...(body.sizeCaps ?? {}) },
+      suggestionDefaults: { ...current.suggestionDefaults, ...(body.suggestionDefaults ?? {}) },
       videoTarget: body.videoTarget === "av1" ? "av1" : body.videoTarget === "hevc" ? "hevc" : current.videoTarget,
       concurrency: body.concurrency ?? current.concurrency,
       conservativeMode: body.conservativeMode ?? current.conservativeMode,
@@ -234,7 +243,11 @@ export function createApp(opts: AppOptions) {
     if (next.reviewPath && unsafeReviewPath(next.reviewPath, store.listItems().map((i) => i.path))) {
       return c.json({ error: "The review folder cannot sit inside an Arr library folder." }, 400);
     }
+    const suggestionsChanged = suggestionSettingsChanged(current, next);
     store.saveSettings(next);
+    if (suggestionsChanged) {
+      for (const item of store.listItems()) recomputeSuggestion(item.id);
+    }
     if (typeof body.githubToken === "string") {
       const trimmed = body.githubToken.trim();
       store.setGithubToken(trimmed ? encryptSecret(secret, trimmed) : null);
@@ -405,111 +418,9 @@ export function createApp(opts: AppOptions) {
       }
     }
     void started;
-    void inspectPending();
+    void inspections.inspectPending();
     return c.json({ ok: true, errors, inspect: store.getInspectState() });
   });
-
-  let inspectWalk: Promise<void> | null = null;
-  let inspectAgain = false;
-
-  async function inspectPending(): Promise<void> {
-    if (inspectWalk) {
-      inspectAgain = true;
-      return inspectWalk;
-    }
-    inspectWalk = runInspectWalk().finally(() => {
-      inspectWalk = null;
-      if (inspectAgain) {
-        inspectAgain = false;
-        void inspectPending();
-      }
-    });
-    return inspectWalk;
-  }
-
-  async function runInspectWalk(): Promise<void> {
-    try {
-      await walkPending();
-    } catch (error) {
-      if (error instanceof Error && /not open/i.test(error.message)) return;
-      throw error;
-    }
-  }
-
-  async function walkPending(): Promise<void> {
-    for (;;) {
-      const items = store.listItems();
-      const pending = items.filter((item) => inspectStillOpen(item));
-      if (pending.length === 0) {
-        publishInspect(false, 0, items.length);
-        return;
-      }
-      publishInspect(true, pending.length, items.length);
-      let remaining = pending.length;
-      for (const item of pending) {
-        remaining -= 1;
-        publishInspect(true, remaining, items.length);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        if (!item.path) continue;
-        const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
-        if (!readable) {
-          store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
-          continue;
-        }
-        try {
-          if (isIsoPath(item.path)) {
-            const listing = opts.listIso
-              ? await opts.listIso(item.path, item.sizeBytes)
-              : await defaultIsoListing(opts.env.ffmpeg, item.path);
-            const report = parseFfmpegListing(item.path, item.sizeBytes, listing);
-            store.saveInspection(item.id, report);
-            store.clearFileError(item.path);
-            if (report.listingState === "complete") recomputeSuggestion(item.id);
-          } else {
-            const raw = opts.probe
-              ? await opts.probe(item.path, item.sizeBytes)
-              : await defaultProbe(opts.env.ffprobe, item.path);
-            const report = parseFfprobe(item.path, item.sizeBytes, raw);
-            store.saveInspection(item.id, report);
-            store.clearFileError(item.path);
-            recomputeSuggestion(item.id);
-          }
-        } catch (error) {
-          if (isIsoPath(item.path)) {
-            store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
-            store.clearFileError(item.path);
-          } else {
-            const message = error instanceof Error ? error.message : "ffprobe failed.";
-            store.setFileError(item.path, item.id, message);
-          }
-        }
-      }
-      const leftover = leftoverCount();
-      if (leftover === 0 || leftover >= pending.length) {
-        publishInspect(false, leftover, store.listItems().length);
-        return;
-      }
-    }
-  }
-
-  function inspectStillOpen(item: NonNullable<ReturnType<Store["getItem"]>>): boolean {
-    if (!item.path) return false;
-    if (store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
-    return !store.listErrors().some((error) => error.itemId === item.id);
-  }
-
-  function leftoverCount(): number {
-    return store.listItems().filter((item) => inspectStillOpen(item)).length;
-  }
-
-  function publishInspect(walking: boolean, pending: number, total: number): void {
-    store.setInspectState({
-      walking,
-      pending,
-      inspected: Math.max(0, total - pending - store.listErrors().length),
-      failed: store.listErrors().length,
-    });
-  }
 
   function recomputeSuggestion(itemId: string): Suggestion | null {
     const item = store.getItem(itemId);
@@ -548,7 +459,7 @@ export function createApp(opts: AppOptions) {
   app.get("/api/library/movies", (c) => c.json({ items: store.listItems("movie").map((item) => presentItem(item, false)) }));
   app.get("/api/library/series", (c) => c.json({ items: store.listItems("episode").map((item) => presentItem(item, false)) }));
   app.get("/api/inspect/status", (c) => {
-    if (leftoverCount() > 0 && !inspectWalk) void inspectPending();
+    if (inspections.leftoverCount() > 0) void inspections.inspectPending();
     return c.json(store.getInspectState());
   });
   app.get("/api/errors", (c) => c.json({ items: store.listErrors() }));
@@ -907,8 +818,8 @@ export function createApp(opts: AppOptions) {
     };
   }
 
-  void inspectPending();
-  return { app, store, jobs, inspectPending, secret };
+  void inspections.inspectPending();
+  return { app, store, jobs, inspectPending: inspections.inspectPending, secret };
 }
 
 function unsafeReviewPath(reviewPath: string, libraryPaths: string[]): boolean {
@@ -924,47 +835,11 @@ function dirnameOf(path: string): string {
   return path.replace(/\/[^/]+$/, "") || "/";
 }
 
-async function isReadable(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
+function suggestionSettingsChanged(current: Settings, next: Settings): boolean {
+  return (
+    current.preferredLanguage !== next.preferredLanguage ||
+    current.videoTarget !== next.videoTarget ||
+    JSON.stringify(current.sizeCaps) !== JSON.stringify(next.sizeCaps) ||
+    JSON.stringify(current.suggestionDefaults) !== JSON.stringify(next.suggestionDefaults)
+  );
 }
-
-async function defaultProbe(ffprobe: string, path: string): Promise<Record<string, unknown>> {
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const run = promisify(execFile);
-  const { stdout } = await run(ffprobe, ["-v", "quiet", "-threads", "1", "-print_format", "json", "-show_format", "-show_streams", path], {
-    maxBuffer: 1024 * 512,
-  });
-  return JSON.parse(stdout) as Record<string, unknown>;
-}
-
-async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> {
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const run = promisify(execFile);
-  let lastText = "";
-  for (const input of isoInputAttempts(path).slice(0, 2)) {
-    const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
-    try {
-      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
-      const text = `${stderr}\n${stdout}`;
-      if (text.includes("Stream #")) return text;
-      lastText = text;
-    } catch (error) {
-      const err = error as { stdout?: string; stderr?: string };
-      const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
-      if (text.includes("Stream #")) return text;
-      lastText = text;
-    }
-  }
-  if (lastText.includes("Stream #")) return lastText;
-  throw new Error("ffmpeg could not list streams on this disc image.");
-}
-
-void basename;
-void DEFAULT_SETTINGS;

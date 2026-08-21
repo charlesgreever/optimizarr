@@ -67,7 +67,7 @@ describe("Arr profile HTTP", () => {
 
   it("assigns a movie using an existing no-upgrade profile without creating one", async () => {
     const calls: string[] = [];
-    let putBody: Record<string, unknown> | null = null;
+    const putBodies: Record<string, unknown>[] = [];
     const warning = await assignProfile({
       kind: "radarr",
       url: "http://radarr",
@@ -81,7 +81,7 @@ describe("Arr profile HTTP", () => {
           return new Response(JSON.stringify([ultraHd, { ...ultraHd, id: 8, name: "No Upgrades 4K", upgradeAllowed: false }]));
         }
         if (String(url).includes("/movie/10") && init?.method === "PUT") {
-          putBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+          putBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
           return new Response("{}", { status: 202 });
         }
         if (String(url).includes("/movie/10")) {
@@ -93,14 +93,14 @@ describe("Arr profile HTTP", () => {
     expect(warning).toBeNull();
     expect(calls.some((c) => /search|command/i.test(c))).toBe(false);
     expect(calls.some((c) => c.includes("POST") && c.includes("/qualityprofile"))).toBe(false);
-    expect(putBody?.qualityProfileId).toBe(8);
-    expect(putBody?.title).toBe("Film");
-    expect(putBody?.monitored).toBe(true);
+    expect(putBodies[0]?.qualityProfileId).toBe(8);
+    expect(putBodies[0]?.title).toBe("Film");
+    expect(putBodies[0]?.monitored).toBe(true);
   });
 
   it("creates the Optimizarr profile when no no-upgrade profile exists", async () => {
     const calls: string[] = [];
-    let createdBody: Record<string, unknown> | null = null;
+    const createdBodies: Record<string, unknown>[] = [];
     const warning = await assignProfile({
       kind: "radarr",
       url: "http://radarr",
@@ -114,7 +114,8 @@ describe("Arr profile HTTP", () => {
           return new Response(JSON.stringify({ name: "", upgradeAllowed: false, items: ultraHd.items }));
         }
         if (String(url).endsWith("/qualityprofile") && init?.method === "POST") {
-          createdBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+          const createdBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+          createdBodies.push(createdBody);
           return new Response(JSON.stringify({ id: 22, name: createdBody.name, upgradeAllowed: false, items: ultraHd.items }));
         }
         if (String(url).endsWith("/qualityprofile")) {
@@ -137,9 +138,9 @@ describe("Arr profile HTTP", () => {
       }) as typeof fetch,
     });
     expect(warning).toBeNull();
-    expect(createdBody?.name).toBe("Optimizarr Movie 4K HDR");
-    expect(createdBody?.upgradeAllowed).toBe(false);
-    expect(createdBody).not.toHaveProperty("id");
+    expect(createdBodies[0]?.name).toBe("Optimizarr Movie 4K HDR");
+    expect(createdBodies[0]?.upgradeAllowed).toBe(false);
+    expect(createdBodies[0]).not.toHaveProperty("id");
     expect(calls.some((c) => /search|command/i.test(c))).toBe(false);
   });
 });
