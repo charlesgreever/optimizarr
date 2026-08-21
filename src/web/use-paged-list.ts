@@ -1,0 +1,113 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { LibraryPage } from "./api";
+import { retainedNextOffset } from "./library-pages";
+
+type LoadMode = "reset" | "append" | "poll";
+
+export function usePagedList<T>(options: {
+  loadPage: (offset: number, limit: number) => Promise<LibraryPage<T>>;
+  keyOf: (row: T) => string;
+  queryKey?: string;
+  pageSize?: number;
+  pollMs?: number;
+}) {
+  const pageSize = options.pageSize ?? 50;
+  const [items, setItems] = useState<T[]>([]);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const itemsRef = useRef<T[]>([]);
+  const loaderRef = useRef(options.loadPage);
+  const keyRef = useRef(options.keyOf);
+  const inFlightRef = useRef(false);
+  const pendingResetRef = useRef(false);
+  const mountedRef = useRef(true);
+  const generationRef = useRef(0);
+  const runRef = useRef<(offset: number, mode: LoadMode) => Promise<void>>(async () => undefined);
+  loaderRef.current = options.loadPage;
+  keyRef.current = options.keyOf;
+
+  const run = useCallback(async (offset: number, mode: LoadMode) => {
+    if (inFlightRef.current) {
+      if (mode === "reset") pendingResetRef.current = true;
+      return;
+    }
+    inFlightRef.current = true;
+    const generation = generationRef.current;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await loaderRef.current(offset, pageSize);
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      const current = itemsRef.current;
+      const nextItems =
+        mode === "reset"
+          ? result.items
+          : mode === "append"
+            ? mergeByKey(current, result.items, keyRef.current)
+            : refreshByKey(current, result.items, pageSize, result.total, keyRef.current);
+      itemsRef.current = nextItems;
+      setItems(nextItems);
+      setNextOffset(mode === "poll" ? retainedNextOffset(nextItems.length, result.total) : result.nextOffset);
+      setTotal(result.total);
+    } catch (cause) {
+      if (mountedRef.current && generation === generationRef.current) {
+        setError(cause instanceof Error ? cause.message : "This list could not be loaded.");
+      }
+    } finally {
+      inFlightRef.current = false;
+      if (mountedRef.current) setLoading(false);
+      if (pendingResetRef.current && mountedRef.current) {
+        pendingResetRef.current = false;
+        void runRef.current(0, "reset");
+      }
+    }
+  }, [pageSize]);
+  runRef.current = run;
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    generationRef.current += 1;
+    itemsRef.current = [];
+    setItems([]);
+    setNextOffset(null);
+    setTotal(0);
+    void run(0, "reset");
+  }, [options.queryKey, run]);
+
+  useEffect(() => {
+    if (!options.pollMs) return;
+    const interval = window.setInterval(() => void run(0, "poll"), options.pollMs);
+    return () => window.clearInterval(interval);
+  }, [options.pollMs, run]);
+
+  return {
+    items,
+    nextOffset,
+    total,
+    loading,
+    error,
+    loadMore: () => (nextOffset == null ? Promise.resolve() : run(nextOffset, "append")),
+    reload: () => run(0, "reset"),
+  };
+}
+
+function mergeByKey<T>(current: T[], incoming: T[], keyOf: (row: T) => string): T[] {
+  const rows = new Map(current.map((row) => [keyOf(row), row]));
+  for (const row of incoming) rows.set(keyOf(row), row);
+  return [...rows.values()];
+}
+
+function refreshByKey<T>(current: T[], incoming: T[], pageSize: number, total: number, keyOf: (row: T) => string): T[] {
+  const firstKeys = new Set(current.slice(0, pageSize).map(keyOf));
+  const incomingKeys = new Set(incoming.map(keyOf));
+  const tail = current.filter((row) => !firstKeys.has(keyOf(row)) && !incomingKeys.has(keyOf(row)));
+  return [...incoming, ...tail].slice(0, total);
+}

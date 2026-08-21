@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react";
 import { api, formatSize, type HistoryRow } from "../api";
+import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { usePagedList } from "../use-paged-list";
 
 export function HistoryPage() {
-  const [items, setItems] = useState<HistoryRow[]>([]);
-  useEffect(() => {
-    void api.history().then((r) => setItems(r.items));
-  }, []);
+  const list = usePagedList({ loadPage: api.history, keyOf: (row: HistoryRow) => row.id });
+  const items = list.items;
   return (
     <section>
       <PageHead title="History" />
       <Help>History is the log of finished work: kept, discarded, flagged, failed, and cancelled.</Help>
-      {items.length === 0 ? (
-        <div className="empty">No finished work yet.</div>
-      ) : (
+      {items.length === 0 && list.loading && <div className="empty">Loading history…</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">No finished work yet.</div>}
+      {items.length > 0 && (
         <div className="glass mt-5 overflow-x-auto">
           <table>
             <thead>
@@ -37,6 +36,7 @@ export function HistoryPage() {
           </table>
         </div>
       )}
+      <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="history" onLoadMore={list.loadMore} onRetry={list.reload} />
     </section>
   );
 }

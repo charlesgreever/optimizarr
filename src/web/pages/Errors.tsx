@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react";
 import { api, type FileError } from "../api";
+import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { usePagedList } from "../use-paged-list";
 
 export function ErrorsPage() {
-  const [items, setItems] = useState<FileError[]>([]);
-  useEffect(() => {
-    void api.errors().then((r) => setItems(r.items));
-  }, []);
+  const list = usePagedList({ loadPage: api.errors, keyOf: (row: FileError) => row.path });
+  const items = list.items;
   return (
     <section>
       <PageHead title="Errors" />
       <Help>Each row is one file Optimizarr could not read or probe. The count is distinct files, not retry attempts.</Help>
-      {items.length === 0 ? (
-        <div className="empty">No unread files. Nothing needs attention here.</div>
-      ) : (
+      {items.length === 0 && list.loading && <div className="empty">Loading errors…</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">No unread files. Nothing needs attention here.</div>}
+      {items.length > 0 && (
         <div className="glass mt-5 overflow-x-auto">
           <table>
             <thead>
@@ -37,6 +36,7 @@ export function ErrorsPage() {
           </table>
         </div>
       )}
+      <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="errors" onLoadMore={list.loadMore} onRetry={list.reload} />
     </section>
   );
 }

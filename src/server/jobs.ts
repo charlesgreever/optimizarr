@@ -345,11 +345,6 @@ export class JobService {
     return { accepted: true };
   }
 
-  decorate(job: Job): Job {
-    const item = this.opts.store.getItem(job.itemId);
-    return { ...job, displayTitle: item ? displayTitle(item) : job.itemId };
-  }
-
   private now(): number {
     return this.opts.clock?.() ?? Date.now();
   }
@@ -377,11 +372,4 @@ function appendWarning(current: string | null, next: string | null): string | nu
   if (!current) return next;
   if (!next) return current;
   return `${current} ${next}`;
-}
-
-export function withTitles(jobs: Job[], store: Store): Job[] {
-  return jobs.map((job) => {
-    const item = store.getItem(job.itemId);
-    return { ...job, displayTitle: item ? displayTitle(item) : job.itemId };
-  });
 }

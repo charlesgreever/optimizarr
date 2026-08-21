@@ -19,6 +19,9 @@ import type {
 } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 import { normalizeInspection } from "./inspect.ts";
+import { displayTitle, tokenize } from "./titles.ts";
+
+export type Page<T> = { items: T[]; nextOffset: number | null; total: number };
 
 export type LibrarySnapshot = {
   item: LibraryItem;
@@ -471,6 +474,37 @@ export class Store {
     );
   }
 
+  suggestionPage(offset: number, limit: number, query = ""): Page<Suggestion & { displayTitle: string; instanceName?: string; type?: LibraryItem["type"]; quality?: string; hasPoster: boolean }> {
+    const tokens = tokenize(query);
+    const search = tokens.map(() => `LOWER(COALESCE(i.title, '') || ' ' || COALESCE(i.show_title, '') || ' ' || COALESCE(i.episode_title, '') || ' ' || COALESCE(i.quality, '') || ' ' || COALESCE(n.name, '') || ' ' || CASE WHEN i.type = 'episode' THEN printf('s%02de%02d %dx%d', i.season, i.episode, i.season, i.episode) ELSE '' END) LIKE ?`).join(" AND ");
+    const where = `s.dismissed = 0${search ? ` AND ${search}` : ""}`;
+    const params = tokens.map((token) => `%${token}%`);
+    const total = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM suggestions s LEFT JOIN library_items i ON i.id = s.item_id LEFT JOIN instances n ON n.id = i.instance_id WHERE ${where}`).get(...params) as { n: number }).n);
+    const rows = this.db.prepare(
+      `SELECT s.payload, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
+              i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title,
+              i.quality AS item_quality, i.poster_bytes AS item_poster_bytes, i.poster_remote AS item_poster_remote,
+              n.name AS item_instance_name
+       FROM suggestions s
+       LEFT JOIN library_items i ON i.id = s.item_id
+       LEFT JOIN instances n ON n.id = i.instance_id
+       WHERE ${where}
+       ORDER BY LOWER(COALESCE(i.show_title, i.title, s.item_id)), i.season, i.episode, s.id
+       LIMIT ? OFFSET ?`,
+    ).all(...params, limit, offset) as Record<string, unknown>[];
+    return page(rows.map((row) => {
+      const suggestion = JSON.parse(String(row.payload)) as Suggestion;
+      return {
+        ...suggestion,
+        displayTitle: joinedDisplayTitle(row, suggestion.itemId),
+        instanceName: row.item_instance_name == null ? undefined : String(row.item_instance_name),
+        type: row.item_type === "episode" ? "episode" : row.item_type === "movie" ? "movie" : undefined,
+        quality: row.item_quality == null ? undefined : String(row.item_quality),
+        hasPoster: Boolean(row.item_poster_bytes || row.item_poster_remote),
+      };
+    }), total, offset, limit);
+  }
+
   setFileError(path: string, itemId: string | null, reason: string): void {
     this.db.prepare("INSERT OR REPLACE INTO file_errors (path, item_id, reason) VALUES (?, ?, ?)").run(path, itemId, reason);
   }
@@ -495,6 +529,24 @@ export class Store {
         reason: r.reason,
       };
     });
+  }
+
+  errorPage(offset: number, limit: number): Page<FileError> {
+    const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM file_errors").get() as { n: number }).n);
+    const rows = this.db.prepare(
+      `SELECT e.path, e.item_id, e.reason, i.type AS item_type, i.title AS item_title,
+              i.show_title AS item_show_title, i.season AS item_season, i.episode AS item_episode,
+              i.episode_title AS item_episode_title
+       FROM file_errors e LEFT JOIN library_items i ON i.id = e.item_id
+       ORDER BY e.path LIMIT ? OFFSET ?`,
+    ).all(limit, offset) as Record<string, unknown>[];
+    return page(rows.map((row) => ({
+      itemId: row.item_id == null ? null : String(row.item_id),
+      path: String(row.path),
+      fileName: String(row.path).split("/").pop() || String(row.path),
+      displayTitle: joinedDisplayTitle(row, String(row.path).split("/").pop() || String(row.path)),
+      reason: String(row.reason),
+    })), total, offset, limit);
   }
 
   setInspectState(state: { walking: boolean; pending: number; inspected: number; failed: number }): void {
@@ -563,6 +615,17 @@ export class Store {
 
   listJobs(): Array<Job & { plan: Suggestion }> {
     return (this.db.prepare("SELECT * FROM jobs WHERE queue_visible = 1 ORDER BY position ASC").all() as Record<string, unknown>[]).map(mapJob);
+  }
+
+  jobPage(offset: number, limit: number): Page<Job & { plan: Suggestion }> {
+    const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE queue_visible = 1").get() as { n: number }).n);
+    const rows = this.db.prepare(
+      `SELECT j.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
+              i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title
+       FROM jobs j LEFT JOIN library_items i ON i.id = j.item_id
+       WHERE j.queue_visible = 1 ORDER BY j.position ASC LIMIT ? OFFSET ?`,
+    ).all(limit, offset) as Record<string, unknown>[];
+    return page(rows.map((row) => ({ ...mapJob(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit);
   }
 
   getJob(id: string): (Job & { plan: Suggestion }) | undefined {
@@ -634,6 +697,17 @@ export class Store {
     return (this.db.prepare("SELECT * FROM reviews").all() as Record<string, unknown>[]).map(mapReview);
   }
 
+  reviewPage(offset: number, limit: number): Page<ReviewItem> {
+    const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM reviews").get() as { n: number }).n);
+    const rows = this.db.prepare(
+      `SELECT r.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
+              i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title
+       FROM reviews r LEFT JOIN library_items i ON i.id = r.item_id
+       ORDER BY r.id LIMIT ? OFFSET ?`,
+    ).all(limit, offset) as Record<string, unknown>[];
+    return page(rows.map((row) => ({ ...mapReview(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit);
+  }
+
   getReview(id: string): ReviewItem | undefined {
     const row = this.db.prepare("SELECT * FROM reviews WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? mapReview(row) : undefined;
@@ -671,6 +745,56 @@ export class Store {
       bytesSaved: Number(r.bytes_saved),
       createdAt: Number(r.created_at),
     }));
+  }
+
+  historyPage(offset: number, limit: number): Page<HistoryRow> {
+    const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM history").get() as { n: number }).n);
+    const rows = this.db.prepare(
+      `SELECT h.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
+              i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title
+       FROM history h LEFT JOIN library_items i ON i.id = h.item_id
+       ORDER BY h.created_at DESC, h.id LIMIT ? OFFSET ?`,
+    ).all(limit, offset) as Record<string, unknown>[];
+    return page(rows.map((row) => ({
+      id: String(row.id),
+      itemId: String(row.item_id),
+      displayTitle: joinedDisplayTitle(row, String(row.item_id)),
+      outcome: row.outcome as ActivityOutcome,
+      bytesSaved: Number(row.bytes_saved),
+      createdAt: Number(row.created_at),
+    })), total, offset, limit);
+  }
+
+  workSummary(): {
+    suggestions: number;
+    queued: number;
+    review: number;
+    errors: number;
+    failed: number;
+    running: (Job & { plan: Suggestion }) | null;
+  } {
+    const counts = this.db.prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM suggestions WHERE dismissed = 0) AS suggestions,
+         (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status IN ('queued', 'held')) AS queued,
+         (SELECT COUNT(*) FROM reviews) AS review,
+         (SELECT COUNT(*) FROM file_errors) AS errors,
+         (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status = 'failed') AS failed`,
+    ).get() as Record<string, number>;
+    const row = this.db.prepare(
+      `SELECT j.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
+              i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title
+       FROM jobs j LEFT JOIN library_items i ON i.id = j.item_id
+       WHERE j.queue_visible = 1 AND j.status = 'running' ORDER BY j.position LIMIT 1`,
+    ).get() as Record<string, unknown> | undefined;
+    return {
+      suggestions: Number(counts.suggestions),
+      queued: Number(counts.queued),
+      review: Number(counts.review),
+      errors: Number(counts.errors),
+      failed: Number(counts.failed),
+      running: row ? { ...mapJob(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) } : null,
+    };
   }
 
   savings(): { filesOptimized: number; spaceSavedBytes: number } {
@@ -782,4 +906,21 @@ function mapReview(row: Record<string, unknown>): ReviewItem {
     sidecar: compare.sidecar,
     error: row.error == null ? null : String(row.error),
   };
+}
+
+function page<T>(items: T[], total: number, offset: number, limit: number): Page<T> {
+  const consumed = offset + items.length;
+  return { items, total, nextOffset: consumed < total && items.length === limit ? consumed : null };
+}
+
+function joinedDisplayTitle(row: Record<string, unknown>, fallback: string): string {
+  if (row.item_title == null) return fallback;
+  return displayTitle({
+    type: row.item_type === "episode" ? "episode" : "movie",
+    title: String(row.item_title),
+    showTitle: row.item_show_title == null ? null : String(row.item_show_title),
+    season: row.item_season == null ? null : Number(row.item_season),
+    episode: row.item_episode == null ? null : Number(row.item_episode),
+    episodeTitle: row.item_episode_title == null ? null : String(row.item_episode_title),
+  });
 }

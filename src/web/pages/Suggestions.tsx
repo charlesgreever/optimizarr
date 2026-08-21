@@ -1,22 +1,31 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatSize, type SuggestionRow } from "../api";
+import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { usePagedList } from "../use-paged-list";
 
 export function SuggestionsPage() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
-  const [items, setItems] = useState<SuggestionRow[]>([]);
+  const [debouncedQ, setDebouncedQ] = useState(q);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => {
       setParams(q ? { q } : {});
-      void api.suggestions(q).then((r) => setItems(r.items));
+      setDebouncedQ(q);
+      setSelected({});
     }, 280);
     return () => clearTimeout(t);
   }, [q, setParams]);
+  const list = usePagedList({
+    queryKey: debouncedQ,
+    loadPage: (offset, limit) => api.suggestions(debouncedQ, offset, limit),
+    keyOf: (row: SuggestionRow) => row.id,
+  });
+  const items = list.items;
 
   return (
     <section>
@@ -32,15 +41,19 @@ export function SuggestionsPage() {
           disabled={!Object.values(selected).some(Boolean)}
           onClick={() => {
             const ids = items.filter((i) => selected[i.id]).map((i) => i.id);
-            void Promise.all(ids.map((id) => api.queue({ suggestionId: id }))).then(() => setMsg(`Queued ${ids.length}.`));
+            void Promise.all(ids.map((id) => api.queue({ suggestionId: id }))).then(() => {
+              setMsg(`Queued ${ids.length}.`);
+              setSelected({});
+              return list.reload();
+            });
           }}
         >
           Add selected to queue
         </button>
       </div>
-      {items.length === 0 ? (
-        <div className="empty">No open work. Healthy files stay off this list.</div>
-      ) : (
+      {items.length === 0 && list.loading && <div className="empty">Loading suggestions…</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">No open work. Healthy files stay off this list.</div>}
+      {items.length > 0 && (
         <div className="glass mt-5 overflow-x-auto">
           <table>
             <thead>
@@ -78,7 +91,7 @@ export function SuggestionsPage() {
                     <button className="btn" type="button" onClick={() => void api.queue({ suggestionId: item.id }).then(() => setMsg("Added to queue."))}>
                       Queue
                     </button>
-                    <button className="btn-secondary danger ml-1" type="button" onClick={() => void api.dismiss(item.id).then(() => setItems((cur) => cur.filter((x) => x.id !== item.id)))}>
+                    <button className="btn-secondary danger ml-1" type="button" onClick={() => void api.dismiss(item.id).then(list.reload)}>
                       Dismiss
                     </button>
                   </td>
@@ -88,6 +101,7 @@ export function SuggestionsPage() {
           </table>
         </div>
       )}
+      <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="suggestions" onLoadMore={list.loadMore} onRetry={list.reload} />
       {msg && <p className="mt-3 text-sm">{msg}</p>}
     </section>
   );

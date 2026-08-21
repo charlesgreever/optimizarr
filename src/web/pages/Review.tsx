@@ -1,17 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, formatSize, type ReviewRow } from "../api";
+import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { usePagedList } from "../use-paged-list";
 
 export function ReviewPage() {
-  const [items, setItems] = useState<ReviewRow[]>([]);
+  const list = usePagedList({ loadPage: api.review, keyOf: (row: ReviewRow) => row.id, pollMs: 3000 });
+  const items = list.items;
   const [selected, setSelected] = useState<Record<string, boolean>>();
   const [msg, setMsg] = useState("");
-  const load = () => void api.review().then((r) => setItems(r.items));
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 3000);
-    return () => clearInterval(id);
-  }, []);
 
   const pending = items.filter((i) => i.status === "pending");
   const chosen = pending.filter((i) => selected?.[i.id]);
@@ -23,7 +20,11 @@ export function ReviewPage() {
           className="btn"
           type="button"
           disabled={chosen.length === 0}
-          onClick={() => void api.keepSelected(chosen.map((i) => i.id)).then((r) => setMsg(`Keep started for ${(r as { accepted: number }).accepted}.`))}
+          onClick={() => void api.keepSelected(chosen.map((i) => i.id)).then((r) => {
+            setMsg(`Keep started for ${(r as { accepted: number }).accepted}.`);
+            setSelected({});
+            return list.reload();
+          })}
         >
           Keep selected ({chosen.length})
         </button>
@@ -31,9 +32,9 @@ export function ReviewPage() {
       <Help>
         Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes.
       </Help>
-      {items.length === 0 ? (
-        <div className="empty">Nothing is waiting for Keep or Discard.</div>
-      ) : (
+      {items.length === 0 && list.loading && <div className="empty">Loading review…</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">Nothing is waiting for Keep or Discard.</div>}
+      {items.length > 0 && (
         <ul className="mt-5 space-y-3">
           {items.map((item) => (
             <li key={item.id} className="glass p-4">
@@ -53,10 +54,10 @@ export function ReviewPage() {
                     <div>Sidecar: {item.sidecar.codec} · {formatSize(item.sidecar.sizeBytes)} · {item.sidecar.tracks}</div>
                   </div>
                   <div className="mt-3 flex gap-2">
-                    <button className="btn" type="button" disabled={item.status !== "pending"} onClick={() => void api.keep(item.id).then(load)}>
+                    <button className="btn" type="button" disabled={item.status !== "pending"} onClick={() => void api.keep(item.id).then(list.reload)}>
                       {item.status === "keeping" ? "Keeping…" : "Keep"}
                     </button>
-                    <button className="btn-secondary danger" type="button" disabled={item.status !== "pending"} onClick={() => void api.discard(item.id).then(load)}>
+                    <button className="btn-secondary danger" type="button" disabled={item.status !== "pending"} onClick={() => void api.discard(item.id).then(list.reload)}>
                       Discard
                     </button>
                   </div>
@@ -66,6 +67,7 @@ export function ReviewPage() {
           ))}
         </ul>
       )}
+      <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="reviews" onLoadMore={list.loadMore} onRetry={list.reload} />
       {msg && <p className="mt-3 text-sm">{msg}</p>}
     </section>
   );

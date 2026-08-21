@@ -245,6 +245,113 @@ describe("public HTTP behavior", () => {
     expect(episodes.items).toEqual([expect.objectContaining({ id: "episode-101-1" })]);
   });
 
+  it("bounds every work-list response and exposes continuation metadata", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    ctx.app.jobs.stop();
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    ctx.store.upsertInstance({ id: "radarr-lists", kind: "radarr", name: "Radarr", url: "http://radarr", enabled: true });
+
+    for (let index = 1; index <= 3; index += 1) {
+      const itemId = `list-item-${index}`;
+      ctx.store.upsertItem({
+        id: itemId,
+        instanceId: "radarr-lists",
+        arrId: index,
+        arrSeriesId: null,
+        arrEpisodeFileId: null,
+        type: "movie",
+        title: `List Film ${index}`,
+        showTitle: null,
+        season: null,
+        episode: null,
+        episodeTitle: null,
+        path: `/movies/list-${index}.mkv`,
+        sizeBytes: index * 1_000,
+        quality: "HD",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+      ctx.store.saveSuggestion(itemId, {
+        id: `list-suggestion-${index}`,
+        itemId,
+        actions: ["transcode"],
+        reasons: ["Over the size cap."],
+        warning: null,
+        category: "movie1080p",
+        estimatedSavingsBytes: 500,
+        now: { codec: "h264", quality: "HD", sizeBytes: 1_000, sizePerHourGb: 1 },
+        after: { codec: "hevc", quality: "HD", sizeBytes: 500, sizePerHourGb: 0.5 },
+        dismissed: false,
+        keepAudio: [],
+        stripAudio: [],
+        keepSubs: [],
+        stripSubs: [],
+      });
+      ctx.store.insertJob({
+        id: `list-job-${index}`,
+        itemId,
+        suggestionId: `list-suggestion-${index}`,
+        status: "queued",
+        phase: "queued",
+        progress: 0,
+        error: null,
+        warning: null,
+        runNow: false,
+        position: index,
+        plan: {},
+        createdAt: index,
+      });
+      ctx.store.insertReview({
+        id: `list-review-${index}`,
+        jobId: `list-job-${index}`,
+        itemId,
+        displayTitle: "",
+        status: "pending",
+        flagged: false,
+        flagReason: null,
+        sourcePath: `/movies/list-${index}.mkv`,
+        sidecarPath: `/review/list-${index}.mkv`,
+        source: { codec: "h264", quality: "HD", sizeBytes: 1_000, sizePerHourGb: 1, durationSec: 1, tracks: "" },
+        sidecar: { codec: "hevc", quality: "HD", sizeBytes: 500, sizePerHourGb: 0.5, durationSec: 1, tracks: "" },
+        error: null,
+      });
+      ctx.store.setFileError(`/movies/list-${index}.mkv`, itemId, "Unreadable.");
+      ctx.store.addHistory(itemId, "kept", 500, index);
+    }
+
+    for (const path of ["suggestions", "jobs", "review", "errors", "history"]) {
+      const first = (await (await ctx.app.app.request(`/api/${path}?limit=2`, { headers })).json()) as {
+        items: Array<{ id?: string; path?: string }>;
+        nextOffset: number | null;
+        total: number;
+      };
+      expect(first.items, path).toHaveLength(2);
+      expect(first, path).toMatchObject({ nextOffset: 2, total: 3 });
+
+      const second = (await (await ctx.app.app.request(`/api/${path}?offset=2&limit=2`, { headers })).json()) as {
+        items: Array<{ id?: string; path?: string }>;
+        nextOffset: number | null;
+        total: number;
+      };
+      expect(second.items, path).toHaveLength(1);
+      expect(second, path).toMatchObject({ nextOffset: null, total: 3 });
+    }
+
+    const matching = (await (
+      await ctx.app.app.request("/api/suggestions?q=Film%203&limit=2", { headers })
+    ).json()) as { items: Array<{ displayTitle: string }>; nextOffset: number | null; total: number };
+    expect(matching).toMatchObject({ nextOffset: null, total: 1 });
+    expect(matching.items.map((item) => item.displayTitle)).toEqual(["List Film 3"]);
+  });
+
   it("rejects a wrong login with one generic error", async () => {
     const ctx = await setup();
     apps.push(ctx);

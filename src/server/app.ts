@@ -21,7 +21,7 @@ import {
 } from "./arr.ts";
 import { buildSuggestion } from "./suggest.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
-import { JobService, withTitles } from "./jobs.ts";
+import { JobService } from "./jobs.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
@@ -449,7 +449,10 @@ export function createApp(opts: AppOptions) {
     if (inspections.leftoverCount() > 0) void inspections.inspectPending();
     return c.json(store.getInspectState());
   });
-  app.get("/api/errors", (c) => c.json({ items: store.listErrors() }));
+  app.get("/api/errors", (c) => {
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(store.errorPage(offset, limit));
+  });
 
   app.post("/api/library/items/:id/force", async (c) => {
     const blocked = gateOptimize();
@@ -580,15 +583,8 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/api/suggestions", (c) => {
-    const q = c.req.query("q") ?? "";
-    const items = store
-      .listSuggestions()
-      .map((s) => presentSuggestion(s))
-      .filter((s) => {
-        const item = store.getItem(s.itemId);
-        return item ? matchesTitleSearch(q, item) : !q;
-      });
-    return c.json({ items });
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(store.suggestionPage(offset, limit, c.req.query("q") ?? ""));
   });
 
   app.post("/api/suggestions/:id/dismiss", (c) => {
@@ -607,7 +603,10 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true, id: result.id });
   });
 
-  app.get("/api/jobs", (c) => c.json({ items: withTitles(store.listJobs(), store).map((j) => jobs.decorate(j)) }));
+  app.get("/api/jobs", (c) => {
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(store.jobPage(offset, limit));
+  });
 
   app.post("/api/jobs/cancel-all", (c) => {
     const result = jobs.cancelAll();
@@ -650,12 +649,8 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/api/review", (c) => {
-    return c.json({
-      items: store.listReviews().map((r) => {
-        const item = store.getItem(r.itemId);
-        return { ...r, displayTitle: item ? displayTitle(item) : r.itemId };
-      }),
-    });
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(store.reviewPage(offset, limit));
   });
 
   app.post("/api/review/:id/keep", async (c) => {
@@ -687,27 +682,22 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/api/history", (c) => {
-    return c.json({
-      items: store.listHistory().map((h) => {
-        const item = store.getItem(h.itemId);
-        return { ...h, displayTitle: item ? displayTitle(item) : h.displayTitle };
-      }),
-    });
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(store.historyPage(offset, limit));
   });
 
   app.get("/api/home", (c) => {
     const sav = store.savings();
-    const running = store.listJobs().find((j) => j.status === "running");
-    const queued = store.listJobs().filter((j) => j.status === "queued" || j.status === "held").length;
+    const work = store.workSummary();
     return c.json({
       filesOptimized: sav.filesOptimized,
       spaceSavedBytes: sav.spaceSavedBytes,
-      suggestions: store.listSuggestions().length,
-      queued,
-      review: store.listReviews().length,
-      errors: store.listErrors().length,
-      recent: store.listHistory().slice(0, 8),
-      status: running ? `Working · ${jobs.decorate(running).displayTitle}` : queued ? `${queued} waiting` : "Idle",
+      suggestions: work.suggestions,
+      queued: work.queued,
+      review: work.review,
+      errors: work.errors,
+      recent: store.historyPage(0, 8).items,
+      status: work.running ? `Working · ${work.running.displayTitle}` : work.queued ? `${work.queued} waiting` : "Idle",
     });
   });
 
@@ -745,17 +735,16 @@ export function createApp(opts: AppOptions) {
     if (!keyOk && !(settings.localAuthBypass && isLocalAddress(ip))) {
       return c.json({ error: "A widget key is required." }, 401);
     }
-    const running = store.listJobs().find((j) => j.status === "running");
-    const queued = store.listJobs().filter((j) => j.status === "queued" || j.status === "held").length;
+    const work = store.workSummary();
     return c.json({
-      status: running ? `Working · ${jobs.decorate(running).displayTitle}` : queued ? `${queued} waiting` : "Idle",
-      queued,
-      review: store.listReviews().length,
-      suggestions: store.listSuggestions().length,
-      failed: store.listJobs().filter((j) => j.status === "failed").length,
-      runningTitle: running ? jobs.decorate(running).displayTitle : null,
-      runningPhase: running?.phase ?? null,
-      runningProgress: running?.progress ?? null,
+      status: work.running ? `Working · ${work.running.displayTitle}` : work.queued ? `${work.queued} waiting` : "Idle",
+      queued: work.queued,
+      review: work.review,
+      suggestions: work.suggestions,
+      failed: work.failed,
+      runningTitle: work.running?.displayTitle ?? null,
+      runningPhase: work.running?.phase ?? null,
+      runningProgress: work.running?.progress ?? null,
     });
   };
 
@@ -786,18 +775,6 @@ export function createApp(opts: AppOptions) {
       if (full.kind === "radarr" || full.kind === "sonarr") return { ...base, hasApiKey: Boolean(full.secret) };
       return { ...base, hasToken: Boolean(full.secret) };
     });
-  }
-
-  function presentSuggestion(suggestion: Suggestion) {
-    const item = store.getItem(suggestion.itemId);
-    return {
-      ...suggestion,
-      displayTitle: item ? displayTitle(item) : suggestion.itemId,
-      instanceName: item?.instanceName,
-      type: item?.type,
-      quality: item?.quality,
-      hasPoster: item?.hasPoster ?? false,
-    };
   }
 
   void inspections.inspectPending();

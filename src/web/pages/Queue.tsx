@@ -1,28 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, type JobRow } from "../api";
+import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { usePagedList } from "../use-paged-list";
 
 export function QueuePage() {
-  const [items, setItems] = useState<JobRow[]>([]);
-  const [error, setError] = useState("");
+  const list = usePagedList({ loadPage: api.jobs, keyOf: (row: JobRow) => row.id, pollMs: 1000 });
+  const items = list.items;
+  const [mutationError, setMutationError] = useState("");
   const [busy, setBusy] = useState(false);
-  const load = () => void api.jobs().then((r) => setItems(r.items));
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 1000);
-    return () => clearInterval(id);
-  }, []);
   const active = items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused");
   const finished = items.filter((job) => job.status === "succeeded" || job.status === "failed" || job.status === "cancelled");
 
   async function mutate(action: () => Promise<unknown>) {
     setBusy(true);
-    setError("");
+    setMutationError("");
     try {
       await action();
-      load();
+      await list.reload();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Queue could not be updated.");
+      setMutationError(cause instanceof Error ? cause.message : "Queue could not be updated.");
     } finally {
       setBusy(false);
     }
@@ -44,10 +41,10 @@ export function QueuePage() {
           </button>
         )}
       </div>
-      {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
-      {items.length === 0 ? (
-        <div className="empty">The queue is idle. Approve a suggestion to add work.</div>
-      ) : (
+      {mutationError && <p className="mt-3 text-sm text-rose-400">{mutationError}</p>}
+      {items.length === 0 && list.loading && <div className="empty">Loading queue…</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">The queue is idle. Approve a suggestion to add work.</div>}
+      {items.length > 0 && (
         <div className="glass mt-5 overflow-x-auto">
           <table>
             <thead>
@@ -77,12 +74,12 @@ export function QueuePage() {
                   </td>
                   <td>
                     {(job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused") && (
-                      <button className="btn-secondary" type="button" onClick={() => void api.cancel(job.id).then(load)}>
+                      <button className="btn-secondary" type="button" onClick={() => void api.cancel(job.id).then(list.reload)}>
                         Cancel
                       </button>
                     )}
                     {job.status === "held" && (
-                      <button className="btn ml-1" type="button" onClick={() => void api.runNow(job.id).then(load)}>
+                      <button className="btn ml-1" type="button" onClick={() => void api.runNow(job.id).then(list.reload)}>
                         Run now
                       </button>
                     )}
@@ -99,6 +96,7 @@ export function QueuePage() {
           </table>
         </div>
       )}
+      <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="jobs" onLoadMore={list.loadMore} onRetry={list.reload} />
     </section>
   );
 }

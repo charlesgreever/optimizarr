@@ -4,8 +4,8 @@ Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub is
 
 ## Evidence Map
 
-- **Library HTTP:** `src/server/app.test.ts` bounds Movies and Series pages, returns summary-first Series data, fetches one show's episodes, preserves global movie sorting, and verifies dense public labels and reasons.
-- **Library UI:** `src/web/library-row.test.ts`, `src/web/library-pages.test.ts`, `Movies.tsx`, `Series.tsx`, and `LibraryMediaCells.tsx` cover shared row semantics, page merging, one-request guards, retained expansions, refresh invalidation, retry, and legacy-focus paging. The production build verifies the routed React surface.
+- **List HTTP:** `src/server/app.test.ts` bounds Movies, Suggestions, Queue, Review, Errors, History, and Series pages; returns summary-first Series data; fetches one show's episodes; preserves global movie sorting; and verifies dense public labels and reasons.
+- **List UI:** `src/web/library-row.test.ts`, `src/web/library-pages.test.ts`, `use-paged-list.ts`, the primary list pages, and `LibraryMediaCells.tsx` cover shared row semantics, page merging, one-request guards, retained polled pages, retained expansions, refresh invalidation, retry, and legacy-focus paging. The production build verifies the routed React surface.
 - **Plan:** `src/server/custom-plan.test.ts` and the custom-plan HTTP tests in `src/server/app.test.ts` cover validation, estimates, write mode, suggestion negation, and queue locks.
 - **Runner:** `src/server/optimize.test.ts` covers safe operands, ISO remux, size and quality modes, downscale, AAC replacement/downmix, output duration, and progress.
 - **Inspect/Suggest:** `src/server/inspect.test.ts`, `inspection-runner.test.ts`, `suggest.test.ts`, and the ISO HTTP tests in `app.test.ts` cover ISO/non-ISO inspection, automatic-operation settings, and post-promote inspection.
