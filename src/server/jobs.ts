@@ -287,7 +287,13 @@ export class JobService {
       instance,
       players,
     });
-    if (outcome.replaced && plan && planHasVideoTranscode(plan) && instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
+    if (
+      outcome.replaced &&
+      plan &&
+      (planHasVideoTranscode(plan) || item.path.toLowerCase().endsWith(".iso")) &&
+      instance?.secret &&
+      (instance.kind === "radarr" || instance.kind === "sonarr")
+    ) {
       const extra = await assignProfile({
         kind: instance.kind,
         url: instance.url,
@@ -295,6 +301,7 @@ export class JobService {
         movieId: instance.kind === "radarr" ? item.arrId : undefined,
         seriesId: instance.kind === "sonarr" ? (item.arrSeriesId ?? undefined) : undefined,
         profileName: PROFILE_NAMES[plan.category],
+        currentQuality: item.quality,
         fetch: this.opts.fetch,
       });
       if (extra) outcome.warning = outcome.warning ? `${outcome.warning} ${extra}` : extra;

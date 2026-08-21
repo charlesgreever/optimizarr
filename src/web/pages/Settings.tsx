@@ -88,7 +88,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         <button className="btn" type="button" onClick={() => void api.syncProfiles().then((r) => setMsg(r.results.map((x) => `${x.created.length} created, ${x.updated.length} updated`).join(" · ") || "Profiles synced.")).catch((e: Error) => setMsg(e.message))}>
           Sync quality profiles
         </button>
-        <p className="help">Sync creates or updates only Optimizarr-named profiles. It never starts a search.</p>
+        <p className="help">Keep looks for a profile that does not upgrade, or creates the Optimizarr-named one if needed. Sync can create those profiles ahead of time. It never starts a search.</p>
       </div>
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Encode</h2>
