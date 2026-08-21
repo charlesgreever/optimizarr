@@ -9,7 +9,6 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
   const [hw, setHw] = useState<Hardware | null>(null);
   const [msg, setMsg] = useState("");
   const [inst, setInst] = useState({ kind: "radarr", name: "", url: "", apiKey: "" });
-  const [githubToken, setGithubToken] = useState("");
 
   const load = () => void api.settings().then(setData);
   useEffect(() => {
@@ -19,11 +18,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
 
   const save = () => {
     if (!data) return;
-    const body: Record<string, unknown> = { ...data };
-    if (githubToken.trim()) body.githubToken = githubToken.trim();
-    void api.saveSettings(body).then(() => {
-      setGithubToken("");
-      load();
+    void api.saveSettings(data).then(() => {
       setMsg("Settings saved.");
       onChange();
     });
@@ -73,38 +68,6 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           </select>
         </label>
         <p className="help">Direct write replaces the library file only after the new file passes an integrity check. Arr refresh failures stay as a warning.</p>
-        <label className="block text-sm">
-          GitHub token for Report
-          <input
-            className="mt-1 w-full"
-            type="password"
-            autoComplete="off"
-            value={githubToken}
-            placeholder={data.hasGithubToken ? "Token saved. Paste a new one to replace it." : "Optional personal access token"}
-            onChange={(e) => setGithubToken(e.target.value)}
-          />
-        </label>
-        <p className="help">
-          Optional. Report uploads the screenshot to GitHub and puts it on the new issue so it does not download to this computer.
-          Use a classic token with the public_repo scope, or a fine-grained token that can write issues on charlesgreever/optimizarr.
-          Without a token, Report copies the screenshot if the browser allows it, then downloads a PNG if copy fails.
-        </p>
-        {data.hasGithubToken && (
-          <button
-            className="btn-secondary"
-            type="button"
-            onClick={() =>
-              void api.saveSettings({ ...data, githubToken: "" }).then(() => {
-                setGithubToken("");
-                load();
-                setMsg("GitHub token removed.");
-                onChange();
-              })
-            }
-          >
-            Remove GitHub token
-          </button>
-        )}
         <button
           className="btn"
           type="button"

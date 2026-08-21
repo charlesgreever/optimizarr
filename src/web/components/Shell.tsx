@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
-import { attachScreenshot, copyBlobToClipboard, downloadBlob, submitReport, viewportCrop, type ReportKind } from "../reportIssue";
+import { buildReportIssueUrl, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
 const NAV = [
@@ -123,22 +123,10 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
     try {
       const jobs = await api.jobs();
       const running = jobs.items.find((job) => job.status === "running") ?? null;
-      await submitReport(
-        kind,
-        {
-          route: location.pathname,
-          inspect,
-          running,
-        },
-        {
-          capture: captureViewport,
-          attach: attachScreenshot,
-          copy: copyBlobToClipboard,
-          download: downloadBlob,
-          open: (url) => {
-            window.open(url, "_blank", "noopener,noreferrer");
-          },
-        },
+      window.open(
+        buildReportIssueUrl(kind, { route: location.pathname, inspect, running }),
+        "_blank",
+        "noopener,noreferrer",
       );
     } finally {
       setBusy(false);
@@ -156,25 +144,6 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
       </button>
     </div>
   );
-}
-
-async function captureViewport(): Promise<Blob> {
-  const { toCanvas } = await import("html-to-image");
-  const root = (document.querySelector(".shell") as HTMLElement | null) ?? document.documentElement;
-  const full = await toCanvas(root, { cacheBust: true, pixelRatio: 1 });
-  const crop = viewportCrop(
-    { width: full.width, height: full.height },
-    { scrollX: window.scrollX, scrollY: window.scrollY, width: window.innerWidth, height: window.innerHeight },
-  );
-  const frame = document.createElement("canvas");
-  frame.width = crop.sw;
-  frame.height = crop.sh;
-  const ctx = frame.getContext("2d");
-  if (!ctx) throw new Error("Could not capture this page.");
-  ctx.drawImage(full, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, crop.sw, crop.sh);
-  const blob = await new Promise<Blob | null>((resolve) => frame.toBlob(resolve, "image/png"));
-  if (!blob) throw new Error("Could not capture this page.");
-  return blob;
 }
 
 export function PageHead({ title, children }: { title: string; children?: React.ReactNode }) {

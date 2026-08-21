@@ -87,7 +87,6 @@ Empty `catch` is forbidden unless the next line documents why ignore is safe (`u
 | Admin password | argon2id (already) | never |
 | Arr API key | encrypted or at least not returned | `hasApiKey: true` only |
 | Player token | same | `hasToken: true` only |
-| GitHub token (optional, for Report) | encrypted | `hasGithubToken: true` only |
 | Session | random id, httpOnly cookie | cookie only |
 
 Do not log API keys, tokens, or password hashes. Do not put them in query strings. Do not commit `.env` or `config/*.db`.

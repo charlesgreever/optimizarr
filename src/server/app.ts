@@ -26,7 +26,6 @@ import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
-import { decodePngBase64, safeScreenshotFilename, uploadGithubIssueScreenshot } from "./github-report.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { createInspectionRunner } from "./inspection-runner.ts";
 import { createLibraryReadModel } from "./library-read-model.ts";
@@ -164,8 +163,6 @@ export function createApp(opts: AppOptions) {
 
   app.use("/api/settings", authed);
   app.use("/api/settings/*", authed);
-  app.use("/api/report", authed);
-  app.use("/api/report/*", authed);
   app.use("/api/integrations/*", authed);
   app.use("/api/library/*", authed);
   app.use("/api/inspect/*", authed);
@@ -198,7 +195,6 @@ export function createApp(opts: AppOptions) {
     const settings = store.getSettings();
     return c.json({
       ...settings,
-      hasGithubToken: Boolean(store.githubToken()),
       instances: publicInstances(),
       firstRun: firstRunState(),
       profilePreviews: profilePreviews(settings.sizeCaps),
@@ -224,7 +220,7 @@ export function createApp(opts: AppOptions) {
   });
 
   app.put("/api/settings", async (c) => {
-    const body = await c.req.json<Partial<Settings> & { githubToken?: string }>();
+    const body = await c.req.json<Partial<Settings>>();
     const current = store.getSettings();
     const next: Settings = {
       preferredLanguage: body.preferredLanguage ?? current.preferredLanguage,
@@ -251,35 +247,7 @@ export function createApp(opts: AppOptions) {
     if (suggestionsChanged) {
       for (const item of store.listItems()) recomputeSuggestion(item.id);
     }
-    if (typeof body.githubToken === "string") {
-      const trimmed = body.githubToken.trim();
-      store.setGithubToken(trimmed ? encryptSecret(secret, trimmed) : null);
-    }
-    return c.json({ ok: true, settings: next, hasGithubToken: Boolean(store.githubToken()), firstRun: firstRunState() });
-  });
-
-  app.post("/api/report/screenshot", async (c) => {
-    const packed = store.githubToken();
-    if (!packed) return c.json({ attached: false });
-    const body = await c.req.json<{ filename?: string; pngBase64?: string }>();
-    if (!body.pngBase64) return c.json({ error: "A screenshot is required." }, 400);
-    let png: Buffer;
-    try {
-      png = decodePngBase64(body.pngBase64);
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : "Screenshot is not a PNG." }, 400);
-    }
-    try {
-      const url = await uploadGithubIssueScreenshot({
-        token: decryptSecret(secret, packed),
-        filename: safeScreenshotFilename(body.filename),
-        png,
-        fetch: httpFetch,
-      });
-      return c.json({ attached: true, url });
-    } catch {
-      return c.json({ attached: false, error: "GitHub rejected the screenshot upload." });
-    }
+    return c.json({ ok: true, settings: next, firstRun: firstRunState() });
   });
 
   app.post("/api/auth/password", async (c) => {

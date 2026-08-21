@@ -96,7 +96,6 @@ export type SettingsPayload = {
   localAuthBypass: boolean;
   writeMode: "sidecar" | "direct";
   profileAutoAssign: boolean;
-  hasGithubToken?: boolean;
   instances: Array<{ id: string; kind: string; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
   profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;

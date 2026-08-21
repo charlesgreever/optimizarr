@@ -12,7 +12,7 @@ Agents start at [AGENTS.md](AGENTS.md).
 
 ## Filing a bug from the running app
 
-Operators use **Report** on any signed-in page. That control opens a GitHub issue with the current viewport. With a GitHub token in Settings, Report uploads the screenshot onto the issue so nothing downloads. Without a token, Report copies the image or downloads a PNG. Do not put library paths or secrets in the issue body.
+Operators use **Report** on any signed-in page. That control opens a GitHub issue with the current route and job context. Attach a screenshot on GitHub if one would help. Do not put library paths or secrets in the issue body.
 
 ## Before you open a change
 

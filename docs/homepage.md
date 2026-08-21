@@ -2,7 +2,7 @@
 
 [Homepage](https://github.com/gethomepage/homepage) can poll Optimizarr without a browser login cookie.
 
-`GET /api/widget` (alias `GET /api/homepage`) returns stats only: running title and phase, queued count, pending review count, open suggestions, failed count. It never includes Arr API keys, player tokens, GitHub tokens, passwords, or file paths.
+`GET /api/widget` (alias `GET /api/homepage`) returns stats only: running title and phase, queued count, pending review count, open suggestions, failed count. It never includes Arr API keys, player tokens, passwords, or file paths.
 
 This repository does not edit the household Homepage `services.yaml`. Copy the example below into that host yourself.
 
