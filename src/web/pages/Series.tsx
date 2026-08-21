@@ -14,6 +14,7 @@ export function SeriesPage() {
 
   const load = () => void api.series().then((r) => setItems(r.items)).catch((e: Error) => setMsg(e.message));
   useEffect(() => {
+    load();
     void api.refresh().then(load).catch((e: Error) => {
       setMsg(e.message);
       load();
@@ -23,7 +24,7 @@ export function SeriesPage() {
   const groups = useMemo(() => {
     const map = new Map<string, LibraryRow[]>();
     for (const item of items) {
-      const key = `${item.instanceId}::${item.showTitle ?? item.displayTitle}`;
+      const key = `${item.instanceId}::${item.showTitle || item.title || item.displayTitle}`;
       map.set(key, [...(map.get(key) ?? []), item]);
     }
     return [...map.entries()];
@@ -73,7 +74,7 @@ export function SeriesPage() {
                 <button type="button" className="series-toggle" aria-expanded={open} onClick={() => toggle(key)}>
                   <span className="series-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
                   <span>
-                    <span className="series-title">{head.showTitle}</span>
+                    <span className="series-title">{head.showTitle || head.title || head.displayTitle}</span>
                     <span className="series-meta">{head.instanceName} · {eps.length} episodes</span>
                   </span>
                 </button>

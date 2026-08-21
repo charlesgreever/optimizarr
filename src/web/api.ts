@@ -80,6 +80,7 @@ export type LibraryRow = {
   id: string;
   instanceId: string;
   displayTitle: string;
+  title?: string;
   instanceName: string;
   type: "movie" | "episode";
   showTitle: string | null;

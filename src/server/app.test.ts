@@ -438,4 +438,64 @@ describe("public HTTP behavior", () => {
     expect(created.store.getInspectState().pending).toBe(0);
     expect(created.store.getInspectState().walking).toBe(false);
   });
+
+  it("drops leftover count when a file starts inspecting, not only after it finishes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => {
+        await gate;
+        return {
+          format: { duration: "3600" },
+          streams: [{ codec_type: "video", codec_name: "h264", width: 1920, height: 1080 }],
+        };
+      },
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:movie:slow`,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Slow",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/slow.mkv",
+      sizeBytes: 1_000,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    const walk = created.inspectPending();
+    await vi.waitFor(() => {
+      expect(created.store.getInspectState().pending).toBe(0);
+    });
+    expect(created.store.getInspectState().walking).toBe(true);
+    release();
+    await walk;
+    expect(created.store.getInspectState().walking).toBe(false);
+  });
 });
