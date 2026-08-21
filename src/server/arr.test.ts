@@ -24,4 +24,15 @@ describe("Arr identity", () => {
     expect(episodes[0]?.seriesId).toBe(9);
     expect(episodes[0]?.episodeFileId).toBe(77);
   });
+
+  it("skips an episode that has a file flag but no path", () => {
+    const episodes = parseSonarrEpisodes(
+      [{ id: 44, seriesId: 9, seasonNumber: 3, episodeNumber: 2, title: "The One", hasFile: true }],
+      "Ted Lasso",
+      null,
+      "HD",
+      [],
+    );
+    expect(episodes).toEqual([]);
+  });
 });

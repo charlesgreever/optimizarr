@@ -335,7 +335,7 @@ export function createApp(opts: AppOptions) {
           const series = parseSonarrSeries(await fetchJson(`${trimUrl(inst.url)}/api/v3/series`, key, httpFetch));
           for (const show of series) {
             const episodes = parseSonarrEpisodes(
-              await fetchJson(`${trimUrl(inst.url)}/api/v3/episode?seriesId=${show.id}`, key, httpFetch),
+              await fetchJson(`${trimUrl(inst.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, httpFetch),
               show.title,
               show.posterUrl,
               show.profile,
@@ -378,11 +378,19 @@ export function createApp(opts: AppOptions) {
   });
 
   let inspectWalk: Promise<void> | null = null;
+  let inspectAgain = false;
 
   async function inspectPending(): Promise<void> {
-    if (inspectWalk) return inspectWalk;
+    if (inspectWalk) {
+      inspectAgain = true;
+      return inspectWalk;
+    }
     inspectWalk = runInspectWalk().finally(() => {
       inspectWalk = null;
+      if (inspectAgain) {
+        inspectAgain = false;
+        void inspectPending();
+      }
     });
     return inspectWalk;
   }
@@ -397,51 +405,63 @@ export function createApp(opts: AppOptions) {
   }
 
   async function walkPending(): Promise<void> {
-    const items = store.listItems();
-    const pending = items.filter((item) => inspectStillOpen(item));
-    publishInspect(true, pending.length, items.length);
-    let remaining = pending.length;
-    for (const item of pending) {
-      remaining -= 1;
-      publishInspect(true, remaining, items.length);
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
-      if (!readable) {
-        store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
-        continue;
+    for (;;) {
+      const items = store.listItems();
+      const pending = items.filter((item) => inspectStillOpen(item));
+      if (pending.length === 0) {
+        publishInspect(false, 0, items.length);
+        return;
       }
-      try {
-        if (isIsoPath(item.path)) {
-          const listing = opts.listIso
-            ? await opts.listIso(item.path, item.sizeBytes)
-            : await defaultIsoListing(opts.env.ffmpeg, item.path);
-          const report = parseFfmpegListing(item.path, item.sizeBytes, listing);
-          store.saveInspection(item.id, report);
-          store.clearFileError(item.path);
-          if (report.listingState === "complete") recomputeSuggestion(item.id);
-        } else {
-          const raw = opts.probe
-            ? await opts.probe(item.path, item.sizeBytes)
-            : await defaultProbe(opts.env.ffprobe, item.path);
-          const report = parseFfprobe(item.path, item.sizeBytes, raw);
-          store.saveInspection(item.id, report);
-          store.clearFileError(item.path);
-          recomputeSuggestion(item.id);
+      publishInspect(true, pending.length, items.length);
+      let remaining = pending.length;
+      for (const item of pending) {
+        remaining -= 1;
+        publishInspect(true, remaining, items.length);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (!item.path) continue;
+        const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
+        if (!readable) {
+          store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
+          continue;
         }
-      } catch (error) {
-        if (isIsoPath(item.path)) {
-          store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
-          store.clearFileError(item.path);
-        } else {
-          const message = error instanceof Error ? error.message : "ffprobe failed.";
-          store.setFileError(item.path, item.id, message);
+        try {
+          if (isIsoPath(item.path)) {
+            const listing = opts.listIso
+              ? await opts.listIso(item.path, item.sizeBytes)
+              : await defaultIsoListing(opts.env.ffmpeg, item.path);
+            const report = parseFfmpegListing(item.path, item.sizeBytes, listing);
+            store.saveInspection(item.id, report);
+            store.clearFileError(item.path);
+            if (report.listingState === "complete") recomputeSuggestion(item.id);
+          } else {
+            const raw = opts.probe
+              ? await opts.probe(item.path, item.sizeBytes)
+              : await defaultProbe(opts.env.ffprobe, item.path);
+            const report = parseFfprobe(item.path, item.sizeBytes, raw);
+            store.saveInspection(item.id, report);
+            store.clearFileError(item.path);
+            recomputeSuggestion(item.id);
+          }
+        } catch (error) {
+          if (isIsoPath(item.path)) {
+            store.saveInspection(item.id, unlistedIsoReport(item.path, item.sizeBytes));
+            store.clearFileError(item.path);
+          } else {
+            const message = error instanceof Error ? error.message : "ffprobe failed.";
+            store.setFileError(item.path, item.id, message);
+          }
         }
+      }
+      const leftover = leftoverCount();
+      if (leftover === 0 || leftover >= pending.length) {
+        publishInspect(false, leftover, store.listItems().length);
+        return;
       }
     }
-    publishInspect(false, leftoverCount(), store.listItems().length);
   }
 
   function inspectStillOpen(item: NonNullable<ReturnType<Store["getItem"]>>): boolean {
+    if (!item.path) return false;
     if (store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
     return !store.listErrors().some((error) => error.itemId === item.id);
   }
@@ -495,7 +515,10 @@ export function createApp(opts: AppOptions) {
 
   app.get("/api/library/movies", (c) => c.json({ items: store.listItems("movie").map((item) => presentItem(item, false)) }));
   app.get("/api/library/series", (c) => c.json({ items: store.listItems("episode").map((item) => presentItem(item, false)) }));
-  app.get("/api/inspect/status", (c) => c.json(store.getInspectState()));
+  app.get("/api/inspect/status", (c) => {
+    if (leftoverCount() > 0 && !inspectWalk) void inspectPending();
+    return c.json(store.getInspectState());
+  });
   app.get("/api/errors", (c) => c.json({ items: store.listErrors() }));
 
   app.post("/api/library/items/:id/force", async (c) => {

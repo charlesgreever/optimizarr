@@ -444,6 +444,53 @@ describe("public HTTP behavior", () => {
     expect(created.store.getInspectState().walking).toBe(false);
   });
 
+  it("does not count episodes without a file path as leftover inspect work", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [{ codec_type: "video", codec_name: "h264", width: 1920, height: 1080 }],
+      }),
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers: { cookie: cookie(setupRes) },
+      body: JSON.stringify({ kind: "sonarr", name: "Sonarr", url: "http://sonarr:8989", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:episode:1`,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: 9,
+      arrEpisodeFileId: null,
+      type: "episode",
+      title: "Star Wars Rebels",
+      showTitle: "Star Wars Rebels",
+      season: 1,
+      episode: 1,
+      episodeTitle: "Spark",
+      path: "",
+      sizeBytes: 0,
+      quality: "",
+      resolution: "",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    await created.inspectPending();
+    expect(created.store.getInspectState().pending).toBe(0);
+    expect(created.store.getInspection(`${instanceId}:episode:1`)).toBeUndefined();
+  });
+
   it("drops leftover count when a file starts inspecting, not only after it finishes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-"));
     const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });

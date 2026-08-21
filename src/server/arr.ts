@@ -78,7 +78,7 @@ export function parseSonarrEpisodes(payload: unknown, seriesTitle: string, poste
     .map((raw) => {
       const row = asRecord(raw);
       const file = asRecord(row.episodeFile);
-      if (!file.path && !row.hasFile) return null;
+      if (!file.path) return null;
       const quality = qualityName(file);
       return {
         id: num(row.id),
