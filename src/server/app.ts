@@ -393,11 +393,11 @@ export function createApp(opts: AppOptions) {
     publishInspect(true, pending.length, items.length);
     let remaining = pending.length;
     for (const item of pending) {
+      remaining -= 1;
+      publishInspect(true, remaining, items.length);
       const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
       if (!readable) {
         store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
-        remaining -= 1;
-        publishInspect(true, remaining, items.length);
         continue;
       }
       try {
@@ -427,8 +427,6 @@ export function createApp(opts: AppOptions) {
           store.setFileError(item.path, item.id, message);
         }
       }
-      remaining -= 1;
-      publishInspect(true, remaining, items.length);
     }
     publishInspect(false, leftoverCount(), store.listItems().length);
   }
@@ -444,7 +442,7 @@ export function createApp(opts: AppOptions) {
 
   function publishInspect(walking: boolean, pending: number, total: number): void {
     store.setInspectState({
-      walking: walking && pending > 0,
+      walking,
       pending,
       inspected: Math.max(0, total - pending - store.listErrors().length),
       failed: store.listErrors().length,
@@ -882,10 +880,10 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
   let lastText = "";
-  for (const input of isoInputAttempts(path)) {
-    const args = ["-hide_banner", "-analyzeduration", "100M", "-probesize", "100M", ...input];
+  for (const input of isoInputAttempts(path).slice(0, 2)) {
+    const args = ["-hide_banner", "-analyzeduration", "20M", "-probesize", "20M", ...input];
     try {
-      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 45_000, maxBuffer: 1024 * 512 });
+      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
       const text = `${stderr}\n${stdout}`;
       if (text.includes("Stream #")) return text;
       lastText = text;

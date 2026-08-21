@@ -11,6 +11,10 @@ export function displayTitle(item: Pick<LibraryItem, "type" | "title" | "showTit
   return item.title;
 }
 
+export function seriesGroupKey(item: Pick<LibraryItem, "instanceId" | "showTitle" | "title">): string {
+  return `${item.instanceId}::${item.showTitle || item.title}`;
+}
+
 export function matchesTitleSearch(query: string, item: LibraryItem): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;

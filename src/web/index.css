@@ -429,6 +429,8 @@ tr:last-child td {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  pointer-events: auto;
+  z-index: 1;
 }
 
 .series-toggle:hover,

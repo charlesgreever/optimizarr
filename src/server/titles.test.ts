@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayTitle, matchesTitleSearch } from "./titles.ts";
+import { displayTitle, matchesTitleSearch, seriesGroupKey } from "./titles.ts";
 import type { LibraryItem } from "./types.ts";
 
 const episode: LibraryItem = {
@@ -37,5 +37,13 @@ describe("titles", () => {
     expect(matchesTitleSearch("rebels s03e02", episode)).toBe(false);
     expect(matchesTitleSearch("s03e02", episode)).toBe(true);
     expect(matchesTitleSearch("3x02", episode)).toBe(true);
+  });
+
+  it("groups episodes by show, not by episode title", () => {
+    const a = { ...episode, id: "e1", episodeTitle: "Chelsea" };
+    const b = { ...episode, id: "e2", episode: 3, episodeTitle: "Sunflowers" };
+    expect(seriesGroupKey(a)).toBe(seriesGroupKey(b));
+    expect(seriesGroupKey(a)).toContain("Ted Lasso");
+    expect(seriesGroupKey(a)).not.toContain("Chelsea");
   });
 });
