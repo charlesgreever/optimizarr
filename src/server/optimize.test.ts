@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { audioAacArgs, encodeArgs, formatToolError, isoDemuxArgs, isoInputAttempts, isoRemuxArgs, muxArgs, optimizeSteps, planFromSuggestion } from "./optimize.ts";
+import {
+  audioAacArgs,
+  encodeArgs,
+  formatToolError,
+  isoDemuxArgs,
+  isoInputAttempts,
+  isoRemuxArgs,
+  isoRemuxIsShort,
+  muxArgs,
+  nvencBitrate,
+  optimizeSteps,
+  planFromSuggestion,
+} from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
 
@@ -229,6 +241,51 @@ describe("ffmpeg encode arguments", () => {
     expect(bitrate).toBeLessThan(25_000_000);
   });
 
+  it("rejects a 20 GB target when the remux is a 10-second title", () => {
+    const req = {
+      sourcePath: "/mnt/nas/Movies/The Hunger Games Catching Fire (2013)/Catching Fire.iso",
+      reviewDir: "/tmp/review",
+      plan: {
+        origin: "custom" as const,
+        video: { kind: "size" as const, codec: "hevc" as const, targetBytes: 20 * 1024 ** 3, downscale1080p: false, bitDepth: 8 },
+        audio: [],
+        subtitles: [],
+        container: "mkv" as const,
+        writeMode: "sidecar" as const,
+        warning: null,
+        reasons: ["Target 20 GB"],
+        estimatedOutputBytes: 20 * 1024 ** 3,
+        category: "movie1080p" as const,
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "iso_ffmpeg" as const,
+        listingState: "complete" as const,
+        durationSec: 10.01,
+        sizeBytes: 40_000_000_000,
+        sizePerHourGb: 0,
+        videoCodec: "hevc",
+        width: 3840,
+        height: 2160,
+        bitDepth: 10,
+        hdr: "none" as const,
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc" as const,
+      backend: "cuda" as const,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    };
+    expect(() => nvencBitrate(req, req.plan.video)).toThrow(
+      /A 19\.9 GB target over 1 minutes needs 17099 Mbps, which the hardware encoder will reject/,
+    );
+  });
+
   it("does not invent a bitrate when duration is unknown", () => {
     expect(() =>
       encodeArgs("/tmp/hunger-games.mkv", "/tmp/out.mkv", {
@@ -282,6 +339,44 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args).toContain("-c");
     expect(args).toContain("copy");
     expect(args.join(" ")).not.toMatch(/nvenc|vaapi/);
+  });
+
+  it("remuxes the longest Blu-ray playlist and drops dummy 0-channel audio", () => {
+    const plan = planFromSuggestion(suggestion);
+    const args = isoRemuxArgs(
+      "/mnt/nas/Catching Fire.iso",
+      "/tmp/out.mkv",
+      plan,
+      {
+        sourceSig: "p|1",
+        sourceMethod: "iso_ffmpeg",
+        listingState: "complete",
+        durationSec: 8776,
+        isoPlaylist: 0,
+        sizeBytes: 40_000_000_000,
+        sizePerHourGb: 16,
+        videoCodec: "hevc",
+        width: 3840,
+        height: 2160,
+        bitDepth: 10,
+        hdr: "none",
+        audio: [
+          { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+          { index: 10, language: "und", channels: 0, codec: "ac3", title: "", untagged: true, commentary: false },
+        ],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+    );
+    expect(args).toContain("-playlist");
+    expect(args[args.indexOf("-playlist") + 1]).toBe("0");
+    expect(args).toContain("bluray:/mnt/nas/Catching Fire.iso");
+    expect(args).toContain("-map");
+    expect(args).toContain("0");
+    expect(args).toContain("-0:10");
+    expect(isoRemuxIsShort(8776, 10.01)).toBe(true);
+    expect(isoRemuxIsShort(8776, 8700)).toBe(false);
   });
 
   it("uses the bluray protocol for BR-DISK images", () => {

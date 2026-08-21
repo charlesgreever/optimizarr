@@ -111,6 +111,7 @@ export type InspectionReport = {
   sourceMethod: "ffprobe" | "iso_ffmpeg";
   listingState: "complete" | "iso_unlisted";
   durationSec: number;
+  isoPlaylist?: number | null;
   sizeBytes: number;
   sizePerHourGb: number;
   videoCodec: string;
