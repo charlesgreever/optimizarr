@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
-import { downloadBlob, submitReport, viewportCrop, type ReportKind } from "../reportIssue";
+import { attachScreenshot, copyBlobToClipboard, downloadBlob, submitReport, viewportCrop, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
 const NAV = [
@@ -132,6 +132,8 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
         },
         {
           capture: captureViewport,
+          attach: attachScreenshot,
+          copy: copyBlobToClipboard,
           download: downloadBlob,
           open: (url) => {
             window.open(url, "_blank", "noopener,noreferrer");

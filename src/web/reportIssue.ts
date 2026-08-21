@@ -94,23 +94,71 @@ export function viewportCrop(
   return { sx, sy, sw, sh };
 }
 
+export type AttachResult = { attached: true; url: string } | { attached: false };
+
 export async function submitReport(
   kind: ReportKind,
   ctx: ReportContext,
   io: {
     capture: () => Promise<Blob>;
+    attach?: (blob: Blob, filename: string) => Promise<AttachResult>;
+    copy?: (blob: Blob) => Promise<boolean>;
     download: (blob: Blob, filename: string) => void;
     open: (url: string) => void;
   },
 ): Promise<void> {
-  let screenshotNote = "A screenshot was downloaded. Attach it to this issue.";
+  let screenshotNote = "A screenshot could not be captured.";
   try {
     const blob = await io.capture();
-    io.download(blob, screenshotFilename());
+    const filename = screenshotFilename();
+    const uploaded = io.attach ? await io.attach(blob, filename).catch((): AttachResult => ({ attached: false })) : { attached: false as const };
+    if (uploaded.attached) {
+      screenshotNote = `![Optimizarr viewport](${uploaded.url})`;
+    } else {
+      const copied = io.copy ? await io.copy(blob).catch(() => false) : false;
+      if (copied) {
+        screenshotNote = "A screenshot is on the clipboard. Paste it into this issue (Ctrl+V or Cmd+V).";
+      } else {
+        io.download(blob, filename);
+        screenshotNote = "A screenshot was downloaded. Attach it to this issue.";
+      }
+    }
   } catch {
     screenshotNote = "A screenshot could not be captured.";
   }
   io.open(buildReportIssueUrl(kind, { ...ctx, screenshotNote }));
+}
+
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + step));
+  }
+  return btoa(bin);
+}
+
+export async function copyBlobToClipboard(blob: Blob): Promise<boolean> {
+  if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) return false;
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+  return true;
+}
+
+export async function attachScreenshot(blob: Blob, filename: string): Promise<AttachResult> {
+  const pngBase64 = await blobToBase64(blob);
+  const res = await fetch("/api/report/screenshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, pngBase64 }),
+  });
+  const data: unknown = await res.json().catch(() => ({}));
+  if (!data || typeof data !== "object") return { attached: false };
+  const body = data as { attached?: unknown; url?: unknown };
+  if (body.attached === true && typeof body.url === "string" && body.url.startsWith("https://github.com/user-attachments/")) {
+    return { attached: true, url: body.url };
+  }
+  return { attached: false };
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

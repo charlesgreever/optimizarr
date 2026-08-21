@@ -560,6 +560,19 @@ export class Store {
     this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('widget', ?)").run(hash);
   }
 
+  githubToken(): string | null {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'github_token'").get() as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setGithubToken(encrypted: string | null): void {
+    if (!encrypted) {
+      this.db.prepare("DELETE FROM settings WHERE key = 'github_token'").run();
+      return;
+    }
+    this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('github_token', ?)").run(encrypted);
+  }
+
   close(): void {
     this.db.close();
   }

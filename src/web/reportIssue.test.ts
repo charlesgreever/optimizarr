@@ -46,7 +46,7 @@ describe("report issue", () => {
     expect(screenshotFilename(new Date("2026-08-21T12:00:00.000Z"))).toBe("optimizarr-report-2026-08-21T12-00-00-000Z.png");
   });
 
-  it("downloads a captured blob then opens GitHub", async () => {
+  it("downloads a captured blob then opens GitHub when attach and copy are unavailable", async () => {
     const blob = new Blob(["png"], { type: "image/png" });
     const downloads: Array<{ size: number; name: string }> = [];
     const opened: string[] = [];
@@ -63,6 +63,48 @@ describe("report issue", () => {
     expect(downloads[0]?.name.endsWith(".png")).toBe(true);
     expect(opened[0]).toContain("github.com/charlesgreever/optimizarr/issues/new");
     expect(opened[0]).toContain("Attach");
+  });
+
+  it("embeds an uploaded GitHub attachment and does not download", async () => {
+    const blob = new Blob(["png"], { type: "image/png" });
+    const downloads: string[] = [];
+    const opened: string[] = [];
+    await submitReport(
+      "bug",
+      { route: "/queue" },
+      {
+        capture: async () => blob,
+        attach: async () => ({ attached: true, url: "https://github.com/user-attachments/assets/abc" }),
+        copy: async () => {
+          throw new Error("should not copy");
+        },
+        download: () => downloads.push("downloaded"),
+        open: (url) => opened.push(url),
+      },
+    );
+    expect(downloads).toHaveLength(0);
+    const body = new URL(opened[0] ?? "").searchParams.get("body") ?? "";
+    expect(body).toContain("![Optimizarr viewport](https://github.com/user-attachments/assets/abc)");
+    expect(body).not.toContain("downloaded");
+  });
+
+  it("copies the screenshot when GitHub attach is unavailable", async () => {
+    const blob = new Blob(["png"], { type: "image/png" });
+    const downloads: string[] = [];
+    const opened: string[] = [];
+    await submitReport(
+      "change",
+      { route: "/movies" },
+      {
+        capture: async () => blob,
+        attach: async () => ({ attached: false }),
+        copy: async () => true,
+        download: () => downloads.push("downloaded"),
+        open: (url) => opened.push(url),
+      },
+    );
+    expect(downloads).toHaveLength(0);
+    expect(new URL(opened[0] ?? "").searchParams.get("body")).toContain("clipboard");
   });
 
   it("still opens GitHub when capture fails, and says so in the body", async () => {

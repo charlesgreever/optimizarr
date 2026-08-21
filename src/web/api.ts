@@ -72,6 +72,7 @@ export type SettingsPayload = {
   offPeakEnd: string;
   localAuthBypass: boolean;
   writeMode: "sidecar" | "direct";
+  hasGithubToken?: boolean;
   instances: Array<{ id: string; kind: string; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
   profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;
