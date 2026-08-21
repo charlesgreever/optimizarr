@@ -43,7 +43,9 @@ describe("titles", () => {
     const a = { ...episode, id: "e1", episodeTitle: "Chelsea" };
     const b = { ...episode, id: "e2", episode: 3, episodeTitle: "Sunflowers" };
     expect(seriesGroupKey(a)).toBe(seriesGroupKey(b));
-    expect(seriesGroupKey(a)).toContain("Ted Lasso");
-    expect(seriesGroupKey(a)).not.toContain("Chelsea");
+    expect(seriesGroupKey(a)).toBe("sonarr::series:9");
+    const untitled = { ...episode, arrSeriesId: null, showTitle: "Ted Lasso" };
+    expect(seriesGroupKey(untitled)).toContain("Ted Lasso");
+    expect(seriesGroupKey(untitled)).not.toContain("Chelsea");
   });
 });

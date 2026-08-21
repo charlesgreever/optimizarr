@@ -422,9 +422,10 @@ tr:last-child td {
   align-items: center;
   gap: 10px;
   margin: 0;
-  padding: 8px 4px;
-  border: 0;
-  background: transparent;
+  padding: 8px 10px;
+  border: 1px solid #ffffff14;
+  border-radius: 9px;
+  background: #ffffff08;
   color: inherit;
   font: inherit;
   text-align: left;
