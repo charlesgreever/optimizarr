@@ -1,3 +1,8 @@
+# Copy this file. Set the media bind to the same path Radarr and Sonarr report.
+# NVIDIA is the default. For Intel, see the commented block at the bottom.
+#
+#   docker compose up -d --build
+
 services:
   optimizarr:
     build: .
@@ -6,17 +11,16 @@ services:
     environment:
       PUID: "1000"
       PGID: "1000"
-      TZ: America/New_York
+      TZ: UTC
       CONFIG_DIR: /config
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
     volumes:
-      - /home/cgreever/appdata/arr/optimizarr/config:/config
-      - /mnt/nas:/mnt/nas
-    networks:
-      - arr_net
+      - ./config:/config
+      - /path/to/media:/path/to/media
     runtime: nvidia
-
-networks:
-  arr_net:
-    external: true
+    # Intel GPU: comment out runtime and the NVIDIA_* variables above, then uncomment:
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "992"

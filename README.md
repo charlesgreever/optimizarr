@@ -20,6 +20,52 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check
 - Can create named Arr quality profiles from the current size caps without starting a search
 
+## Installation
+
+Optimizarr runs as a Docker container next to Radarr and Sonarr. It reads the same library files those apps already know, so the media bind in compose must be that path on both sides. Video encode needs a GPU: NVIDIA (NVENC) or Intel (VAAPI, the Video Acceleration API). There is no CPU encode fallback.
+
+### 1. Get the files
+
+```bash
+git clone https://github.com/charlesgreever/optimizarr.git
+cd optimizarr
+```
+
+### 2. Edit `compose.yaml`
+
+The repo ships a sample [compose.yaml](compose.yaml). Change these values:
+
+- **Media bind.** `/path/to/media:/path/to/media` must match the file path Radarr and Sonarr report. If they see `/mnt/media/Movies/Title.mkv`, both sides of the bind are `/mnt/media`.
+- **`PUID` / `PGID`.** Owner of `/config` and files Optimizarr writes. Use the same ids as your Arr containers.
+- **`TZ`.** Container timezone.
+
+NVIDIA is already selected (`runtime: nvidia` and the `NVIDIA_*` variables). The host needs the NVIDIA container toolkit. `utility` provides `nvidia-smi`. `video` provides NVENC.
+
+For an Intel GPU, comment out `runtime: nvidia` and the `NVIDIA_*` variables, then uncomment `devices: /dev/dri`. ffmpeg uses `/dev/dri/renderD128`. If encode cannot open that device, set `group_add` to the host render group id (`getent group render`).
+
+If Radarr and Sonarr already share a Docker network, attach Optimizarr to that network so Settings can use `http://radarr:7878`.
+
+### 3. Start
+
+```bash
+docker compose up -d --build
+```
+
+Recreate the container after you change GPU settings.
+
+### 4. First run
+
+Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PUID` / `PGID` | `1000` | Owner of `/config` and files Optimizarr writes |
+| `TZ` | `UTC` | Container timezone |
+| `CONFIG_DIR` | `/config` | Persistent SQLite and settings |
+| `PORT` | `7373` | Listen port |
+| `OPTIMIZARR_WIDGET_KEY` | unset | Optional Homepage widget key |
+| `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
+
 ## Run locally
 
 ```bash
@@ -34,41 +80,6 @@ The API listens on `http://127.0.0.1:7373`. The Vite UI listens on `http://127.0
 npm run build
 CONFIG_DIR=./config npm start
 ```
-
-## Deploy with Docker
-
-Sample compose files have no household paths. Copy one, set the media bind to the same path Radarr and Sonarr use, then start it. Host paths belong in compose, not in application code.
-
-NVIDIA GPU:
-
-```bash
-docker compose -f compose.nvidia.yaml up -d --build
-```
-
-Intel GPU (VAAPI, the Video Acceleration API ffmpeg uses on Intel):
-
-```bash
-docker compose -f compose.intel.yaml up -d --build
-```
-
-Open `http://localhost:7373`. In Settings, add Radarr and Sonarr, set a review folder outside the library roots, and confirm your preferred language.
-
-The media bind must match the file paths those apps already report. If they share a Docker network, attach Optimizarr to that network so Settings can use `http://radarr:7878`.
-
-The NVIDIA sample uses `runtime: nvidia` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. The host needs the NVIDIA container toolkit. Recreate the container after changing those values.
-
-The Intel sample passes `/dev/dri`. ffmpeg uses `/dev/dri/renderD128`. The container user (`PUID`) must be allowed to open that device; on the host, `getent group render` shows the group id to put in `group_add` if encode cannot open it.
-
-This household still uses `compose.yaml` on ubuntuserver (NVIDIA, `/mnt/nas`, Docker network `arr_net`).
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PUID` / `PGID` | `1000` | Owner of `/config` and files Optimizarr writes |
-| `TZ` | `America/New_York` | Container timezone |
-| `CONFIG_DIR` | `/config` | Persistent SQLite and settings |
-| `PORT` | `7373` | Listen port |
-| `OPTIMIZARR_WIDGET_KEY` | unset | Optional Homepage widget key |
-| `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
 
 ## Report a bug
 
