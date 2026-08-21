@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type FirstRun, type Hardware, type SettingsPayload } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
+import { EncodeSettings } from "../components/EncodeSettings";
 
 export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onChange: () => void }) {
   const [data, setData] = useState<SettingsPayload | null>(null);
@@ -174,39 +175,25 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             <div key={p.category}>{p.name}: {p.gbPerHour.toFixed(2)} GB/hr · {p.mbPerMin.toFixed(1)} MB/min</div>
           ))}
         </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={data.profileAutoAssign}
+            onChange={(event) => setData({ ...data, profileAutoAssign: event.target.checked })}
+          />
+          Assign an Optimizarr profile after an eligible video transcode
+        </label>
         <button className="btn" type="button" onClick={() => void api.syncProfiles().then((r) => setMsg(r.results.map((x) => `${x.created.length} created, ${x.updated.length} updated`).join(" · ") || "Profiles synced.")).catch((e: Error) => setMsg(e.message))}>
           Sync quality profiles
         </button>
-        <p className="help">Keep looks for a profile that does not upgrade, or creates the Optimizarr-named one if needed. Sync can create those profiles ahead of time. It never starts a search.</p>
+        <p className="help">Sync creates or repairs Optimizarr-named profiles without changing other profiles or global quality-size limits. Auto-assign applies only after a video transcode and never starts a search. Sonarr assigns the profile to the whole series.</p>
       </div>
-      <div className="glass space-y-3 p-4">
-        <h2 className="font-semibold">Encode</h2>
-        <p className="help">Detected hardware: {hw ? `${hw.backend}${hw.av1 ? ", AV1 encoder listed" : ", AV1 encoder not listed"}` : "checking…"}</p>
-        <label className="block text-sm">
-          Target
-          <select className="ml-2" value={data.videoTarget} onChange={(e) => setData({ ...data, videoTarget: e.target.value })}>
-            <option value="hevc">HEVC</option>
-            <option value="av1">AV1</option>
-          </select>
-        </label>
-        <label className="block text-sm">
-          Concurrent jobs
-          <input className="ml-2 w-16" type="number" min={1} value={data.concurrency} onChange={(e) => setData({ ...data, concurrency: Number(e.target.value) })} />
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={data.conservativeMode} onChange={(e) => setData({ ...data, conservativeMode: e.target.checked })} />
-          Conservative performance mode (does not change job count)
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={data.offPeakEnabled} onChange={(e) => setData({ ...data, offPeakEnabled: e.target.checked })} />
-          Hold jobs outside off-peak
-        </label>
-        <div className="text-sm">
-          <input value={data.offPeakStart} onChange={(e) => setData({ ...data, offPeakStart: e.target.value })} />
-          <span className="mx-2">to</span>
-          <input value={data.offPeakEnd} onChange={(e) => setData({ ...data, offPeakEnd: e.target.value })} />
-        </div>
-      </div>
+      <EncodeSettings
+        data={data}
+        hardwareLabel={hw ? `${hw.backend}${hw.av1 ? ", AV1 encoder listed" : ", AV1 encoder not listed"}` : "checking…"}
+        onChange={(patch) => setData({ ...data, ...patch })}
+        onSave={save}
+      />
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Connections</h2>
         <div className="grid gap-2 sm:grid-cols-2">

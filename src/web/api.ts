@@ -21,8 +21,11 @@ export const api = {
   testInstance: (id: string) => req<{ ok: boolean; message?: string }>(`/api/integrations/${id}/test`, { method: "POST" }),
   deleteInstance: (id: string) => req(`/api/integrations/${id}`, { method: "DELETE" }),
   refresh: () => req<{ errors: string[] }>("/api/library/refresh", { method: "POST" }),
-  movies: () => req<{ items: LibraryRow[] }>("/api/library/movies"),
-  series: () => req<{ items: LibraryRow[] }>("/api/library/series"),
+  movies: (offset = 0, limit = 50, sort: "title" | "size" | "quality" = "title") =>
+    req<LibraryPage<LibraryRow>>(`/api/library/movies?offset=${offset}&limit=${limit}&sort=${sort}`),
+  series: (offset = 0, limit = 50) => req<LibraryPage<SeriesSummary>>(`/api/library/series?offset=${offset}&limit=${limit}`),
+  seriesEpisodes: (instanceId: string, seriesId: number, offset = 0, limit = 50) =>
+    req<LibraryPage<LibraryRow>>(`/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/episodes?offset=${offset}&limit=${limit}`),
   title: (id: string) => req<{ item: LibraryRow; hardware: Hardware; settings: { writeMode: string; videoTarget: string } }>(`/api/library/items/${id}`),
   previewPlan: async (id: string, draft: Record<string, unknown>) => {
     const res = await fetch(`/api/library/items/${id}/plan`, {
@@ -42,6 +45,9 @@ export const api = {
   queue: (body: Record<string, unknown>) => req("/api/queue", { method: "POST", body: JSON.stringify(body) }),
   jobs: () => req<{ items: JobRow[] }>("/api/jobs"),
   cancel: (id: string) => req(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  cancelAll: () => req<{ ok: true; cancelled: number }>("/api/jobs/cancel-all", { method: "POST" }),
+  removeJob: (id: string) => req(`/api/jobs/${id}`, { method: "DELETE" }),
+  clearFinishedJobs: () => req<{ ok: true; removed: number }>("/api/jobs/finished", { method: "DELETE" }),
   runNow: (id: string) => req(`/api/jobs/${id}/run-now`, { method: "POST" }),
   review: () => req<{ items: ReviewRow[] }>("/api/review"),
   keep: (id: string) => req(`/api/review/${id}/keep`, { method: "POST" }),
@@ -53,8 +59,19 @@ export const api = {
   force: (id: string) => req(`/api/library/items/${id}/force`, { method: "POST" }),
   stereo: (id: string) => req(`/api/library/items/${id}/stereo`, { method: "POST" }),
   exempt: (id: string, exempt: boolean) => req(`/api/library/items/${id}/exempt`, { method: "POST", body: JSON.stringify({ exempt }) }),
-  optimizeShow: (instanceId: string, show: string) =>
-    req(`/api/library/series/${instanceId}/${encodeURIComponent(show)}/optimize`, { method: "POST" }),
+  optimizeShow: (instanceId: string, seriesId: number) =>
+    req(`/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/optimize`, { method: "POST" }),
+};
+
+export type LibraryPage<T> = { items: T[]; nextOffset: number | null; total: number };
+export type SeriesSummary = {
+  id: string;
+  key: string;
+  instanceId: string;
+  instanceName: string;
+  arrSeriesId: number;
+  showTitle: string;
+  episodeCount: number;
 };
 
 export type FirstRun = { hasAdmin: boolean; languageConfirmed: boolean; hasReviewPath: boolean; hasArr: boolean; complete: boolean };
@@ -78,6 +95,7 @@ export type SettingsPayload = {
   offPeakEnd: string;
   localAuthBypass: boolean;
   writeMode: "sidecar" | "direct";
+  profileAutoAssign: boolean;
   hasGithubToken?: boolean;
   instances: Array<{ id: string; kind: string; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
@@ -97,6 +115,7 @@ export type LibraryRow = {
   sizeBytes: number;
   sizeExempt: boolean;
   inspected: boolean;
+  mediaState?: "waiting" | "unreadable" | "inspected";
   hasPoster: boolean;
   error: string | null;
   reasons: string[];

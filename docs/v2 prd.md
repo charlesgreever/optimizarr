@@ -20,7 +20,7 @@ I still use **Suggestions** for automatic plans (GB/hr caps, preferred-language 
 
 Inspect does **not** run ffprobe on `.iso`. It lists ISO streams with ffmpeg. If that list exists, bulk Suggestions and the title page both use it. If I remux an ISO to MKV and set no size and no quality, video quality does not change; the output is Matroska.
 
-Output is still a **sidecar** on the review path by default. Settings has a global **direct write** switch. The title page can override that default for one job. Direct write runs an integrity check, then replaces the library file and skips Review. Keep (or direct write) of a transcode assigns a suggested Arr quality profile derived from the GB/hr caps so Radarr or Sonarr does not grab a larger file again.
+Output is still a **sidecar** on the review path by default. Settings has a global **direct write** switch. The title page can override that default for one job. Direct write runs an integrity check, then replaces the library file and skips Review. When profile auto-assign is enabled, Keep (or direct write) of a transcode assigns a suggested Arr quality profile derived from the GB/hr caps so Radarr or Sonarr does not grab a larger file again.
 
 ## User Stories
 
@@ -39,7 +39,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 11. As a library owner, I want each series header to collapse and expand its episode table, so that a large library is scannable.
 12. As a library owner, I want a collapsed header to keep show title, instance, episode count, and Optimize all episodes, so that I can still queue a show without opening it.
 13. As a library owner, I want Optimize all episodes not to toggle collapse, so that a queue click does not hide the episodes.
-14. As a library owner, I want Series to start with shows expanded, so that today’s layout remains the default.
+14. As a library owner, I want Series to show collapsed headers first and load an episode table when I expand a show, so that a large library becomes usable without transferring and rendering every episode.
 15. As a library owner, I want collapse state to survive an in-page refresh on Series, so that Reload does not explode every show again.
 16. As a library owner, I want Queue, Force, Stereo, and Exempt to stay on the table row in this iteration, so that bulk actions do not move to the title page yet.
 
@@ -113,7 +113,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 74. As a library owner, I want Settings to show one suggested Arr quality profile per size category from the current GB/hr caps, including the equivalent MB/min, so that I can see what Optimizarr would ask Radarr and Sonarr to use.
 75. As an operator, I want an explicit Settings action to create those named profiles on each enabled Radarr and Sonarr without deleting my other profiles, so that TRaSH or Ultra-HD profiles stay.
-76. As a library owner, I want Keep or direct write of a **transcode** to assign the Radarr movie to the matching suggested profile and not start a search, so that the Arr does not download a bigger file.
+76. As a library owner, I want Keep or direct write of a **transcode** to assign the Radarr movie to the matching suggested profile when profile auto-assign is enabled and not start a search, so that the Arr does not download a bigger file.
 77. As a library owner, I want Keep or direct write of a transcoded episode to assign the Sonarr **series** to the matching TV profile, with copy that this applies to the whole show, so that I am not surprised when future episodes follow that profile.
 78. As a library owner, I want tracks-only, stereo-only, audio-replace-only, and ISO-remux-only promotes not to change the quality profile, so that a language cleanup does not re-home a remux I still want upgraded later.
 79. As a library owner, I want a size-exempt title not to get the smaller profile on promote, so that archival movies stay on the profile I chose.
@@ -122,7 +122,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 ### Operator, empty states, and developers
 
-82. As an operator, I want Settings copy to say that Arr size limits (MB/min) are global per quality name, and that Optimizarr will not silently rewrite those definitions, so that I do not think a profile assign changes max size for every movie.
+82. As an operator, I want Settings to let me disable profile auto-assign without disabling profile preview or explicit sync, and to say that Arr size limits (MB/min) are global per quality name, so that Optimizarr does not move titles between profiles unless I allow it.
 83. As an operator, I want hardware video encode to remain CUDA or VAAPI only, so that a custom quality slider cannot fall back to a multi-day CPU encode.
 84. As an operator, I want AAC codec replace and downmix to run in ffmpeg even when no GPU is required for audio, so that a tracks-and-audio job is not blocked on NVENC.
 85. As a library owner, I want an empty Movies or Series table to keep the v1 empty copy, so that first run still tells me to connect an Arr.
@@ -143,7 +143,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - Title pages are first-class routes for one movie and one episode. Search hits those routes. Table `?focus=` is not the v2 landing path.
 - Table row actions (Queue bulk plan, Force, Stereo, Exempt, Optimize all episodes) stay in this iteration. The title page is the custom editor.
 - Dense rows: after title, show quality, codec, size, audio, subtitles, then each plan line. Instance stays visible. Audio/subtitle cells are compact summaries from inspect (language and layout), not raw stream dumps. Do not invent streams before inspect.
-- Series headers collapse per show+instance. Default expanded. Optimize all episodes is not the toggle. Remember collapse while the operator stays on Series; do not require persistence across a full browser reload.
+- Series headers collapse per show+instance and default to collapsed. The first response contains show summaries; expanding a header fetches that show’s episodes and retains them during the visit. Optimize all episodes is not the toggle. Refresh invalidates retained episode rows.
 - Inspect: ffprobe for non-ISO. For `.iso` (any case), never ffprobe. List streams with ffmpeg into the same inspection report. Bulk Suggestions consume that report. If listing fails, record a distinct reason, do not loop retries, and do not pretend ffprobe failed. The title page may still remux or encode.
 - ISO remux: ffmpeg reads the ISO and writes Matroska. No video encode when size mode and quality mode are both off. Track edits on an ISO still write MKV. `mkvmerge` is not the ISO demuxer. After a working file is MKV, `mkvmerge` may mux tracks as in v1.
 - Video transcode on a custom plan: hardware HEVC by default; AV1 only if capability is on. Size mode aims at a **total file size**. Quality mode aims at encoder quality. Setting one clears the other. Job details name the mode. Optional 4K→1080p is an encode-only flag. Bit depth of the source is preserved. Estimate is a heuristic, not a sample encode.
@@ -151,8 +151,8 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - Audio generate: ffmpeg AAC only, from an existing audio stream. **Codec replace**: same channel layout, replaces the source track. **Downmix**: smaller layout down to stereo (offer each step the source can drop to, at least 5.1 and stereo when the source is wider); operator chooses replace or additional. No external files, no uploads.
 - Subtitle custom work is remove-only. Adding subtitle files is out of scope.
 - Write mode: default sidecar + Review + Keep (ENG-09). Settings global direct write applies to bulk and custom. Title page override applies to that custom job only and is stored on the plan. Direct write: encode to temp, integrity (duration present; do not copy source duration onto the result), then replace library file, no Review row. Failure deletes temp and leaves the original. Cancel of a direct-write job must not leave a half-written library file.
-- Promote after transcode Keep or transcode direct write: assign suggested Arr profile; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, and ISO remux-only do not assign. Size-exempt does not assign. Failed assign does not undo replace. After either promote path updates Optimizarr's stored path and size, invalidate the old inspection and suggestion, inspect that promoted path, and recompute its suggestion before marking the background operation complete. A failed reinspection records an Errors row and a follow-up warning without restoring the old file.
-- Suggested profiles: one per size category, stable Optimizarr-prefixed names, create/update only on explicit Settings sync. Do not overwrite unrelated profiles. Do not silently rewrite global Arr quality definitions (MB/min is help text and preview).
+- Promote after transcode Keep or transcode direct write: assign a suggested Arr profile only when profile auto-assign is enabled; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, ISO remux-only, and size-exempt plans do not assign. Failed assign does not undo replace. After either promote path updates Optimizarr's stored path and size, invalidate the old inspection and suggestion, inspect that promoted path, and recompute its suggestion before marking the background operation complete. A failed reinspection records an Errors row and a follow-up warning without restoring the old file.
+- Suggested profiles: one per size category, stable Optimizarr-prefixed names, create or update only on explicit Settings sync. Sync repairs drift in Optimizarr-named allowed qualities, cutoff, and upgrade behavior. Do not overwrite unrelated profiles. Do not silently rewrite global Arr quality definitions (MB/min is help text and preview).
 - Hardware video failure still fails the job. No software video fallback (ENG-05).
 - ffmpeg, ffprobe, and `mkvmerge` still `execFile` argument arrays (ENG-08). ISO paths are file operands, not shell fragments.
 - Modules: keep v1 modules. Add **Custom plan**. Extend Inspector (ISO listing and targeted post-promote reinspection), Suggestion engine (ISO reports and automatic-operation settings), Optimize runner (ISO remux, size XOR quality, codec replace, downmix add/replace, 4K→1080p), Promote (direct write, Arr profile assign), Settings (direct write, profile sync, suggestion defaults), Web UI (dense tables, collapsible series, title pages). Inspector and custom plan still do not encode. Promote still does not encode.
@@ -167,9 +167,9 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - Suggestion defaults: legacy Settings load all four toggles enabled; each toggle independently removes its automatic action and its reason; Force, Add stereo, and custom plans remain available; saving Settings recomputes Suggestions from stored inspections without probing unchanged files.
 - Custom plan: empty draft cannot queue; size XOR quality; 4K→1080p rejected on remux-only; codec replace is replace-only; downmix add vs replace; ISO remux when no size/quality; queueing custom clears the automatic suggestion.
 - Runner: ISO remux does not video-encode; size-mode and quality-mode encode are distinct; downscale requires encode; AAC replace vs extra downmix; hardware miss still fails video encode.
-- Promote: sidecar Keep and direct write both refresh integrations and finish targeted reinspection; direct write skips Review and replaces; failed direct write leaves original; profile assign on transcode only; follow-up failures do not undo replace.
-- Library HTTP: two reasons both appear; uninspected dashes; unreadable error; series collapse is UI-only and does not require a server flag.
-- Arr profiles: fake GET/POST qualityprofile and PUT movie/series; no search command.
+- Promote: sidecar Keep and direct write both refresh integrations and finish targeted reinspection; direct write skips Review and replaces; failed direct write leaves original; profile assign requires an enabled setting and a video transcode; ISO remux-only and size-exempt plans skip it; follow-up failures do not undo replace.
+- Library HTTP: two reasons both appear; uninspected dashes; unreadable error; Series returns summaries before any episode rows and fetches one show’s episodes on expansion.
+- Arr profiles: fake GET/POST/PUT qualityprofile and PUT movie/series; explicit sync repairs a drifted Optimizarr profile; disabled auto-assign performs no title PUT; no search command.
 
 ## Out of Scope
 
@@ -193,5 +193,6 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 - This PRD is the v2 spec. It does not replace issue #20. After accept, implementation should follow this document plus v1 where v2 is silent.
 - Close #22, #23, #24, and #25 against the v2 work rather than re-specifying them in competing issues.
+- Issue #38 supersedes the earlier expanded-by-default Series behavior. The current open-issue audit and remaining work live in [open-issues.md](../plans/open-issues.md).
 - First deploy remains ubuntuserver with the same NAS paths and NVIDIA GPU as v1.
 - Direct write is a loaded gun: shipped off, labeled in Settings and on the title page, and tested for failure leaving the original file.

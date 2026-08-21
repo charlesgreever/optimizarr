@@ -42,6 +42,51 @@ describe("Arr profile previews", () => {
 });
 
 describe("Arr profile HTTP", () => {
+  it("repairs a drifted Optimizarr profile and leaves unrelated profiles unchanged", async () => {
+    const calls: string[] = [];
+    const putBodies: Record<string, unknown>[] = [];
+    const result = await syncProfiles({
+      instanceId: "radarr",
+      url: "http://radarr",
+      apiKey: "k",
+      caps,
+      fetch: (async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (String(url).endsWith("/qualityprofile") && !init?.method) {
+          return new Response(JSON.stringify([
+            ultraHd,
+            {
+              ...ultraHd,
+              id: 9,
+              name: "Optimizarr Movie 1080p",
+              upgradeAllowed: true,
+              items: [{
+                id: 99,
+                name: "Web",
+                allowed: false,
+                items: [...ultraHd.items, { allowed: false, quality: { id: 20, name: "WEBDL-1080p" } }],
+              }],
+            },
+          ]));
+        }
+        if (String(url).endsWith("/qualityprofile/9") && init?.method === "PUT") {
+          putBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return new Response(String(init.body), { status: 202 });
+        }
+        if (String(url).endsWith("/qualityprofile/schema")) {
+          return new Response(JSON.stringify({ name: "", upgradeAllowed: false, items: ultraHd.items }));
+        }
+        return new Response(JSON.stringify({ id: 20, name: "created", upgradeAllowed: false, items: [] }));
+      }) as typeof fetch,
+    });
+
+    expect(result.updated).toContain("Optimizarr Movie 1080p");
+    expect(putBodies[0]?.upgradeAllowed).toBe(false);
+    expect(JSON.stringify(putBodies[0]?.items)).not.toContain('"allowed":true,"quality":{"id":18,"name":"WEBDL-2160p"}');
+    expect((putBodies[0]?.items as Array<{ allowed: boolean }>)[0]?.allowed).toBe(true);
+    expect(calls.some((call) => call.includes("PUT http://radarr/api/v3/qualityprofile/5"))).toBe(false);
+  });
+
   it("creates missing Optimizarr profiles and never searches", async () => {
     const calls: string[] = [];
     const result = await syncProfiles({
@@ -142,5 +187,29 @@ describe("Arr profile HTTP", () => {
     expect(createdBodies[0]?.upgradeAllowed).toBe(false);
     expect(createdBodies[0]).not.toHaveProperty("id");
     expect(calls.some((c) => /search|command/i.test(c))).toBe(false);
+  });
+
+  it("assigns a Sonarr profile to the whole series without searching", async () => {
+    const calls: string[] = [];
+    const warning = await assignProfile({
+      kind: "sonarr",
+      url: "http://sonarr",
+      apiKey: "k",
+      seriesId: 42,
+      profileName: "Optimizarr TV 1080p",
+      fetch: (async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (String(url).endsWith("/qualityprofile")) {
+          return new Response(JSON.stringify([{ id: 7, name: "Optimizarr TV 1080p", upgradeAllowed: false, items: [] }]));
+        }
+        if (String(url).endsWith("/series/42") && init?.method === "PUT") return new Response("{}", { status: 202 });
+        if (String(url).endsWith("/series/42")) return new Response(JSON.stringify({ id: 42, title: "Show", qualityProfileId: 1 }));
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+
+    expect(warning).toMatch(/whole series/i);
+    expect(calls).toContain("PUT http://sonarr/api/v3/series/42");
+    expect(calls.some((call) => /command|search/i.test(call))).toBe(false);
   });
 });

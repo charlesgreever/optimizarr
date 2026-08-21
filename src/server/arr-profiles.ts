@@ -103,11 +103,26 @@ export async function syncProfiles(opts: {
   for (const preview of profilePreviews(opts.caps)) {
     const found = existing.find((p) => p.name === preview.name);
     if (found) {
-      result.unchanged.push(preview.name);
+      const desired = configuredProfile(found.raw, preview.name, preview.category);
+      if (!profileNeedsUpdate(found, desired)) {
+        result.unchanged.push(preview.name);
+        continue;
+      }
+      try {
+        const updated = await opts.fetch(`${base}/api/v3/qualityprofile/${found.id}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ ...desired, id: found.id }),
+        });
+        if (updated.ok) result.updated.push(preview.name);
+        else result.failed.push(preview.name);
+      } catch {
+        result.failed.push(preview.name);
+      }
       continue;
     }
     try {
-      const created = await createNamedProfile(base, headers, existing, preview.name, opts.fetch);
+      const created = await createNamedProfile(base, headers, existing, preview.name, opts.fetch, "", preview.category);
       if (created) result.created.push(preview.name);
       else result.failed.push(preview.name);
     } catch {
@@ -147,7 +162,15 @@ export async function assignProfile(opts: {
 
   let profile = pickPreventUpgradeProfile(profiles, opts.profileName, currentQuality);
   if (!profile) {
-    const created = await createNamedProfile(base, headers, profiles, opts.profileName, opts.fetch, currentQuality);
+    const created = await createNamedProfile(
+      base,
+      headers,
+      profiles,
+      opts.profileName,
+      opts.fetch,
+      currentQuality,
+      categoryForProfileName(opts.profileName),
+    );
     if (!created) return `Could not create the ${opts.profileName} profile.`;
     profile = created;
   }
@@ -181,17 +204,19 @@ async function createNamedProfile(
   name: string,
   httpFetch: typeof fetch,
   currentQuality = "",
+  category?: SizeCategory,
 ): Promise<ProfileRecord | null> {
   const schemaRes = await httpFetch(`${base}/api/v3/qualityprofile/schema`, { headers });
   const schema = schemaRes.ok ? ((await schemaRes.json()) as Record<string, unknown>) : {};
   const donor =
     existing.find((p) => profileAllowsQuality(p.items, currentQuality)) ?? existing[0];
-  const body: Record<string, unknown> = {
+  const baseBody: Record<string, unknown> = {
     ...(schema && typeof schema === "object" ? schema : {}),
     ...(donor?.raw ?? {}),
     name,
     upgradeAllowed: false,
   };
+  const body = category ? configuredProfile(baseBody, name, category) : baseBody;
   delete body.id;
   const res = await httpFetch(`${base}/api/v3/qualityprofile`, {
     method: "POST",
@@ -202,4 +227,76 @@ async function createNamedProfile(
   const created: unknown = await res.json();
   const parsed = parseProfiles([created]);
   return parsed[0] ?? null;
+}
+
+function categoryForProfileName(name: string): SizeCategory | undefined {
+  return (Object.keys(PROFILE_NAMES) as SizeCategory[]).find((category) => PROFILE_NAMES[category] === name);
+}
+
+function configuredProfile(raw: Record<string, unknown>, name: string, category: SizeCategory): Record<string, unknown> {
+  const items = configureQualityItems(raw.items, category);
+  const allowedIds = qualityIds(items);
+  return {
+    ...raw,
+    name,
+    upgradeAllowed: false,
+    items,
+    ...(allowedIds.length > 0 ? { cutoff: allowedIds.at(-1) } : {}),
+  };
+}
+
+function configureQualityItems(items: unknown[], category: SizeCategory): unknown[];
+function configureQualityItems(items: unknown, category: SizeCategory): unknown;
+function configureQualityItems(items: unknown, category: SizeCategory): unknown {
+  if (!Array.isArray(items)) return items;
+  return items.map((raw) => {
+    if (!raw || typeof raw !== "object") return raw;
+    const row = raw as Record<string, unknown>;
+    const nestedItems = Array.isArray(row.items) ? configureQualityItems(row.items, category) : undefined;
+    const quality = row.quality && typeof row.quality === "object"
+      ? row.quality as Record<string, unknown>
+      : null;
+    const qualityName = typeof quality?.name === "string" ? quality.name : null;
+    const allowed = qualityName
+      ? categoryAllowsQuality(category, qualityName)
+      : nestedItems
+        ? nestedItems.some(containsAllowedQuality)
+        : row.allowed;
+    return {
+      ...row,
+      ...(typeof allowed === "boolean" ? { allowed } : {}),
+      ...(nestedItems ? { items: nestedItems } : {}),
+    };
+  });
+}
+
+function containsAllowedQuality(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const row = raw as Record<string, unknown>;
+  return row.allowed === true || (Array.isArray(row.items) && row.items.some(containsAllowedQuality));
+}
+
+function categoryAllowsQuality(category: SizeCategory, qualityName: string): boolean {
+  const name = qualityName.toLowerCase();
+  if (name.includes("remux")) return false;
+  const is4k = category === "movie4kSdr" || category === "movie4kHdr" || category === "tv4k";
+  return is4k ? /2160|4k|uhd/.test(name) : !/2160|4k|uhd/.test(name);
+}
+
+function qualityIds(items: unknown): number[] {
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const row = raw as Record<string, unknown>;
+    const nested = qualityIds(row.items);
+    const quality = row.quality && typeof row.quality === "object"
+      ? row.quality as Record<string, unknown>
+      : null;
+    return row.allowed === true && typeof quality?.id === "number" ? [...nested, quality.id] : nested;
+  });
+}
+
+function profileNeedsUpdate(profile: ProfileRecord, desired: Record<string, unknown>): boolean {
+  return profile.upgradeAllowed || JSON.stringify(profile.items) !== JSON.stringify(desired.items) ||
+    (typeof desired.cutoff === "number" && profile.raw.cutoff !== desired.cutoff);
 }

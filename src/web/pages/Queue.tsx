@@ -4,17 +4,47 @@ import { Help, PageHead } from "../components/Shell";
 
 export function QueuePage() {
   const [items, setItems] = useState<JobRow[]>([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const load = () => void api.jobs().then((r) => setItems(r.items));
   useEffect(() => {
     load();
     const id = setInterval(load, 1000);
     return () => clearInterval(id);
   }, []);
+  const active = items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused");
+  const finished = items.filter((job) => job.status === "succeeded" || job.status === "failed" || job.status === "cancelled");
+
+  async function mutate(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Queue could not be updated.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section>
       <PageHead title="Queue" />
       <Help>Queue is approved work that has not finished. Progress during a remux or transcode is elapsed media time, updated about once a second. Cancel never replaces the library file.</Help>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {active.length > 0 && (
+          <button className="btn-secondary" type="button" disabled={busy} onClick={() => void mutate(api.cancelAll)}>
+            Cancel all
+          </button>
+        )}
+        {finished.length > 0 && (
+          <button className="btn-secondary" type="button" disabled={busy} onClick={() => void mutate(api.clearFinishedJobs)}>
+            Clear finished
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
       {items.length === 0 ? (
         <div className="empty">The queue is idle. Approve a suggestion to add work.</div>
       ) : (
@@ -54,6 +84,11 @@ export function QueuePage() {
                     {job.status === "held" && (
                       <button className="btn ml-1" type="button" onClick={() => void api.runNow(job.id).then(load)}>
                         Run now
+                      </button>
+                    )}
+                    {(job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") && (
+                      <button className="btn-secondary ml-1" type="button" disabled={busy} onClick={() => void mutate(() => api.removeJob(job.id))}>
+                        Remove
                       </button>
                     )}
                     {job.error && <div className="text-xs text-rose-400">{job.error}</div>}

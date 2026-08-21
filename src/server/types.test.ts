@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planHasVideoTranscode } from "./types.ts";
+import { planHasVideoTranscode, profileAssignmentEligible } from "./types.ts";
 import type { ExecutablePlan } from "./types.ts";
 
 function plan(over: Partial<ExecutablePlan> = {}): ExecutablePlan {
@@ -41,5 +41,15 @@ describe("executable plans", () => {
     const custom = plan({ origin: "custom", writeMode: "direct" });
     expect(custom.origin).toBe("custom");
     expect(custom.writeMode).toBe("direct");
+  });
+
+  it("assigns profiles only for enabled, non-exempt video transcodes", () => {
+    const transcode = plan({
+      video: { kind: "size", codec: "hevc", targetBytes: 4_000_000_000, downscale1080p: false, bitDepth: 10 },
+    });
+    expect(profileAssignmentEligible({ autoAssign: true, sizeExempt: false, plan: transcode })).toBe(true);
+    expect(profileAssignmentEligible({ autoAssign: false, sizeExempt: false, plan: transcode })).toBe(false);
+    expect(profileAssignmentEligible({ autoAssign: true, sizeExempt: true, plan: transcode })).toBe(false);
+    expect(profileAssignmentEligible({ autoAssign: true, sizeExempt: false, plan: plan() })).toBe(false);
   });
 });

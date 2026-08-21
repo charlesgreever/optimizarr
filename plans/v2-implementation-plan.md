@@ -2,6 +2,8 @@
 
 This plan turns [v2 prd.md](../docs/v2%20prd.md) into bounded implementation tasks for an AI coding agent. The agent must also read [prd.md](../docs/prd.md), [ENGINEERING_STANDARDS.md](../ENGINEERING_STANDARDS.md), and [CODING_STANDARDS.md](../CODING_STANDARDS.md) before changing code or user-facing copy. The v2 PRD wins where it conflicts with v1.
 
+The implementation has shipped most of this plan. [open-issues.md](open-issues.md) records the 2026-08-21 audit, closure evidence, and the bounded work that remains for issues #24, #25, #26, #33, and #38.
+
 ## Delivery rules
 
 - Complete tasks in order unless a task explicitly says it can run in parallel.
@@ -420,7 +422,7 @@ Done when tests prove profile creation/update requires the explicit action.
 
 Files: `src/server/promote.ts`, `src/server/promote.test.ts`.
 
-1. Assign after a successful video-transcode Keep or direct write.
+1. Add an off/on profile auto-assign setting and assign after a successful video-transcode Keep or direct write only when it is on.
 2. Select the plan’s size category and matching profile.
 3. Assign a Radarr movie directly.
 4. Assign the whole Sonarr series and return a warning that the profile affects future episodes.
@@ -428,7 +430,7 @@ Files: `src/server/promote.ts`, `src/server/promote.test.ts`.
 6. Skip assignment for size-exempt titles.
 7. Keep the replacement successful when the profile is missing or Arr rejects assignment; surface the Arr error.
 
-Done when promotion tests cover every assign and skip condition for both write modes.
+Done when promotion tests cover every assign and skip condition for both write modes, including disabled auto-assign and ISO remux without a video transcode.
 
 ### Phase 6 gate
 
@@ -546,13 +548,14 @@ Done when episode rows have data and action parity with Movies.
 Files: `src/web/pages/Series.tsx`, optional focused hook/helper and tests.
 
 1. Key collapse state by series plus Arr instance.
-2. Default every series to expanded.
-3. Preserve collapse state across data refreshes while the component remains mounted.
-4. Keep title, instance, episode count, and Optimize all episodes visible when collapsed.
-5. Prevent Optimize all episodes from toggling collapse.
-6. Do not add server persistence, session persistence, collapse-all, or season collapse.
+2. Return show summaries before episode rows and default every series to collapsed.
+3. Fetch one show’s episodes on expansion and retain them while the component remains mounted.
+4. Refresh show summaries and invalidate retained episode rows after an explicit library refresh.
+5. Keep title, instance, episode count, and Optimize all episodes visible when collapsed.
+6. Prevent Optimize all episodes from toggling collapse.
+7. Do not add server persistence, session persistence, collapse-all, or season collapse.
 
-Done when refreshing Series data preserves collapsed groups and a full browser reload restores expanded defaults.
+Done when Series renders bounded show summaries first, expansion fetches only one show, and a full browser reload restores collapsed defaults.
 
 ### Phase 8 gate
 
@@ -772,7 +775,7 @@ v2 is complete only when:
 
 - v1 bulk Suggestions still use GB/hour caps, preferred language, and Atmos stereo rules;
 - Movies and Series show dense, honest inspection facts and all plan reasons;
-- series groups collapse in-page and default to expanded after a browser reload;
+- Series returns bounded show summaries first, loads episodes on expansion, and defaults to collapsed after a browser reload;
 - stable movie and episode pages begin with a do-nothing custom draft;
 - custom audio, subtitle, ISO remux, size, quality, and downscale plans validate and execute as specified;
 - custom queueing negates the automatic suggestion and shares existing job locks;

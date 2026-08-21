@@ -132,7 +132,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 108. As a library owner, I want to reorder, pause, or remove queued items, so that tonight’s movie is not stuck behind a 4K encode.
 109. As a library owner, I want the default concurrency to be one job, so that the GPU and NAS are not slammed out of the box.
 110. As a library owner, I want a toggle to allow more than one transcode at a time, so that I can use more of the GPU when I choose.
-111. As a library owner, I want Optimizarr to honor whatever concurrency I set, so that it does not second-guess other GPU users for me.
+111. As a library owner, I want the Encode section to give concurrency and scheduling changes an explicit Save action and honor whatever concurrency I save, so that the setting is not stranded in the browser or silently second-guessed.
 112. As a library owner, I want an off-peak schedule, so that heavy encodes run at night instead of during movies.
 113. As a library owner, I want jobs that miss the window to wait until the next off-peak period, so that a late queue does not start at dinner.
 114. As a library owner, I want a way to run a job immediately even if we are outside the window, so that I can override the schedule.
@@ -220,6 +220,13 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 196. As an operator, I want that token encrypted and never echoed after save, so that a screenshot of Settings is safer (ENG-06).
 197. As an operator, I want Report to copy the screenshot or download it when no token is saved, so that a machine without GitHub credentials can still attach the image by hand.
 198. As an operator, I want the report text to omit paths, API keys, tokens, and passwords, so that a public GitHub issue is not a secret leak.
+199. As a library owner, I want Cancel all to stop every queued, held, paused, and running job as one operation, so that I can stop a batch without cancelling each row.
+200. As a library owner, I want Cancel all to report one visible failure instead of leaving an unexplained partial result, so that I know whether the batch stopped.
+201. As a library owner, I want to remove one finished Queue row or clear all finished rows, so that completed, failed, and cancelled work does not fill the operational queue forever.
+202. As a library owner, I want removing Queue rows to preserve History, Review sidecars, and library files, so that clearing the operational list does not erase outcomes or media.
+203. As a library owner, I want active jobs to require Cancel before Remove, so that removing a row cannot hide work that is still running.
+204. As a library owner, I want Movies and Series to return a bounded first page, so that a large library becomes usable before every title has crossed the network and rendered.
+205. As a library owner, I want Series to load episode details when I expand a show, so that collapsed shows do not transfer or render rows I have not asked to inspect.
 
 ## Implementation Decisions
 
@@ -244,6 +251,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Missed target or larger-than-source: keep sidecar, flag for review, let the user re-run more aggressively. Integrity and duration checks still apply. Do not copy a source duration onto an encode result.
 - Auth is Arr-style local login with a modern password hash and sessions; optional local-address bypass. Secrets are hashed or encrypted at rest and never echoed after save (ENG-06).
 - Responsiveness is a product requirement. Enqueue, Cancel, Keep, Discard, and page loads must not wait on mux, encode, or a cross-device replace. ffmpeg and `mkvmerge` run as child processes; drain their output without unbounded buffers. Status reads stay fast while a job runs. The UI does not overlap polls for the same endpoint. A conservative performance mode may exist; it must not silently change configured concurrency.
+- Library reads use a batched public read model instead of loading inspection, suggestion, and error state once per row. Movies use bounded pages. Series returns show summaries first and fetches one show’s episodes when the operator expands it. The browser may retain pages and expanded-show results until Refresh invalidates them.
 - Home dashboard is the post-login landing page. Files optimized equals successful Keeps. Space saved equals the sum of original size minus kept sidecar size for those Keeps. Home also shows open suggestions, queued, pending review, error count, and recent activity.
 - UI follows Arr information architecture with a Vision UI-inspired presentation (dark glass, neon accents) as visual inspiration, not Creative Tim template code. Library pages are sortable tables with posters on the row, not card grids as the default. Iconography is required and must be distinct per nav item and action. Small-viewport layout is required. Contextual help lives on each primary page next to the controls it explains.
 - Homepage widget: `GET /api/widget` (alias `/api/homepage`), widget key or local-address bypass, stats only. Example YAML in docs. Installing the tile on the household Homepage host is out of this repo.
@@ -262,6 +270,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
   - Web UI (including widget API, global search, Errors, Home, and help)
 - The inspector and suggestion engine do not mux or encode. The runner does not decide policy. The promoter does not encode. The notifiers do not touch disk. Library sync does not wait on inspect.
 - Queue Cancel is first-class: queued, held, and running jobs can be cancelled. Cancel marks the job cancelled immediately, aborts the in-flight optimizer when possible, deletes that job’s temp or sidecar output, never touches the library original, and never writes a Review item. A job that finishes after cancel stays cancelled. Succeeded, failed, and already-cancelled jobs return a conflict.
+- Queue bulk operations belong to the job queue module. Cancel all commits the visible status change for every active job before signalling running child processes. Remove and Clear finished hide only terminal rows from Queue. They retain job data needed by Review and preserve History, sidecars, suggestions, and library files. Active rows return a conflict until Cancel finishes.
 - Types describe domain values (ENG-02). Arr JSON, ffprobe output, and `mkvmerge` identification enter as `unknown` and are parsed once (ENG-03). No `any`. Names match the domain (ENG-11). One module, one reason to change (ENG-10). Config stays twelve-factor (ENG-12).
 - Suggestion and help copy uses everyday words (CODING_STANDARDS RULE-01, RULE-03). Do not require the reader to know remux, sidecar, or Arr jargon without a definition. Fail closed: do not return 200 when Force, stereo, Keep, or inspect did not do the work (ENG-05).
 
@@ -272,15 +281,15 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Library sync: given fake Radarr/Sonarr payloads from one or many instances, the normalized library, paths, instance provenance, and artwork URLs are correct; auth and connectivity failures surface as connection errors; refresh returns without waiting on probes.
 - Media inspector: fixture or recorded probe documents cover codec, bit depth, HDR/DV, duration, size/hour, audio layout, preferred/other/untagged languages, cover-art-first 4K, coded size only, and a 2160p Arr label on a 1080p-looking probe. A probe that always throws on one path increments errors once, ends the walk, and appears on Errors with path and reason. Unchanged path+size is not probed again.
 - Suggestion engine: table-driven cases for under/over cap, HEVC default, AV1 only when capability is on, tracks-only vs transcode, stereo suggest vs manual, DV warning, dismissals, movie vs TV category, 4K vs 1080p category, sticky exemption (no size suggestion, still tracks/stereo), remux-without-extra-tracks copy, and Now/After honesty.
-- Settings and first-run: optimize is blocked until language is confirmed and required connections exist; caps persist; exemption persists; review path inside a library root is rejected.
-- Job queue and scheduler: default concurrency 1, user concurrency honored, off-peak hold vs run-now, no second job while a sidecar is pending, cancel queued/held/running, cancelled work does not become a review, restart-safe queue, enqueue returns while a fake runner is still going.
+- Settings and first-run: optimize is blocked until language is confirmed and required connections exist; caps persist; exemption persists; the Encode section exposes an explicit save action for concurrency and scheduling; review path inside a library root is rejected.
+- Job queue and scheduler: default concurrency 1, user concurrency honored, off-peak hold vs run-now, no second job while a sidecar is pending, cancel queued/held/running, atomic Cancel all across mixed statuses, remove one terminal row, Clear finished without removing active rows or History, cancelled work does not become a review, restart-safe queue, enqueue returns while a fake runner is still going.
 - Optimize runner: review-path output (never library folder), `mkvmerge` used for track mux, ffmpeg used for hardware video and stereo AAC creation, hardware failure becomes a failed job with a user-visible error, integrity/duration checks, temp cleanup, disk-space preflight, bounded logs, real phase and progress on the public job payload. No live NAS or GPU.
 - Review and promote: Keep returns while a fake slow move is still running; GET review shows in-progress; a second Keep is rejected; Keep replaces and deletes original and calls Arr rename/refresh; Keep selected accepts two pending and skips one already-keeping; Discard deletes sidecar only; flagged-over-cap stays; Arr rename failure does not delete the new file; permission failures leave both files.
 - Player notifier: Plex and Jellyfin are called after Keep; a player outage is reported and does not undo Keep.
 - Activity and savings: a Keep of a 10 GB source to a 4 GB sidecar increases files optimized by 1 and space saved by 6 GB; Discard does not; failed Keep does not.
 - Auth: set password, login, bad password, logout, session expiry, optional local bypass on/off. No plaintext password at rest. Widget route: key works, missing key on a public IP is 401, payload has no secrets or paths.
 - Report: the GitHub URL encodes route and inspect leftovers; a sample path or secret is absent from the query; a saved token uploads a PNG fixture and returns an attachment URL without echoing the token; missing token does not call GitHub; crop uses the current scroll box.
-- Web UI / HTTP: list library, search `q`, enqueue, Keep/Discard, Errors list, Home payload, settings. Polling cleanup when a request is still in flight. Force/stereo HTTP: unreadable is not 200; stereo no-op is not 200.
+- Web UI / HTTP: bounded Movies pages, Series summaries, episodes for one expanded show, search `q`, enqueue, Keep/Discard, Errors list, Home payload, settings. Seeded large-library tests assert a bounded first response and no episode payload before expansion. Polling cleanup when a request is still in flight. Force/stereo HTTP: unreadable is not 200; stereo no-op is not 200.
 - Prior art: the previous Optimizarr test suite is not to be reused. Tests are written next to the new modules, with fixtures, not the live NAS.
 
 ## Out of Scope
@@ -306,8 +315,8 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 ## Further Notes
 
 - This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-optimize, which are dropped. GitHub issue #35 (Report a bug, viewport screenshot, optional token attach) is shipped behavior.
+- The current open-issue audit, fixed-issue evidence, and remaining implementation sequence live in [open-issues.md](../plans/open-issues.md).
 - First install target is ubuntuserver, which already runs Radarr, Sonarr, Plex, Jellyfin, and an NVIDIA stack. CUDA is the on-box encode path; VAAPI remains required for portable installs.
 - Media lives on the Synology Plex share mounted at the same network path the Arrs use. The review path must also live on the NAS but outside those library roots.
 - The operator already has working HEVC NVENC and English-only remux habits. Optimizarr should feel like that workflow with a library, suggestions, review, and a running savings tally, not a blank ffmpeg form.
 - After this PRD is accepted, the existing application tree is wiped. A later agent writes a new implementation plan from this document. That plan must not import the old code.
-

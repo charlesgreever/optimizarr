@@ -1,64 +1,103 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, formatSize, type LibraryRow } from "../api";
+import { api, type LibraryRow, type SeriesSummary } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
-import { RowActions } from "../components/RowActions";
-
-function groupKey(item: LibraryRow): string {
-  if (item.arrSeriesId != null) return `${item.instanceId}::series:${item.arrSeriesId}`;
-  return `${item.instanceId}::${item.showTitle || item.title || item.displayTitle}`;
-}
+import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
+import { mergePage, needsFocusedPage } from "../library-pages";
 
 export function SeriesPage() {
-  const [items, setItems] = useState<LibraryRow[]>([]);
+  const [summaries, setSummaries] = useState<SeriesSummary[]>([]);
+  const [nextOffset, setNextOffset] = useState<number | null>(0);
   const [msg, setMsg] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const pendingResetRef = useRef(false);
   const [searchParams] = useSearchParams();
   const focus = searchParams.get("focus");
 
-  const load = () =>
-    void api
-      .series()
-      .then(async (r) => {
-        if (r.items.length > 0 && r.items.every((item) => !item.path)) {
-          await api.refresh();
-          const again = await api.series();
-          setItems(again.items);
-          return;
-        }
-        setItems(r.items);
-      })
-      .catch((e: Error) => setMsg(e.message));
+  async function load(reset = false) {
+    if (loadingRef.current) {
+      if (reset) pendingResetRef.current = true;
+      return;
+    }
+    const offset = reset ? 0 : nextOffset;
+    if (offset == null) return;
+    loadingRef.current = true;
+    setMsg("");
+    try {
+      const page = await api.series(offset);
+      setSummaries((current) => reset ? page.items : mergePage(current, page.items));
+      setNextOffset(page.nextOffset);
+    } catch (cause) {
+      setMsg(cause instanceof Error ? cause.message : "Series could not be loaded.");
+    } finally {
+      loadingRef.current = false;
+      if (pendingResetRef.current) {
+        pendingResetRef.current = false;
+        void load(true);
+      }
+    }
+  }
+
   useEffect(() => {
-    load();
+    void load(true);
   }, []);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, LibraryRow[]>();
-    for (const item of items) {
-      const key = groupKey(item);
-      map.set(key, [...(map.get(key) ?? []), item]);
+  useEffect(() => {
+    if (!focus) {
+      setFocusKey(null);
+      return;
     }
-    return [...map.entries()];
-  }, [items]);
+    void api.title(focus).then(({ item }) => {
+      if (item.type === "episode" && item.arrSeriesId != null) {
+        setFocusKey(`${item.instanceId}:${item.arrSeriesId}`);
+      }
+    }).catch(() => setFocusKey(null));
+  }, [focus]);
+
+  useEffect(() => {
+    if (focusKey && !summaries.some((summary) => summary.key === focusKey) && nextOffset != null) {
+      void load();
+    }
+  }, [focusKey, summaries, nextOffset]);
+
+  function refreshed() {
+    setRefreshVersion((version) => version + 1);
+    void load(true);
+  }
 
   return (
     <section>
       <PageHead title="Series">
-        <RefreshLibrary onDone={load} />
+        <RefreshLibrary onDone={refreshed} />
       </PageHead>
-      <Help>Shows start collapsed so a large library does not freeze the browser. Expand a show to see episodes. Optimize all episodes queues that show without expanding it.</Help>
-      {groups.length === 0 ? (
+      <Help>Series loads show headers first. Expand one show to load its episodes. Optimize all episodes queues that show without expanding it.</Help>
+      {summaries.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
             <p>No series loaded yet. Refresh pulls episodes from the Sonarr connections in Settings.</p>
-            <RefreshLibrary onDone={load} />
+            <RefreshLibrary onDone={refreshed} />
           </div>
         </div>
       ) : (
-        groups.map(([key, eps]) => (
-          <SeriesGroup key={key} eps={eps} focusId={focus} onDone={load} onMsg={setMsg} />
+        summaries.map((summary) => (
+          <SeriesGroup
+            key={summary.key}
+            summary={summary}
+            focusId={focusKey === summary.key ? focus : null}
+            refreshVersion={refreshVersion}
+            onMsg={setMsg}
+          />
         ))
+      )}
+      {nextOffset != null && (
+        <div className="mt-4 text-center">
+          <button className="btn-secondary" type="button" onClick={() => void load()}>
+            Load more shows
+          </button>
+        </div>
       )}
       {msg && <p className="mt-3 text-sm text-slate-300">{msg}</p>}
     </section>
@@ -66,52 +105,102 @@ export function SeriesPage() {
 }
 
 function SeriesGroup({
-  eps,
+  summary,
   focusId,
-  onDone,
+  refreshVersion,
   onMsg,
 }: {
-  eps: LibraryRow[];
+  summary: SeriesSummary;
   focusId: string | null;
-  onDone: () => void;
+  refreshVersion: number;
   onMsg: (msg: string) => void;
 }) {
-  const [open, setOpen] = useState(() => Boolean(focusId && eps.some((ep) => ep.id === focusId)));
-  const head = eps[0];
-  const title = head.showTitle || head.title || head.displayTitle;
+  const [open, setOpen] = useState(Boolean(focusId));
+  const [episodes, setEpisodes] = useState<LibraryRow[]>([]);
+  const [nextOffset, setNextOffset] = useState<number | null>(0);
+  const [error, setError] = useState("");
+  const loadingRef = useRef(false);
+  const loadedRefreshRef = useRef(refreshVersion);
+  const pendingRefreshResetRef = useRef(false);
+
+  async function loadEpisodes(reset = false) {
+    if (loadingRef.current) {
+      if (reset) pendingRefreshResetRef.current = true;
+      return;
+    }
+    const offset = reset ? 0 : nextOffset;
+    if (offset == null) return;
+    loadingRef.current = true;
+    const requestedRefresh = loadedRefreshRef.current;
+    setError("");
+    try {
+      const page = await api.seriesEpisodes(summary.instanceId, summary.arrSeriesId, offset);
+      if (requestedRefresh === loadedRefreshRef.current) {
+        setEpisodes((current) => reset ? page.items : mergePage(current, page.items));
+        setNextOffset(page.nextOffset);
+      }
+    } catch (cause) {
+      if (requestedRefresh === loadedRefreshRef.current) {
+        setError(cause instanceof Error ? cause.message : "Episodes could not be loaded.");
+      }
+    } finally {
+      loadingRef.current = false;
+      if (pendingRefreshResetRef.current) {
+        pendingRefreshResetRef.current = false;
+        void loadEpisodes(true);
+      }
+    }
+  }
 
   useEffect(() => {
-    if (focusId && eps.some((ep) => ep.id === focusId)) setOpen(true);
-  }, [focusId, eps]);
+    if (!focusId) return;
+    setOpen(true);
+    void loadEpisodes(true);
+  }, [focusId]);
+
+  useEffect(() => {
+    if (open && needsFocusedPage(focusId, episodes, nextOffset)) void loadEpisodes();
+  }, [focusId, open, episodes, nextOffset]);
+
+  useEffect(() => {
+    if (loadedRefreshRef.current === refreshVersion) return;
+    loadedRefreshRef.current = refreshVersion;
+    setEpisodes([]);
+    setNextOffset(0);
+    setError("");
+    if (!open) return;
+    if (loadingRef.current) pendingRefreshResetRef.current = true;
+    else void loadEpisodes(true);
+  }, [refreshVersion]);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && episodes.length === 0) void loadEpisodes(true);
+  }
 
   return (
     <div className="glass series-block mt-5">
       <div className="series-head">
-        <button
-          type="button"
-          className="series-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        >
+        <button type="button" className="series-toggle" aria-expanded={open} onClick={toggle}>
           <span className="series-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
           <span>
-            <span className="series-title">{title}</span>
-            <span className="series-meta">{head.instanceName} · {eps.length} episodes</span>
+            <span className="series-title">{summary.showTitle}</span>
+            <span className="series-meta">{summary.instanceName} · {summary.episodeCount} episodes</span>
           </span>
         </button>
-        <button className="btn-secondary" type="button" onClick={() => setOpen((current) => !current)}>
+        <button className="btn-secondary" type="button" onClick={toggle}>
           {open ? "Collapse" : "Expand"}
         </button>
         <button
           className="btn"
           type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void api.optimizeShow(head.instanceId, head.showTitle || head.title || "").then((r) => {
-              onMsg(`Queued ${Number((r as { queued: number }).queued)}. Skipped ${Number((r as { skipped: number }).skipped)}.`);
-              onDone();
-            }).catch((e: Error) => onMsg(e.message));
+          onClick={() => {
+            void api.optimizeShow(summary.instanceId, summary.arrSeriesId).then((result) => {
+              const counts = result as { queued: number; skipped: number };
+              onMsg(`Queued ${counts.queued}. Skipped ${counts.skipped}.`);
+              if (open) void loadEpisodes(true);
+            }).catch((cause: Error) => onMsg(cause.message));
           }}
         >
           Optimize all episodes
@@ -119,38 +208,33 @@ function SeriesGroup({
       </div>
       {open && (
         <div className="series-table-wrap">
+          {error && (
+            <div className="p-3 text-sm text-rose-400">
+              {error} <button className="btn-secondary ml-2" type="button" onClick={() => void loadEpisodes(true)}>Retry</button>
+            </div>
+          )}
           <table className="dense">
             <thead>
               <tr>
                 <th>Episode</th>
-                <th>Video</th>
-                <th>Audio</th>
-                <th>Subs</th>
-                <th>Quality</th>
-                <th>Size</th>
-                <th>Plan</th>
-                <th>Actions</th>
+                <LibraryMediaHeaders />
               </tr>
             </thead>
             <tbody>
-              {eps.map((item) => (
+              {episodes.map((item) => (
                 <tr key={item.id} id={item.id}>
-                  <td>
-                    <Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link>
-                  </td>
-                  <td className="text-sm">{item.videoLabel || "—"}</td>
-                  <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
-                  <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
-                  <td>{item.quality || "—"}</td>
-                  <td>{formatSize(item.sizeBytes)}</td>
-                  <td className="text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
-                  <td>
-                    <RowActions item={item} onDone={onDone} />
-                  </td>
+                  <td><Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link></td>
+                  <LibraryMediaCells item={item} onDone={() => void loadEpisodes(true)} />
                 </tr>
               ))}
             </tbody>
           </table>
+          {episodes.length === 0 && !error && <div className="p-3 text-sm text-slate-400">Loading episodes…</div>}
+          {nextOffset != null && episodes.length > 0 && (
+            <div className="p-3 text-center">
+              <button className="btn-secondary" type="button" onClick={() => void loadEpisodes()}>Load more episodes</button>
+            </div>
+          )}
         </div>
       )}
     </div>

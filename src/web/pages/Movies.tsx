@@ -1,40 +1,69 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatSize, type LibraryRow } from "../api";
+import { api, type LibraryRow } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
-import { RowActions } from "../components/RowActions";
+import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
+import { mergePage } from "../library-pages";
 
 export function MoviesPage() {
   const [items, setItems] = useState<LibraryRow[]>([]);
   const [sort, setSort] = useState<"title" | "size" | "quality">("title");
   const [error, setError] = useState("");
+  const [nextOffset, setNextOffset] = useState<number | null>(0);
+  const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
+  const activeSortRef = useRef(sort);
+  const currentSortRef = useRef(sort);
+  const pendingSortResetRef = useRef(false);
 
-  const load = () => void api.movies().then((r) => setItems(r.items)).catch((e: Error) => setError(e.message));
+  const load = async (reset = false, requestedSort = currentSortRef.current) => {
+    if (loadingRef.current) {
+      if (reset) pendingSortResetRef.current = true;
+      return;
+    }
+    const offset = reset ? 0 : nextOffset;
+    if (offset == null) return;
+    loadingRef.current = true;
+    activeSortRef.current = requestedSort;
+    setLoading(true);
+    setError("");
+    try {
+      const page = await api.movies(offset, 50, requestedSort);
+      setItems((current) => reset ? page.items : mergePage(current, page.items));
+      setNextOffset(page.nextOffset);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Movies could not be loaded.");
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+      if (pendingSortResetRef.current) {
+        pendingSortResetRef.current = false;
+        void load(true, currentSortRef.current);
+      }
+    }
+  };
   useEffect(() => {
-    load();
-  }, []);
-
-  const rows = useMemo(() => {
-    return [...items].sort((a, b) => {
-      if (sort === "size") return b.sizeBytes - a.sizeBytes;
-      if (sort === "quality") return a.quality.localeCompare(b.quality);
-      return a.displayTitle.localeCompare(b.displayTitle);
-    });
-  }, [items, sort]);
+    currentSortRef.current = sort;
+    if (loadingRef.current) {
+      pendingSortResetRef.current = activeSortRef.current !== sort;
+      return;
+    }
+    void load(true, sort);
+  }, [sort]);
 
   return (
     <section>
       <PageHead title="Movies">
-        <RefreshLibrary onDone={load} />
+        <RefreshLibrary onDone={() => void load(true)} />
       </PageHead>
       <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion.</Help>
       {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
-      {rows.length === 0 ? (
+      {items.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
             <p>No movies loaded yet. Refresh pulls titles from the Radarr connections in Settings.</p>
-            <RefreshLibrary onDone={load} />
+            <RefreshLibrary onDone={() => void load(true)} />
           </div>
         </div>
       ) : (
@@ -43,18 +72,12 @@ export function MoviesPage() {
             <thead>
               <tr>
                 <th>Poster</th>
-                <th onClick={() => setSort("title")}>Title</th>
-                <th>Video</th>
-                <th>Audio</th>
-                <th>Subs</th>
-                <th onClick={() => setSort("quality")}>Quality</th>
-                <th onClick={() => setSort("size")}>Size</th>
-                <th>Plan</th>
-                <th>Actions</th>
+                <th><button type="button" onClick={() => setSort("title")}>Title</button></th>
+                <LibraryMediaHeaders onQuality={() => setSort("quality")} onSize={() => setSort("size")} />
               </tr>
             </thead>
             <tbody>
-              {rows.map((item) => (
+              {items.map((item) => (
                 <tr key={item.id} id={item.id}>
                   <td>
                     {item.hasPoster ? (
@@ -67,19 +90,18 @@ export function MoviesPage() {
                     <Link to={item.href || `/movies/${item.id}`}>{item.displayTitle}</Link>
                     <div className="text-xs text-slate-400">{item.instanceName}</div>
                   </td>
-                  <td className="text-sm">{item.videoLabel || "—"}</td>
-                  <td className="max-w-40 truncate text-sm">{item.audioLabels?.join(", ") || "—"}</td>
-                  <td className="max-w-32 truncate text-sm">{item.subtitleLabels?.join(", ") || "—"}</td>
-                  <td>{item.quality || "—"}</td>
-                  <td>{formatSize(item.sizeBytes)}</td>
-                  <td className="max-w-xs text-sm text-slate-300">{item.error || item.reasons[0] || (item.inspected ? "Healthy" : "Waiting for inspect")}</td>
-                  <td>
-                    <RowActions item={item} onDone={load} />
-                  </td>
+                  <LibraryMediaCells item={item} onDone={() => void load(true)} />
                 </tr>
               ))}
             </tbody>
           </table>
+          {nextOffset != null && (
+            <div className="p-3 text-center">
+              <button className="btn-secondary" type="button" disabled={loading} onClick={() => void load()}>
+                {loading ? "Loading…" : "Load more movies"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

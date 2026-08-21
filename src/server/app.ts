@@ -29,6 +29,7 @@ import { validateCustomPlan } from "./custom-plan.ts";
 import { decodePngBase64, safeScreenshotFilename, uploadGithubIssueScreenshot } from "./github-report.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { createInspectionRunner } from "./inspection-runner.ts";
+import { createLibraryReadModel } from "./library-read-model.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
 const GENERIC_LOGIN = "Username or password is wrong.";
@@ -70,6 +71,7 @@ export function createApp(opts: AppOptions) {
     reinspectChangedItem: inspections.reinspectChangedItem,
   });
   jobs.start();
+  const library = createLibraryReadModel(store);
 
   const app = new Hono();
 
@@ -239,6 +241,7 @@ export function createApp(opts: AppOptions) {
       localAuthBypass: body.localAuthBypass ?? current.localAuthBypass,
       inspectConcurrency: body.inspectConcurrency ?? current.inspectConcurrency,
       writeMode: body.writeMode === "direct" ? "direct" : body.writeMode === "sidecar" ? "sidecar" : current.writeMode,
+      profileAutoAssign: body.profileAutoAssign ?? current.profileAutoAssign,
     };
     if (next.reviewPath && unsafeReviewPath(next.reviewPath, store.listItems().map((i) => i.path))) {
       return c.json({ error: "The review folder cannot sit inside an Arr library folder." }, 400);
@@ -456,8 +459,24 @@ export function createApp(opts: AppOptions) {
     });
   }
 
-  app.get("/api/library/movies", (c) => c.json({ items: store.listItems("movie").map((item) => presentItem(item, false)) }));
-  app.get("/api/library/series", (c) => c.json({ items: store.listItems("episode").map((item) => presentItem(item, false)) }));
+  app.get("/api/library/movies", (c) => {
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    const requestedSort = c.req.query("sort");
+    const sort = requestedSort === "size" || requestedSort === "quality" ? requestedSort : "title";
+    return c.json(library.movies(offset, limit, sort));
+  });
+  app.get("/api/library/series", (c) => {
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(library.series(offset, limit));
+  });
+  app.get("/api/library/series/:instanceId/:seriesId/episodes", (c) => {
+    const seriesId = Number(c.req.param("seriesId"));
+    if (!Number.isSafeInteger(seriesId) || seriesId < 0) {
+      return c.json({ error: "That series id is invalid." }, 400);
+    }
+    const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
+    return c.json(library.episodes(c.req.param("instanceId"), seriesId, offset, limit));
+  });
   app.get("/api/inspect/status", (c) => {
     if (inspections.leftoverCount() > 0) void inspections.inspectPending();
     return c.json(store.getInspectState());
@@ -518,14 +537,14 @@ export function createApp(opts: AppOptions) {
     const body = await c.req.json<{ exempt?: boolean }>();
     store.setExempt(c.req.param("id"), Boolean(body.exempt));
     recomputeSuggestion(c.req.param("id"));
-    return c.json({ ok: true, item: presentItem(store.getItem(c.req.param("id"))!) });
+    return c.json({ ok: true, item: library.item(c.req.param("id"))! });
   });
 
   app.get("/api/library/items/:id", async (c) => {
     const item = store.getItem(c.req.param("id"));
     if (!item) return c.json({ error: "That title is not in the library." }, 404);
     return c.json({
-      item: presentItem(item, true),
+      item: library.item(item.id, true),
       hardware: lastHardware,
       settings: { writeMode: store.getSettings().writeMode, videoTarget: store.getSettings().videoTarget },
     });
@@ -569,11 +588,14 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true, id: queued.id, plan: result.plan });
   });
 
-  app.post("/api/library/series/:instanceId/:show/optimize", async (c) => {
+  app.post("/api/library/series/:instanceId/:seriesId/optimize", async (c) => {
     const blocked = gateOptimize();
     if (blocked) return c.json({ error: blocked }, 403);
-    const show = decodeURIComponent(c.req.param("show"));
-    const episodes = store.listItems("episode").filter((e) => e.instanceId === c.req.param("instanceId") && e.showTitle === show);
+    const seriesId = Number(c.req.param("seriesId"));
+    if (!Number.isSafeInteger(seriesId) || seriesId < 0) return c.json({ error: "That series id is invalid." }, 400);
+    const episodes = store.listItems("episode").filter(
+      (episode) => episode.instanceId === c.req.param("instanceId") && episode.arrSeriesId === seriesId,
+    );
     let queued = 0;
     let skipped = 0;
     for (const ep of episodes) {
@@ -618,6 +640,22 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/api/jobs", (c) => c.json({ items: withTitles(store.listJobs(), store).map((j) => jobs.decorate(j)) }));
+
+  app.post("/api/jobs/cancel-all", (c) => {
+    const result = jobs.cancelAll();
+    return c.json({ ok: true, cancelled: result.cancelled });
+  });
+
+  app.delete("/api/jobs/finished", (c) => {
+    const result = jobs.clearFinished();
+    return c.json({ ok: true, removed: result.removed });
+  });
+
+  app.delete("/api/jobs/:id", (c) => {
+    const result = jobs.remove(c.req.param("id"));
+    if ("error" in result) return c.json({ error: result.error }, result.status as 404 | 409);
+    return c.json({ ok: true });
+  });
 
   app.post("/api/jobs/:id/cancel", (c) => {
     const result = jobs.cancel(c.req.param("id"));
@@ -782,30 +820,6 @@ export function createApp(opts: AppOptions) {
     });
   }
 
-  function presentItem(item: NonNullable<ReturnType<Store["getItem"]>>, detail = false) {
-    const report = store.getInspection(item.id);
-    const suggestion = store.openSuggestionForItem(item.id);
-    const error = store.listErrors().find((e) => e.itemId === item.id);
-    return {
-      ...item,
-      displayTitle: displayTitle(item),
-      inspected: Boolean(report),
-      report: detail ? report : undefined,
-      suggestion: suggestion
-        ? { id: suggestion.id, actions: suggestion.actions, reasons: suggestion.reasons }
-        : null,
-      error: error?.reason ?? (!item.path && item.type === "episode" ? "Sonarr did not send a file path. Refresh the library." : null),
-      reasons: suggestion?.reasons ?? [],
-      href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
-      listingState: report?.listingState ?? null,
-      sourceMethod: report?.sourceMethod ?? null,
-      videoLabel: report ? `${report.videoCodec} · ${report.width}x${report.height}` : null,
-      audioLabels: report?.audio.map((t) => `${t.language} ${t.codec} ${t.channels}ch`) ?? [],
-      subtitleLabels: report?.subtitles.map((t) => `${t.language} ${t.codec}`) ?? [],
-      trackEditingAvailable: report?.listingState === "complete",
-    };
-  }
-
   function presentSuggestion(suggestion: Suggestion) {
     const item = store.getItem(suggestion.itemId);
     return {
@@ -842,4 +856,13 @@ function suggestionSettingsChanged(current: Settings, next: Settings): boolean {
     JSON.stringify(current.sizeCaps) !== JSON.stringify(next.sizeCaps) ||
     JSON.stringify(current.suggestionDefaults) !== JSON.stringify(next.suggestionDefaults)
   );
+}
+
+function pageRequest(rawOffset: string | undefined, rawLimit: string | undefined): { offset: number; limit: number } {
+  const parsedOffset = Number(rawOffset ?? 0);
+  const parsedLimit = Number(rawLimit ?? 50);
+  return {
+    offset: Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0,
+    limit: Number.isSafeInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50,
+  };
 }

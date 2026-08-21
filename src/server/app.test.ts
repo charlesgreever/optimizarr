@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -80,6 +80,171 @@ describe("public HTTP behavior", () => {
     expect(await res.json()).toEqual({ ok: true, service: "optimizarr" });
   });
 
+  it("bounds library pages and loads episodes for one series", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    ctx.store.upsertInstance({ id: "radarr-a", kind: "radarr", name: "Radarr A", url: "http://radarr", enabled: true });
+    ctx.store.upsertInstance({ id: "sonarr-a", kind: "sonarr", name: "Sonarr A", url: "http://sonarr", enabled: true });
+    for (let id = 1; id <= 3; id += 1) {
+      ctx.store.upsertItem({
+        id: `movie-${id}`,
+        instanceId: "radarr-a",
+        arrId: id,
+        arrSeriesId: null,
+        arrEpisodeFileId: null,
+        type: "movie",
+        title: `Movie ${id}`,
+        showTitle: null,
+        season: null,
+        episode: null,
+        episodeTitle: null,
+        path: `/movies/${id}.mkv`,
+        sizeBytes: id * 1_000,
+        quality: "Bluray-1080p",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+    }
+    ctx.store.saveInspection("movie-1", {
+      sourceSig: "/movies/1.mkv|1000",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 3600,
+      sizeBytes: 1_000,
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 10,
+      hdr: "none",
+      audio: [{ index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false }],
+      subtitles: [{ index: 2, language: "eng", codec: "pgs", title: "English SDH Forced", untagged: false, forced: true, sdh: true }],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    ctx.store.saveSuggestion("movie-1", {
+      id: "suggestion-1",
+      itemId: "movie-1",
+      actions: ["transcode", "tracks"],
+      reasons: ["Video is over the size cap.", "Spanish tracks will be removed."],
+      warning: null,
+      category: "movie1080p",
+      estimatedSavingsBytes: 500,
+      now: { codec: "hevc", quality: "Bluray-1080p", sizeBytes: 1_000, sizePerHourGb: 1 },
+      after: { codec: "hevc", quality: "Bluray-1080p", sizeBytes: 500, sizePerHourGb: 0.5 },
+      dismissed: false,
+      keepAudio: [1],
+      stripAudio: [],
+      keepSubs: [2],
+      stripSubs: [],
+    });
+    ctx.store.setFileError("/movies/2.mkv", "movie-2", "Path is unreadable.");
+    ctx.store.setFileError("/movies/2-alt.mkv", "movie-2", "A second read error for the same title.");
+    for (const seriesId of [101, 202]) {
+      for (let episode = 1; episode <= 2; episode += 1) {
+        ctx.store.upsertItem({
+          id: `episode-${seriesId}-${episode}`,
+          instanceId: "sonarr-a",
+          arrId: seriesId * 10 + episode,
+          arrSeriesId: seriesId,
+          arrEpisodeFileId: seriesId * 100 + episode,
+          type: "episode",
+          title: `Show ${seriesId}`,
+          showTitle: `Show ${seriesId}`,
+          season: 1,
+          episode,
+          episodeTitle: `Episode ${episode}`,
+          path: `/shows/${seriesId}/${episode}.mkv`,
+          sizeBytes: episode * 1_000,
+          quality: "WEBDL-1080p",
+          resolution: "1080",
+          profile: "TV",
+          tags: [],
+          posterRemoteUrl: null,
+          sizeExempt: false,
+        });
+      }
+    }
+
+    const movies = (await (await ctx.app.app.request("/api/library/movies?limit=2", { headers })).json()) as {
+      items: Array<Record<string, unknown>>;
+      nextOffset: number | null;
+      total: number;
+    };
+    expect(movies).toMatchObject({ nextOffset: 2, total: 3 });
+    expect(movies.items).toHaveLength(2);
+    expect(movies.items[0]).toMatchObject({
+      mediaState: "inspected",
+      videoLabel: "hevc · 1920x1080",
+      audioLabels: ["eng truehd 7.1"],
+      subtitleLabels: ["eng pgs Forced SDH"],
+      reasons: ["Video is over the size cap.", "Spanish tracks will be removed."],
+    });
+    expect(movies.items[1]).toMatchObject({ mediaState: "unreadable", error: "Path is unreadable." });
+    const movieContinuation = (await (
+      await ctx.app.app.request("/api/library/movies?offset=2&limit=2", { headers })
+    ).json()) as { items: Array<{ id: string }> };
+    expect(movieContinuation.items.map((item) => item.id)).toEqual(["movie-3"]);
+
+    const largestMovies = (await (
+      await ctx.app.app.request("/api/library/movies?limit=2&sort=size", { headers })
+    ).json()) as { items: Array<{ id: string }> };
+    expect(largestMovies.items.map((item) => item.id)).toEqual(["movie-3", "movie-2"]);
+
+    for (let id = 4; id <= 103; id += 1) {
+      ctx.store.upsertItem({
+        id: `movie-${id}`,
+        instanceId: "radarr-a",
+        arrId: id,
+        arrSeriesId: null,
+        arrEpisodeFileId: null,
+        type: "movie",
+        title: `Movie ${String(id).padStart(3, "0")}`,
+        showTitle: null,
+        season: null,
+        episode: null,
+        episodeTitle: null,
+        path: `/movies/${id}.mkv`,
+        sizeBytes: id * 1_000,
+        quality: "Bluray-1080p",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+    }
+    const cappedMovies = (await (
+      await ctx.app.app.request("/api/library/movies?limit=1000", { headers })
+    ).json()) as { items: Array<{ id: string }>; nextOffset: number | null; total: number };
+    expect(cappedMovies).toMatchObject({ nextOffset: 100, total: 103 });
+    expect(cappedMovies.items).toHaveLength(100);
+
+    const series = (await (await ctx.app.app.request("/api/library/series?limit=1", { headers })).json()) as {
+      items: Array<{ instanceId: string; arrSeriesId: number; episodeCount: number; path?: string }>;
+      nextOffset: number | null;
+      total: number;
+    };
+    expect(series).toMatchObject({ nextOffset: 1, total: 2 });
+    expect(series.items).toHaveLength(1);
+    expect(series.items[0]).toMatchObject({ instanceId: "sonarr-a", arrSeriesId: 101, episodeCount: 2 });
+    expect(series.items[0]).not.toHaveProperty("path");
+
+    const episodes = (await (
+      await ctx.app.app.request("/api/library/series/sonarr-a/101/episodes?limit=1", { headers })
+    ).json()) as { items: Array<{ id: string }>; nextOffset: number | null; total: number };
+    expect(episodes).toMatchObject({ nextOffset: 1, total: 2 });
+    expect(episodes.items).toEqual([expect.objectContaining({ id: "episode-101-1" })]);
+  });
+
   it("rejects a wrong login with one generic error", async () => {
     const ctx = await setup();
     apps.push(ctx);
@@ -143,6 +308,106 @@ describe("public HTTP behavior", () => {
     expect(sug.items.length).toBeGreaterThan(0);
     const queued = await ctx.app.app.request("/api/queue", { method: "POST", headers, body: JSON.stringify({ suggestionId: sug.items[0].id }) });
     expect(queued.status).toBe(200);
+  });
+
+  it("cancels all active jobs and removes Queue rows without deleting History, Review, or media", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    ctx.app.jobs.stop();
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    ctx.store.upsertInstance({ id: "radarr-queue", kind: "radarr", name: "Radarr", url: "http://radarr", enabled: true });
+    const mediaPath = join(ctx.dir, "queue-movie.mkv");
+    writeFileSync(mediaPath, "ORIGINAL");
+    ctx.store.upsertItem({
+      id: "queue-item",
+      instanceId: "radarr-queue",
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Queue Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: mediaPath,
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    const statuses = ["queued", "held", "paused", "running", "succeeded", "failed", "cancelled"] as const;
+    for (const [position, status] of statuses.entries()) {
+      ctx.store.insertJob({
+        id: `job-${status}`,
+        itemId: "queue-item",
+        suggestionId: null,
+        status,
+        phase: status === "queued" || status === "held" || status === "paused" ? status : "idle",
+        progress: 0,
+        error: null,
+        warning: null,
+        runNow: false,
+        position,
+        plan: {},
+        createdAt: position,
+      });
+    }
+    ctx.store.addHistory("queue-item", "failed", 0, 1);
+    ctx.store.insertReview({
+      id: "review-1",
+      jobId: "job-succeeded",
+      itemId: "queue-item",
+      displayTitle: "Queue Film",
+      status: "pending",
+      flagged: false,
+      flagReason: null,
+      sourcePath: mediaPath,
+      sidecarPath: join(ctx.dir, "sidecar.mkv"),
+      source: { codec: "h264", quality: "HD", sizeBytes: 8, sizePerHourGb: 1, durationSec: 1, tracks: "0 audio / 0 subtitles" },
+      sidecar: { codec: "hevc", quality: "HD", sizeBytes: 4, sizePerHourGb: 0.5, durationSec: 1, tracks: "0 audio / 0 subtitles" },
+      error: null,
+    });
+
+    expect((await ctx.app.app.request("/api/jobs/cancel-all", { method: "POST" })).status).toBe(401);
+    expect((await ctx.app.app.request("/api/jobs/job-failed", { method: "DELETE" })).status).toBe(401);
+
+    const cancelled = await ctx.app.app.request("/api/jobs/cancel-all", { method: "POST", headers });
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toEqual({ ok: true, cancelled: 4 });
+    expect(ctx.store.listJobs().filter((job) => job.status === "cancelled")).toHaveLength(5);
+    expect(readFileSync(mediaPath, "utf8")).toBe("ORIGINAL");
+
+    ctx.store.insertJob({
+      id: "job-active",
+      itemId: "queue-item",
+      suggestionId: null,
+      status: "paused",
+      phase: "paused",
+      progress: 0,
+      error: null,
+      warning: null,
+      runNow: false,
+      position: 99,
+      plan: {},
+      createdAt: 99,
+    });
+    expect((await ctx.app.app.request("/api/jobs/job-active", { method: "DELETE", headers })).status).toBe(409);
+    expect((await ctx.app.app.request("/api/jobs/job-failed", { method: "DELETE", headers })).status).toBe(200);
+    const cleared = await ctx.app.app.request("/api/jobs/finished", { method: "DELETE", headers });
+    expect(await cleared.json()).toEqual({ ok: true, removed: 6 });
+    expect(ctx.store.listJobs().map((job) => job.id)).toEqual(["job-active"]);
+    expect(ctx.store.getJob("job-succeeded")?.status).toBe("succeeded");
+    expect(ctx.store.listHistory()).toHaveLength(5);
+    expect(ctx.store.listReviews()).toHaveLength(1);
+    expect(readFileSync(mediaPath, "utf8")).toBe("ORIGINAL");
   });
 
   it("finishes an ISO Keep with the promoted MKV inspected and integrations refreshed", async () => {
@@ -257,6 +522,7 @@ describe("public HTTP behavior", () => {
     expect(probed).toEqual([join(dir, "movie.mkv")]);
     expect(calls.some((call) => call.includes("POST http://radarr/api/v3/command"))).toBe(true);
     expect(calls.some((call) => call.includes("POST http://jellyfin/Library/Refresh"))).toBe(true);
+    expect(calls.some((call) => call.includes("qualityprofile"))).toBe(false);
   });
 
   it("rejects enqueue without a session after first-run is complete", async () => {

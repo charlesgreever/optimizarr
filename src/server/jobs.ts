@@ -7,7 +7,7 @@ import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, resolvePlan } from "./optimize.ts";
 import { promote } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
-import { planHasVideoTranscode } from "./types.ts";
+import { profileAssignmentEligible } from "./types.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -101,6 +101,23 @@ export class JobService {
     this.opts.store.updateJob(id, { status: "cancelled", phase: "idle", error: "Cancelled." });
     this.opts.store.addHistory(job.itemId, "cancelled", 0, this.now());
     return { ok: true };
+  }
+
+  cancelAll(): { cancelled: number } {
+    const ids = this.opts.store.cancelActiveJobs(this.now());
+    for (const id of ids) this.cancelled.add(id);
+    return { cancelled: ids.length };
+  }
+
+  remove(id: string): { ok: true } | { error: string; status: number } {
+    const result = this.opts.store.removeFinishedJob(id);
+    if (result === "missing") return { error: "That job does not exist.", status: 404 };
+    if (result === "active") return { error: "Cancel this job before removing it from Queue.", status: 409 };
+    return { ok: true };
+  }
+
+  clearFinished(): { removed: number } {
+    return { removed: this.opts.store.clearFinishedJobs() };
   }
 
   private async tick(): Promise<void> {
@@ -291,7 +308,11 @@ export class JobService {
     if (
       outcome.replaced &&
       plan &&
-      (planHasVideoTranscode(plan) || item.path.toLowerCase().endsWith(".iso")) &&
+      profileAssignmentEligible({
+        autoAssign: this.opts.store.getSettings().profileAutoAssign,
+        sizeExempt: item.sizeExempt,
+        plan,
+      }) &&
       instance?.secret &&
       (instance.kind === "radarr" || instance.kind === "sonarr")
     ) {

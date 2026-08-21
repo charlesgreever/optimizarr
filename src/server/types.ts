@@ -65,6 +65,7 @@ export type Settings = {
   localAuthBypass: boolean;
   inspectConcurrency: number;
   writeMode: WriteMode;
+  profileAutoAssign: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -82,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
   localAuthBypass: false,
   inspectConcurrency: 1,
   writeMode: "sidecar",
+  profileAutoAssign: true,
 };
 
 export type ArrInstance = {
@@ -322,6 +324,14 @@ export type ExecutablePlan = {
 
 export function planHasVideoTranscode(plan: ExecutablePlan): boolean {
   return plan.video.kind !== "copy";
+}
+
+export function profileAssignmentEligible(opts: {
+  autoAssign: boolean;
+  sizeExempt: boolean;
+  plan: ExecutablePlan;
+}): boolean {
+  return opts.autoAssign && !opts.sizeExempt && planHasVideoTranscode(opts.plan);
 }
 
 export type CustomAudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";

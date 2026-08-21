@@ -90,6 +90,19 @@ describe("store schema migration", () => {
     });
   });
 
+  it("defaults profile auto-assign on for existing installs and persists an opt-out", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-profile-settings-"));
+    const path = join(dir, "optimizarr.db");
+    const store = new Store(path);
+    stores.push(store);
+    expect(store.getSettings().profileAutoAssign).toBe(true);
+    store.saveSettings({ ...store.getSettings(), profileAutoAssign: false });
+
+    const reopened = new Store(path);
+    stores.push(reopened);
+    expect(reopened.getSettings().profileAutoAssign).toBe(false);
+  });
+
   it("persists a custom executable plan, write mode, and promote error", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-job-plan-"));
     const path = join(dir, "optimizarr.db");

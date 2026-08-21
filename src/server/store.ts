@@ -20,6 +20,21 @@ import type {
 import { DEFAULT_SETTINGS } from "./types.ts";
 import { normalizeInspection } from "./inspect.ts";
 
+export type LibrarySnapshot = {
+  item: LibraryItem;
+  report: InspectionReport | null;
+  suggestion: Suggestion | null;
+  error: string | null;
+};
+
+export type SeriesSummaryRecord = {
+  instanceId: string;
+  instanceName: string;
+  arrSeriesId: number;
+  showTitle: string;
+  episodeCount: number;
+};
+
 export class Store {
   readonly db: Database.Database;
 
@@ -146,6 +161,7 @@ export class Store {
     this.ensureColumn("jobs", "created_at", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("jobs", "write_mode", "TEXT NOT NULL DEFAULT 'sidecar'");
     this.ensureColumn("jobs", "promote_error", "TEXT");
+    this.ensureColumn("jobs", "queue_visible", "INTEGER NOT NULL DEFAULT 1");
     this.ensureColumn("library_items", "arr_series_id", "INTEGER");
     this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
   }
@@ -303,6 +319,95 @@ export class Store {
     return (rows as Record<string, unknown>[]).map(mapItem);
   }
 
+  libraryPage(opts: {
+    type: "movie" | "episode";
+    offset: number;
+    limit: number;
+    sort?: "title" | "size" | "quality";
+    instanceId?: string;
+    arrSeriesId?: number;
+  }): { rows: LibrarySnapshot[]; total: number } {
+    const where = ["i.type = @type"];
+    if (opts.instanceId !== undefined) where.push("i.instance_id = @instanceId");
+    if (opts.arrSeriesId !== undefined) where.push("i.arr_series_id = @arrSeriesId");
+    const params = {
+      type: opts.type,
+      offset: opts.offset,
+      limit: opts.limit,
+      instanceId: opts.instanceId ?? "",
+      arrSeriesId: opts.arrSeriesId ?? -1,
+    };
+    const clause = where.join(" AND ");
+    const movieOrder = opts.sort === "size"
+      ? "i.size_bytes DESC, LOWER(i.title), i.id"
+      : opts.sort === "quality"
+        ? "LOWER(i.quality), LOWER(i.title), i.id"
+        : "LOWER(i.title), i.id";
+    const order = opts.type === "movie" ? movieOrder : "i.season, i.episode, i.id";
+    const rows = this.db.prepare(
+      `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,
+              sug.payload AS suggestion_payload,
+              (SELECT err.reason FROM file_errors err WHERE err.item_id = i.id
+               ORDER BY CASE WHEN err.path = i.path THEN 0 ELSE 1 END, err.path LIMIT 1) AS error_reason
+       FROM library_items i
+       JOIN instances inst ON inst.id = i.instance_id
+       LEFT JOIN inspections ins ON ins.item_id = i.id
+       LEFT JOIN suggestions sug ON sug.item_id = i.id AND sug.dismissed = 0
+       WHERE ${clause}
+       ORDER BY ${order}
+       LIMIT @limit OFFSET @offset`,
+    ).all(params) as Record<string, unknown>[];
+    const total = Number(
+      (this.db.prepare(`SELECT COUNT(*) AS n FROM library_items i WHERE ${clause}`).get(params) as { n: number }).n,
+    );
+    return { rows: rows.map(mapLibrarySnapshot), total };
+  }
+
+  librarySnapshot(id: string): LibrarySnapshot | undefined {
+    const row = this.db.prepare(
+      `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,
+              sug.payload AS suggestion_payload,
+              (SELECT err.reason FROM file_errors err WHERE err.item_id = i.id
+               ORDER BY CASE WHEN err.path = i.path THEN 0 ELSE 1 END, err.path LIMIT 1) AS error_reason
+       FROM library_items i
+       JOIN instances inst ON inst.id = i.instance_id
+       LEFT JOIN inspections ins ON ins.item_id = i.id
+       LEFT JOIN suggestions sug ON sug.item_id = i.id AND sug.dismissed = 0
+       WHERE i.id = ?`,
+    ).get(id) as Record<string, unknown> | undefined;
+    return row ? mapLibrarySnapshot(row) : undefined;
+  }
+
+  seriesPage(offset: number, limit: number): { rows: SeriesSummaryRecord[]; total: number } {
+    const rows = this.db.prepare(
+      `SELECT i.instance_id, inst.name AS instance_name, i.arr_series_id, i.show_title,
+              COUNT(*) AS episode_count
+       FROM library_items i
+       JOIN instances inst ON inst.id = i.instance_id
+       WHERE i.type = 'episode' AND i.arr_series_id IS NOT NULL
+       GROUP BY i.instance_id, inst.name, i.arr_series_id, i.show_title
+       ORDER BY LOWER(i.show_title), i.instance_id, i.arr_series_id
+       LIMIT ? OFFSET ?`,
+    ).all(limit, offset) as Record<string, unknown>[];
+    const total = Number((this.db.prepare(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT 1 FROM library_items
+         WHERE type = 'episode' AND arr_series_id IS NOT NULL
+         GROUP BY instance_id, arr_series_id, show_title
+       )`,
+    ).get() as { n: number }).n);
+    return {
+      rows: rows.map((row) => ({
+        instanceId: String(row.instance_id),
+        instanceName: String(row.instance_name),
+        arrSeriesId: Number(row.arr_series_id),
+        showTitle: String(row.show_title ?? "Untitled series"),
+        episodeCount: Number(row.episode_count),
+      })),
+      total,
+    };
+  }
+
   setExempt(id: string, exempt: boolean): void {
     this.db.prepare("UPDATE library_items SET size_exempt = ? WHERE id = ?").run(exempt ? 1 : 0, id);
   }
@@ -456,7 +561,7 @@ export class Store {
   }
 
   listJobs(): Array<Job & { plan: Suggestion }> {
-    return (this.db.prepare("SELECT * FROM jobs ORDER BY position ASC").all() as Record<string, unknown>[]).map(mapJob);
+    return (this.db.prepare("SELECT * FROM jobs WHERE queue_visible = 1 ORDER BY position ASC").all() as Record<string, unknown>[]).map(mapJob);
   }
 
   getJob(id: string): (Job & { plan: Suggestion }) | undefined {
@@ -469,6 +574,39 @@ export class Store {
       .prepare("SELECT * FROM jobs WHERE item_id = ? AND status IN ('queued','held','paused','running')")
       .get(itemId) as Record<string, unknown> | undefined;
     return row ? mapJob(row) : undefined;
+  }
+
+  cancelActiveJobs(now = Date.now()): string[] {
+    const cancel = this.db.transaction(() => {
+      const rows = this.db.prepare(
+        "SELECT id, item_id FROM jobs WHERE status IN ('queued','held','paused','running') ORDER BY position",
+      ).all() as Array<{ id: string; item_id: string }>;
+      this.db.prepare(
+        "UPDATE jobs SET status = 'cancelled', phase = 'idle', error = 'Cancelled.' WHERE status IN ('queued','held','paused','running')",
+      ).run();
+      const history = this.db.prepare(
+        "INSERT INTO history (id, item_id, outcome, bytes_saved, created_at) VALUES (?, ?, 'cancelled', 0, ?)",
+      );
+      for (const row of rows) history.run(randomUUID(), row.item_id, now);
+      return rows.map((row) => row.id);
+    });
+    return cancel();
+  }
+
+  removeFinishedJob(id: string): "removed" | "active" | "missing" {
+    const row = this.db.prepare("SELECT status FROM jobs WHERE id = ?").get(id) as { status: JobStatus } | undefined;
+    if (!row) return "missing";
+    if (row.status === "queued" || row.status === "held" || row.status === "paused" || row.status === "running") {
+      return "active";
+    }
+    this.db.prepare("UPDATE jobs SET queue_visible = 0 WHERE id = ?").run(id);
+    return "removed";
+  }
+
+  clearFinishedJobs(): number {
+    return this.db.prepare(
+      "UPDATE jobs SET queue_visible = 0 WHERE queue_visible = 1 AND status IN ('succeeded','failed','cancelled')",
+    ).run().changes;
   }
 
   insertReview(row: ReviewItem): void {
@@ -605,6 +743,19 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     posterRemoteUrl: row.poster_remote == null ? null : String(row.poster_remote),
     hasPoster: Boolean(row.poster_bytes || row.poster_remote),
     sizeExempt: Number(row.size_exempt) === 1,
+  };
+}
+
+function mapLibrarySnapshot(row: Record<string, unknown>): LibrarySnapshot {
+  return {
+    item: mapItem(row),
+    report: row.inspection_report == null
+      ? null
+      : normalizeInspection(JSON.parse(String(row.inspection_report)) as Record<string, unknown>),
+    suggestion: row.suggestion_payload == null
+      ? null
+      : (JSON.parse(String(row.suggestion_payload)) as Suggestion),
+    error: row.error_reason == null ? null : String(row.error_reason),
   };
 }
 
