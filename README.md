@@ -35,17 +35,31 @@ npm run build
 CONFIG_DIR=./config npm start
 ```
 
-## Deploy on ubuntuserver
+## Deploy with Docker
 
-`compose.yaml` matches the Arr stack on that host: Docker network `arr_net`, NAS bind `/mnt/nas:/mnt/nas`, and config under the Arr appdata folder. Host paths belong in compose, not in application code.
+Sample compose files have no household paths. Copy one, set the media bind to the same path Radarr and Sonarr use, then start it. Host paths belong in compose, not in application code.
+
+NVIDIA GPU:
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.nvidia.yaml up -d --build
 ```
 
-Open `http://192.168.1.10:7373`. In Settings, add Radarr at `http://radarr:7878` and Sonarr at `http://sonarr:8989`, set a review folder outside the library roots, and confirm your preferred language.
+Intel GPU (VAAPI, the Video Acceleration API ffmpeg uses on Intel):
 
-The shipped `compose.yaml` passes the host NVIDIA GPU the same way Frigate does: `runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES=all`, and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. Recreate the container after changing those values.
+```bash
+docker compose -f compose.intel.yaml up -d --build
+```
+
+Open `http://localhost:7373`. In Settings, add Radarr and Sonarr, set a review folder outside the library roots, and confirm your preferred language.
+
+The media bind must match the file paths those apps already report. If they share a Docker network, attach Optimizarr to that network so Settings can use `http://radarr:7878`.
+
+The NVIDIA sample uses `runtime: nvidia` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. The host needs the NVIDIA container toolkit. Recreate the container after changing those values.
+
+The Intel sample passes `/dev/dri`. ffmpeg uses `/dev/dri/renderD128`. The container user (`PUID`) must be allowed to open that device; on the host, `getent group render` shows the group id to put in `group_add` if encode cannot open it.
+
+This household still uses `compose.yaml` on ubuntuserver (NVIDIA, `/mnt/nas`, Docker network `arr_net`).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

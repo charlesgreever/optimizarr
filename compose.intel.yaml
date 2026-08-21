@@ -1,0 +1,27 @@
+# Intel GPU sample. ffmpeg uses VAAPI (Video Acceleration API) on this device.
+# Copy this file, set the media path, then:
+#   docker compose -f compose.intel.yaml up -d --build
+#
+# The media bind must be the same path Radarr and Sonarr report.
+# Join their Docker network if Settings should use http://radarr:7878.
+# ffmpeg uses /dev/dri/renderD128. The container user (PUID) must be able
+# to open that device. On the host: getent group render
+
+services:
+  optimizarr:
+    build: .
+    ports:
+      - "7373:7373"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: UTC
+      CONFIG_DIR: /config
+    volumes:
+      - ./config:/config
+      - /path/to/media:/path/to/media
+    devices:
+      - /dev/dri:/dev/dri
+    # Uncomment and set to the host render group id if encode cannot open the device.
+    # group_add:
+    #   - "992"
