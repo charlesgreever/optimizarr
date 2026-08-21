@@ -31,9 +31,9 @@ git clone https://github.com/charlesgreever/optimizarr.git
 cd optimizarr
 ```
 
-### 2. Edit `compose.yaml`
+### 2. Copy and edit compose
 
-The repo ships a sample [compose.yaml](compose.yaml). Change these values:
+Copy [compose.example.yaml](compose.example.yaml) to `compose.yaml`. Change these values:
 
 - **Media bind.** `/path/to/media:/path/to/media` must match the file path Radarr and Sonarr report. If they see `/mnt/media/Movies/Title.mkv`, both sides of the bind are `/mnt/media`.
 - **`PUID` / `PGID`.** Owner of `/config` and files Optimizarr writes. Use the same ids as your Arr containers.
