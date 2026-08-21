@@ -11,7 +11,8 @@ export function displayTitle(item: Pick<LibraryItem, "type" | "title" | "showTit
   return item.title;
 }
 
-export function seriesGroupKey(item: Pick<LibraryItem, "instanceId" | "showTitle" | "title">): string {
+export function seriesGroupKey(item: Pick<LibraryItem, "instanceId" | "arrSeriesId" | "showTitle" | "title">): string {
+  if (item.arrSeriesId != null) return `${item.instanceId}::series:${item.arrSeriesId}`;
   return `${item.instanceId}::${item.showTitle || item.title}`;
 }
 

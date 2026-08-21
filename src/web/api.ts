@@ -79,6 +79,7 @@ export type SettingsPayload = {
 export type LibraryRow = {
   id: string;
   instanceId: string;
+  arrSeriesId?: number | null;
   displayTitle: string;
   title?: string;
   instanceName: string;
