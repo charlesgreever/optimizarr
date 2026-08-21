@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReportIssueBody, buildReportIssueUrl, screenshotFilename, scrubReportText, submitReport } from "./reportIssue.ts";
+import { buildReportIssueBody, buildReportIssueUrl, screenshotFilename, scrubReportText, submitReport, viewportCrop } from "./reportIssue.ts";
 
 describe("report issue", () => {
   it("encodes the route and inspect leftovers in a GitHub new-issue URL", () => {
@@ -89,5 +89,20 @@ describe("report issue", () => {
     expect(body).toContain("Route: /");
     expect(body).not.toContain("Inspect leftovers");
     expect(body).not.toContain("Running job");
+  });
+
+  it("crops the screenshot to the current scroll viewport, not the top of the page", () => {
+    expect(viewportCrop({ width: 1200, height: 4000 }, { scrollX: 0, scrollY: 800, width: 1200, height: 900 })).toEqual({
+      sx: 0,
+      sy: 800,
+      sw: 1200,
+      sh: 900,
+    });
+    expect(viewportCrop({ width: 1200, height: 900 }, { scrollX: 0, scrollY: 800, width: 1200, height: 900 })).toEqual({
+      sx: 0,
+      sy: 0,
+      sw: 1200,
+      sh: 900,
+    });
   });
 });

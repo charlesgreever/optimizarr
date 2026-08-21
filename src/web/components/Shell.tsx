@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
-import { downloadBlob, submitReport, type ReportKind } from "../reportIssue";
+import { downloadBlob, submitReport, viewportCrop, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
 const NAV = [
@@ -98,7 +98,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="header-actions">
-            <ReportBug inspect={inspect} />
             <small>{inspecting ? `Inspecting · ${inspect?.pending ?? 0} left` : "● Ready"}</small>
           </div>
         </header>
@@ -110,17 +109,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
         <div className="page">{children}</div>
       </main>
+      <ReportBug inspect={inspect} />
     </div>
   );
 }
 
 function ReportBug({ inspect }: { inspect: InspectState | null }) {
   const location = useLocation();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function report(kind: ReportKind) {
-    setOpen(false);
     setBusy(true);
     try {
       const jobs = await api.jobs();
@@ -133,7 +131,7 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
           running,
         },
         {
-          capture: capturePage,
+          capture: captureViewport,
           download: downloadBlob,
           open: (url) => {
             window.open(url, "_blank", "noopener,noreferrer");
@@ -142,34 +140,37 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
       );
     } finally {
       setBusy(false);
-      setOpen(false);
     }
   }
 
   return (
     <div className="report-bug">
-      <button className="btn-secondary report-bug-toggle" type="button" onClick={() => setOpen((v) => !v)} disabled={busy}>
-        {Icons.bug()}
-        <span>{busy ? "Preparing…" : "Report a bug"}</span>
+      <span className="report-bug-label">{Icons.bug()} Report</span>
+      <button className="btn-secondary" type="button" onClick={() => void report("bug")} disabled={busy}>
+        Bug
       </button>
-      {open && !busy && (
-        <div className="report-bug-menu">
-          <button type="button" onClick={() => void report("bug")}>
-            Bug
-          </button>
-          <button type="button" onClick={() => void report("change")}>
-            Change request
-          </button>
-        </div>
-      )}
+      <button className="btn-secondary" type="button" onClick={() => void report("change")} disabled={busy}>
+        Change request
+      </button>
     </div>
   );
 }
 
-async function capturePage(): Promise<Blob> {
-  const { toBlob } = await import("html-to-image");
-  const root = document.querySelector(".shell") ?? document.body;
-  const blob = await toBlob(root as HTMLElement, { cacheBust: true, pixelRatio: 1 });
+async function captureViewport(): Promise<Blob> {
+  const { toCanvas } = await import("html-to-image");
+  const root = (document.querySelector(".shell") as HTMLElement | null) ?? document.documentElement;
+  const full = await toCanvas(root, { cacheBust: true, pixelRatio: 1 });
+  const crop = viewportCrop(
+    { width: full.width, height: full.height },
+    { scrollX: window.scrollX, scrollY: window.scrollY, width: window.innerWidth, height: window.innerHeight },
+  );
+  const frame = document.createElement("canvas");
+  frame.width = crop.sw;
+  frame.height = crop.sh;
+  const ctx = frame.getContext("2d");
+  if (!ctx) throw new Error("Could not capture this page.");
+  ctx.drawImage(full, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, crop.sw, crop.sh);
+  const blob = await new Promise<Blob | null>((resolve) => frame.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("Could not capture this page.");
   return blob;
 }

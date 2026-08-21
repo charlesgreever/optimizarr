@@ -75,6 +75,25 @@ export function screenshotFilename(now = new Date()): string {
   return `optimizarr-report-${stamp}.png`;
 }
 
+export type ViewportBox = {
+  scrollX: number;
+  scrollY: number;
+  width: number;
+  height: number;
+};
+
+export function viewportCrop(
+  full: { width: number; height: number },
+  view: ViewportBox,
+): { sx: number; sy: number; sw: number; sh: number } {
+  const alreadyViewport = full.height <= view.height + 2 && full.width <= view.width + 2;
+  const sx = alreadyViewport ? 0 : Math.max(0, Math.min(Math.floor(view.scrollX), Math.max(0, full.width)));
+  const sy = alreadyViewport ? 0 : Math.max(0, Math.min(Math.floor(view.scrollY), Math.max(0, full.height)));
+  const sw = Math.max(1, Math.min(Math.floor(view.width), Math.max(1, full.width - sx)));
+  const sh = Math.max(1, Math.min(Math.floor(view.height), Math.max(1, full.height - sy)));
+  return { sx, sy, sw, sh };
+}
+
 export async function submitReport(
   kind: ReportKind,
   ctx: ReportContext,
