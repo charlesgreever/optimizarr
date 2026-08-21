@@ -16,7 +16,19 @@ export function SeriesPage() {
   const [searchParams] = useSearchParams();
   const focus = searchParams.get("focus");
 
-  const load = () => void api.series().then((r) => setItems(r.items)).catch((e: Error) => setMsg(e.message));
+  const load = () =>
+    void api
+      .series()
+      .then(async (r) => {
+        if (r.items.length > 0 && r.items.every((item) => !item.path)) {
+          await api.refresh();
+          const again = await api.series();
+          setItems(again.items);
+          return;
+        }
+        setItems(r.items);
+      })
+      .catch((e: Error) => setMsg(e.message));
   useEffect(() => {
     load();
   }, []);

@@ -851,7 +851,7 @@ export function createApp(opts: AppOptions) {
       suggestion: suggestion
         ? { id: suggestion.id, actions: suggestion.actions, reasons: suggestion.reasons }
         : null,
-      error: error?.reason ?? null,
+      error: error?.reason ?? (!item.path && item.type === "episode" ? "Sonarr did not send a file path. Refresh the library." : null),
       reasons: suggestion?.reasons ?? [],
       href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
       listingState: report?.listingState ?? null,
@@ -875,6 +875,7 @@ export function createApp(opts: AppOptions) {
     };
   }
 
+  void inspectPending();
   return { app, store, jobs, inspectPending, secret };
 }
 
