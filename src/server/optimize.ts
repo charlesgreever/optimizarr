@@ -80,7 +80,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
   return async (req) => {
     const plan = resolvePlan(req.plan ?? req.suggestion);
     if (req.backend === "none" && planHasVideoTranscode(plan)) {
-      throw new Error("Hardware encode is unavailable. Optimizarr will not fall back to a software encode.");
+      throw new Error("Hardware encode is unavailable. Polisharr will not fall back to a software encode.");
     }
     await mkdir(req.reviewDir, { recursive: true });
     const plannedBytes = plan.estimatedOutputBytes ?? req.report.sizeBytes;

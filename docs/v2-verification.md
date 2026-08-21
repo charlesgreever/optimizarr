@@ -1,4 +1,4 @@
-# Optimizarr v2 Verification
+# Polisharr v2 Verification
 
 Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub issue #26 and uses the revised progressive-Series behavior in the v2 PRD.
 
@@ -90,7 +90,7 @@ Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub is
 | 72 | Promote verifies successful replacement updates saved-file counters. |
 | 73 | Review/Promote leaves flagged sidecars Keepable; replacement is not gated by estimate variance. |
 | 74 | Arr profile tests verify category previews with GB/hour and MB/min values. |
-| 75 | Fake Arr sync tests create/repair only Optimizarr-named profiles. |
+| 75 | Fake Arr sync tests create/repair only Polisharr-named profiles. |
 | 76 | Profile eligibility + fake Radarr tests verify enabled movie assignment with no search. |
 | 77 | Fake Sonarr tests verify whole-series assignment and warning copy. |
 | 78 | Profile eligibility tests reject copy, tracks-only, stereo-only, and audio-only work. |

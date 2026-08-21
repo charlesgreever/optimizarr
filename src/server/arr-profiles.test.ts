@@ -25,7 +25,7 @@ const ultraHd = {
 describe("Arr profile previews", () => {
   it("derives MB/min from current GB/hour caps without remote writes", () => {
     const previews = profilePreviews(caps);
-    expect(previews[0]?.name).toMatch(/^Optimizarr /);
+    expect(previews[0]?.name).toMatch(/^Polisharr /);
     expect(previews.find((p) => p.category === "movie1080p")?.mbPerMin).toBe(42.7);
   });
 
@@ -34,15 +34,20 @@ describe("Arr profile previews", () => {
       { id: 1, name: "Any", upgradeAllowed: true, items: ultraHd.items },
       { id: 8, name: "No Upgrades 4K", upgradeAllowed: false, items: ultraHd.items },
     ]);
-    const picked = pickPreventUpgradeProfile(profiles, "Optimizarr Movie 4K HDR", "Bluray-2160p");
+    const picked = pickPreventUpgradeProfile(profiles, "Polisharr Movie 4K HDR", "Bluray-2160p");
     expect(picked?.id).toBe(8);
     expect(profileAllowsQuality(ultraHd.items, "Bluray-2160p")).toBe(true);
     expect(profileAllowsQuality(ultraHd.items, "SDTV")).toBe(false);
   });
+
+  it("treats an Optimizarr-named profile as the Polisharr profile", () => {
+    const profiles = parseProfiles([{ id: 3, name: "Optimizarr Movie 1080p", upgradeAllowed: false, items: [] }]);
+    expect(pickPreventUpgradeProfile(profiles, "Polisharr Movie 1080p", "")?.id).toBe(3);
+  });
 });
 
 describe("Arr profile HTTP", () => {
-  it("repairs a drifted Optimizarr profile and leaves unrelated profiles unchanged", async () => {
+  it("repairs a drifted Polisharr profile and leaves unrelated profiles unchanged", async () => {
     const calls: string[] = [];
     const putBodies: Record<string, unknown>[] = [];
     const result = await syncProfiles({
@@ -58,7 +63,7 @@ describe("Arr profile HTTP", () => {
             {
               ...ultraHd,
               id: 9,
-              name: "Optimizarr Movie 1080p",
+              name: "Polisharr Movie 1080p",
               upgradeAllowed: true,
               items: [{
                 id: 99,
@@ -80,14 +85,14 @@ describe("Arr profile HTTP", () => {
       }) as typeof fetch,
     });
 
-    expect(result.updated).toContain("Optimizarr Movie 1080p");
+    expect(result.updated).toContain("Polisharr Movie 1080p");
     expect(putBodies[0]?.upgradeAllowed).toBe(false);
     expect(JSON.stringify(putBodies[0]?.items)).not.toContain('"allowed":true,"quality":{"id":18,"name":"WEBDL-2160p"}');
     expect((putBodies[0]?.items as Array<{ allowed: boolean }>)[0]?.allowed).toBe(true);
     expect(calls.some((call) => call.includes("PUT http://radarr/api/v3/qualityprofile/5"))).toBe(false);
   });
 
-  it("creates missing Optimizarr profiles and never searches", async () => {
+  it("creates missing Polisharr profiles and never searches", async () => {
     const calls: string[] = [];
     const result = await syncProfiles({
       instanceId: "radarr",
@@ -102,12 +107,12 @@ describe("Arr profile HTTP", () => {
         if (String(url).endsWith("/qualityprofile/schema")) {
           return new Response(JSON.stringify({ name: "", upgradeAllowed: false, items: [] }));
         }
-        return new Response(JSON.stringify({ id: 20, name: "Optimizarr Movie 1080p", upgradeAllowed: false, items: [] }), { status: 200 });
+        return new Response(JSON.stringify({ id: 20, name: "Polisharr Movie 1080p", upgradeAllowed: false, items: [] }), { status: 200 });
       }) as typeof fetch,
     });
     expect(result.created).toHaveLength(5);
     expect(calls.some((c) => /command|search/i.test(c))).toBe(false);
-    expect(parseProfiles([{ id: 3, name: "Optimizarr Movie 1080p" }])[0]?.id).toBe(3);
+    expect(parseProfiles([{ id: 3, name: "Polisharr Movie 1080p" }])[0]?.id).toBe(3);
   });
 
   it("assigns a movie using an existing no-upgrade profile without creating one", async () => {
@@ -118,7 +123,7 @@ describe("Arr profile HTTP", () => {
       url: "http://radarr",
       apiKey: "k",
       movieId: 10,
-      profileName: "Optimizarr Movie 4K HDR",
+      profileName: "Polisharr Movie 4K HDR",
       currentQuality: "Bluray-2160p",
       fetch: (async (url, init) => {
         calls.push(`${init?.method ?? "GET"} ${url}`);
@@ -143,7 +148,7 @@ describe("Arr profile HTTP", () => {
     expect(putBodies[0]?.monitored).toBe(true);
   });
 
-  it("creates the Optimizarr profile when no no-upgrade profile exists", async () => {
+  it("creates the Polisharr profile when no no-upgrade profile exists", async () => {
     const calls: string[] = [];
     const createdBodies: Record<string, unknown>[] = [];
     const warning = await assignProfile({
@@ -151,7 +156,7 @@ describe("Arr profile HTTP", () => {
       url: "http://radarr",
       apiKey: "k",
       movieId: 10,
-      profileName: "Optimizarr Movie 4K HDR",
+      profileName: "Polisharr Movie 4K HDR",
       currentQuality: "Bluray-2160p",
       fetch: (async (url, init) => {
         calls.push(`${init?.method ?? "GET"} ${url}`);
@@ -183,7 +188,7 @@ describe("Arr profile HTTP", () => {
       }) as typeof fetch,
     });
     expect(warning).toBeNull();
-    expect(createdBodies[0]?.name).toBe("Optimizarr Movie 4K HDR");
+    expect(createdBodies[0]?.name).toBe("Polisharr Movie 4K HDR");
     expect(createdBodies[0]?.upgradeAllowed).toBe(false);
     expect(createdBodies[0]).not.toHaveProperty("id");
     expect(calls.some((c) => /search|command/i.test(c))).toBe(false);
@@ -196,11 +201,11 @@ describe("Arr profile HTTP", () => {
       url: "http://sonarr",
       apiKey: "k",
       seriesId: 42,
-      profileName: "Optimizarr TV 1080p",
+      profileName: "Polisharr TV 1080p",
       fetch: (async (url, init) => {
         calls.push(`${init?.method ?? "GET"} ${url}`);
         if (String(url).endsWith("/qualityprofile")) {
-          return new Response(JSON.stringify([{ id: 7, name: "Optimizarr TV 1080p", upgradeAllowed: false, items: [] }]));
+          return new Response(JSON.stringify([{ id: 7, name: "Polisharr TV 1080p", upgradeAllowed: false, items: [] }]));
         }
         if (String(url).endsWith("/series/42") && init?.method === "PUT") return new Response("{}", { status: 202 });
         if (String(url).endsWith("/series/42")) return new Response(JSON.stringify({ id: 42, title: "Show", qualityProfileId: 1 }));

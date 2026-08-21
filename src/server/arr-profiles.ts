@@ -2,11 +2,11 @@ import type { SizeCaps, SizeCategory } from "./types.ts";
 import { DEFAULT_SIZE_CAPS } from "./types.ts";
 
 export const PROFILE_NAMES: Record<SizeCategory, string> = {
-  movie1080p: "Optimizarr Movie 1080p",
-  movie4kSdr: "Optimizarr Movie 4K SDR",
-  movie4kHdr: "Optimizarr Movie 4K HDR",
-  tv1080p: "Optimizarr TV 1080p",
-  tv4k: "Optimizarr TV 4K",
+  movie1080p: "Polisharr Movie 1080p",
+  movie4kSdr: "Polisharr Movie 4K SDR",
+  movie4kHdr: "Polisharr Movie 4K HDR",
+  tv1080p: "Polisharr TV 1080p",
+  tv4k: "Polisharr TV 4K",
 };
 
 export type ProfilePreview = {
@@ -71,9 +71,17 @@ export function pickPreventUpgradeProfile(
   wantedName: string,
   currentQuality: string,
 ): ProfileRecord | undefined {
-  const named = profiles.find((p) => p.name === wantedName);
+  const named = findNamedProfile(profiles, wantedName);
   if (named) return named;
   return profiles.find((p) => !p.upgradeAllowed && profileAllowsQuality(p.items, currentQuality));
+}
+
+export function legacyProfileName(name: string): string {
+  return name.replace(/^Polisharr /, "Optimizarr ");
+}
+
+function findNamedProfile(profiles: ProfileRecord[], name: string): ProfileRecord | undefined {
+  return profiles.find((p) => p.name === name) ?? profiles.find((p) => p.name === legacyProfileName(name));
 }
 
 export type SyncResult = {
@@ -101,7 +109,7 @@ export async function syncProfiles(opts: {
   }
   const existing = parseProfiles(await listed.json());
   for (const preview of profilePreviews(opts.caps)) {
-    const found = existing.find((p) => p.name === preview.name);
+    const found = findNamedProfile(existing, preview.name);
     if (found) {
       const desired = configuredProfile(found.raw, preview.name, preview.category);
       if (!profileNeedsUpdate(found, desired)) {
@@ -230,7 +238,9 @@ async function createNamedProfile(
 }
 
 function categoryForProfileName(name: string): SizeCategory | undefined {
-  return (Object.keys(PROFILE_NAMES) as SizeCategory[]).find((category) => PROFILE_NAMES[category] === name);
+  return (Object.keys(PROFILE_NAMES) as SizeCategory[]).find(
+    (category) => PROFILE_NAMES[category] === name || legacyProfileName(PROFILE_NAMES[category]) === name,
+  );
 }
 
 function configuredProfile(raw: Record<string, unknown>, name: string, category: SizeCategory): Record<string, unknown> {

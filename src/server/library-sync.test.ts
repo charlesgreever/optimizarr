@@ -7,7 +7,7 @@ import { Store } from "./store.ts";
 
 describe("LibrarySync", () => {
   it("uses one Arr request when startup and a manual refresh overlap", async () => {
-    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-")), "optimizarr.db"));
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-")), "polisharr.db"));
     store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -38,7 +38,7 @@ describe("LibrarySync", () => {
   });
 
   it("refreshes enabled Arr instances on the background interval", async () => {
-    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-timer-")), "optimizarr.db"));
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-timer-")), "polisharr.db"));
     store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });
     let movieRequests = 0;
     const sync = new LibrarySync({
@@ -61,7 +61,7 @@ describe("LibrarySync", () => {
   });
 
   it("stores Arr roots and blocks sync into an overlapping review folder", async () => {
-    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-roots-")), "optimizarr.db"));
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-roots-")), "polisharr.db"));
     store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });
     store.saveSettings({ ...store.getSettings(), reviewPath: "/media/review" });
     let movieRequests = 0;

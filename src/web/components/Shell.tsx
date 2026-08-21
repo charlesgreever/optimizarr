@@ -54,8 +54,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <aside>
         <div className="brand">
-          <b>O</b>
-          <strong>Optimizarr</strong>
+          <b>P</b>
+          <strong>Polisharr</strong>
         </div>
         <nav>
           {NAV.map((item) => (
@@ -150,7 +150,7 @@ export function PageHead({ title, children }: { title: string; children?: React.
   return (
     <div className="page-heading">
       <div>
-        <p className="eyebrow">OPTIMIZARR</p>
+        <p className="eyebrow">POLISHARR</p>
         <h1>{title}</h1>
       </div>
       {children}

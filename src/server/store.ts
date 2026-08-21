@@ -702,7 +702,7 @@ export class Store {
 
   recoverInterruptedJobs(): number {
     return this.db.prepare(
-      "UPDATE jobs SET status = 'queued', phase = 'queued', progress = 0, error = 'Recovered after Optimizarr restarted.' WHERE status = 'running'",
+      "UPDATE jobs SET status = 'queued', phase = 'queued', progress = 0, error = 'Recovered after Polisharr restarted.' WHERE status = 'running'",
     ).run().changes;
   }
 

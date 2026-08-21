@@ -1,6 +1,6 @@
 # Engineering Standards
 
-This file is the **code** standard for Optimizarr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [docs/prd.md](docs/prd.md) is the **product** spec.
+This file is the **code** standard for Polisharr. [CODING_STANDARDS.md](CODING_STANDARDS.md) is the **prose** standard (The Elements of Agent Style). [docs/prd.md](docs/prd.md) is the **product** spec.
 
 A change can pass one and fail another. Review them as separate axes. Cite a rule by id (`ENG-04`) in review comments.
 
@@ -136,7 +136,7 @@ If you cannot name it, the type is wrong.
 
 **Source:** Twelve-Factor III, VI, XI.
 
-Runtime knobs come from env (`CONFIG_DIR`, `PORT`, `PUID`, `TZ`, `FFMPEG`, `OPTIMIZARR_BACKENDS`). Do not hard-code ubuntuserver paths in server code. The container is one process; the job runner lives in that process and must survive restart without a half-written library file.
+Runtime knobs come from env (`CONFIG_DIR`, `PORT`, `PUID`, `TZ`, `FFMPEG`, `POLISHARR_BACKENDS`). Do not hard-code ubuntuserver paths in server code. The container is one process; the job runner lives in that process and must survive restart without a half-written library file.
 
 Logs are sentences with the agent named (RULE-02). No leftover `console.log` of full request bodies.
 

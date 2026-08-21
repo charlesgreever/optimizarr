@@ -1,6 +1,6 @@
 # Agents
 
-Optimizarr has three sources of truth. Read the file that matches the work. Do not copy their rules into this file.
+Polisharr has three sources of truth. Read the file that matches the work. Do not copy their rules into this file.
 
 ## Steps
 

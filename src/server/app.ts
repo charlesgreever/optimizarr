@@ -95,7 +95,7 @@ export function createApp(opts: AppOptions) {
   }
 
   async function currentUser(c: Context) {
-    const sid = getCookie(c as never, "optimizarr");
+    const sid = getCookie(c as never, "polisharr");
     if (sid) {
       const session = store.getSession(sid, opts.clock?.() ?? Date.now());
       if (session) return { userId: session.userId, sessionId: sid };
@@ -121,7 +121,7 @@ export function createApp(opts: AppOptions) {
     };
   }
 
-  app.get("/api/health", (c) => c.json({ ok: true, service: "optimizarr" }));
+  app.get("/api/health", (c) => c.json({ ok: true, service: "polisharr" }));
 
   app.get("/api/ready", (c) => {
     const settings = store.getSettings();
@@ -152,7 +152,7 @@ export function createApp(opts: AppOptions) {
     const hash = await argon2.hash(body.password, { type: argon2.argon2id });
     store.createUser(body.username, hash);
     const sid = store.createSession(store.onlyUser()!.id, SESSION_TTL, opts.clock?.() ?? Date.now());
-    setCookie(c, "optimizarr", sid, cookieOpts);
+    setCookie(c, "polisharr", sid, cookieOpts);
     return c.json({ ok: true });
   });
 
@@ -162,14 +162,14 @@ export function createApp(opts: AppOptions) {
     const ok = user ? await argon2.verify(user.passwordHash, body.password ?? "") : false;
     if (!user || !ok) return c.json({ error: GENERIC_LOGIN }, 401);
     const sid = store.createSession(user.id, SESSION_TTL, opts.clock?.() ?? Date.now());
-    setCookie(c, "optimizarr", sid, cookieOpts);
+    setCookie(c, "polisharr", sid, cookieOpts);
     return c.json({ ok: true });
   });
 
   app.post("/api/auth/logout", async (c) => {
-    const sid = getCookie(c, "optimizarr");
+    const sid = getCookie(c, "polisharr");
     if (sid) store.deleteSession(sid);
-    deleteCookie(c, "optimizarr", { path: "/" });
+    deleteCookie(c, "polisharr", { path: "/" });
     return c.json({ ok: true });
   });
 
@@ -266,7 +266,7 @@ export function createApp(opts: AppOptions) {
     store.updateUser(user.id, body.username, hash);
     store.deleteUserSessions(user.id);
     const sid = store.createSession(user.id, SESSION_TTL, opts.clock?.() ?? Date.now());
-    setCookie(c, "optimizarr", sid, cookieOpts);
+    setCookie(c, "polisharr", sid, cookieOpts);
     return c.json({ ok: true });
   });
 

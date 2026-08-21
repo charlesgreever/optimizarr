@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type Env = {
@@ -33,8 +33,15 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
     mkvmerge: processEnv.MKVMERGE ?? "mkvmerge",
     webRoot: processEnv.WEB_ROOT ?? join(dirname(new URL(import.meta.url).pathname), "../../dist/web"),
     secretPath: join(configDir, ".secret"),
-    dbPath: join(configDir, "optimizarr.db"),
-    widgetKeyEnv: processEnv.OPTIMIZARR_WIDGET_KEY ?? null,
-    trustProxy: processEnv.OPTIMIZARR_TRUST_PROXY === "1",
+    dbPath: resolveDbPath(configDir),
+    widgetKeyEnv: processEnv.POLISHARR_WIDGET_KEY ?? processEnv.OPTIMIZARR_WIDGET_KEY ?? null,
+    trustProxy: processEnv.POLISHARR_TRUST_PROXY === "1" || processEnv.OPTIMIZARR_TRUST_PROXY === "1",
   };
+}
+
+function resolveDbPath(configDir: string): string {
+  const next = join(configDir, "polisharr.db");
+  const prev = join(configDir, "optimizarr.db");
+  if (!existsSync(next) && existsSync(prev)) renameSync(prev, next);
+  return next;
 }

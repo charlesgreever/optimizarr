@@ -9,7 +9,7 @@ import type { ExecutablePlan, InspectionReport } from "./types.ts";
 describe("job promotion follow-up", () => {
   it("keeps a direct transcode when profile assignment fails and exposes the warning", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-direct-profile-"));
-    const store = new Store(join(dir, "optimizarr.db"));
+    const store = new Store(join(dir, "polisharr.db"));
     const instanceId = store.upsertInstance({
       kind: "radarr",
       name: "Radarr",
@@ -103,7 +103,7 @@ describe("job promotion follow-up", () => {
 
   it("reinspects a direct-write destination before the job succeeds", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-direct-reinspect-"));
-    const store = new Store(join(dir, "optimizarr.db"));
+    const store = new Store(join(dir, "polisharr.db"));
     const instanceId = store.upsertInstance({
       kind: "radarr",
       name: "Radarr",

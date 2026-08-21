@@ -1,10 +1,10 @@
-# PRD: Optimizarr v2
+# PRD: Polisharr v2
 
 Canonical v2 product spec. This document matches GitHub issue #26. v1 remains [prd.md](prd.md) (issue #20). This document wins where the two conflict.
 
 ## Problem Statement
 
-v1 of Optimizarr inspects a Radarr and Sonarr library, suggests smaller HEVC files and cleaner tracks, and writes a sidecar I Keep or Discard. That bulk path is right for titles I do not want to babysit. It is the wrong tool for a title I want to curate.
+v1 of Polisharr inspects a Radarr and Sonarr library, suggests smaller HEVC files and cleaner tracks, and writes a sidecar I Keep or Discard. That bulk path is right for titles I do not want to babysit. It is the wrong tool for a title I want to curate.
 
 On Movies and Series I cannot open one movie or episode and choose the plan. Track cleanup always follows preferred language. Stereo is only an extra AAC 2.0 mix. I cannot replace TrueHD with AAC, pick a 5.1 downmix, or tick which subtitles leave. I cannot set a target file size or encoder quality on that title, or downscale 4K to 1080p. ISO disc images fail ffprobe, land on Errors, and never get a suggestion, even though ffmpeg can read many of them.
 
@@ -56,7 +56,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 25. As a library owner, I do not want a same-layout codec change as an extra track, so that the file does not carry TrueHD and a duplicate AAC 7.1.
 26. As a library owner, I want a downmix to AAC in a smaller channel layout, down to stereo, so that 7.1 can become 5.1 or stereo, and 5.1 can become stereo.
 27. As a library owner, I want a downmix to be either a replacement or an additional track, so that I can keep Atmos for the AVR and add stereo for the TV, or replace the bulky mix entirely.
-28. As a library owner, I want generated audio to come only from a track already in the file, so that Optimizarr never imports commentary files, uploads, or other titles.
+28. As a library owner, I want generated audio to come only from a track already in the file, so that Polisharr never imports commentary files, uploads, or other titles.
 29. As a library owner, I want an ISO that ffmpeg can list to offer the same audio and subtitle controls, so that a disc image is not a second-class title page.
 30. As a library owner, I want an ISO that ffmpeg cannot list to hide track editing and still allow remux or encode, so that a bad disc image is not stuck on Errors with no escape.
 31. As a library owner, I want an ISO with no size target and no encoder quality, when I ask for MKV, to remux into Matroska with no video quality change, so that the file plays as a normal container.
@@ -102,7 +102,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 65. As a library owner, I want the override and the global default to be visible on the title page and in job details, so that I know whether Review will see this job.
 66. As a library owner, I want direct write to integrity-check the output, then replace the library file, and not create a Review card, so that Review is not full of already-applied work.
 67. As a library owner, I want a failed direct write to leave the original library file in place and delete partial output, so that a crash is not a silent replace.
-68. As a library owner, I want Keep of a sidecar to replace the file, refresh the originating Arr and every configured player, and re-inspect the promoted path before Keep finishes, so that Optimizarr does not show the new file as uninspected.
+68. As a library owner, I want Keep of a sidecar to replace the file, refresh the originating Arr and every configured player, and re-inspect the promoted path before Keep finishes, so that Polisharr does not show the new file as uninspected.
 69. As a library owner, I want direct write, after a successful replace, to run the same Arr refresh, player notification, and targeted reinspection as Keep, so that every promote path finishes with current media details.
 70. As a library owner, I want a failed Arr refresh, profile assign, player notification, or post-promote inspection not to roll back the new file, so that a follow-up outage does not undo a good encode and the failure remains visible.
 71. As a library owner, I want Discard, Cancel, off-peak, concurrency, and run-now to apply to custom jobs the same as bulk jobs, so that the queue stays one queue.
@@ -111,18 +111,18 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 ### Arr quality profiles
 
-74. As a library owner, I want Settings to show one suggested Arr quality profile per size category from the current GB/hr caps, including the equivalent MB/min, so that I can see what Optimizarr would ask Radarr and Sonarr to use.
+74. As a library owner, I want Settings to show one suggested Arr quality profile per size category from the current GB/hr caps, including the equivalent MB/min, so that I can see what Polisharr would ask Radarr and Sonarr to use.
 75. As an operator, I want an explicit Settings action to create those named profiles on each enabled Radarr and Sonarr without deleting my other profiles, so that TRaSH or Ultra-HD profiles stay.
 76. As a library owner, I want Keep or direct write of a **transcode** to assign the Radarr movie to the matching suggested profile when profile auto-assign is enabled and not start a search, so that the Arr does not download a bigger file.
 77. As a library owner, I want Keep or direct write of a transcoded episode to assign the Sonarr **series** to the matching TV profile, with copy that this applies to the whole show, so that I am not surprised when future episodes follow that profile.
 78. As a library owner, I want tracks-only, stereo-only, audio-replace-only, and ISO-remux-only promotes not to change the quality profile, so that a language cleanup does not re-home a remux I still want upgraded later.
 79. As a library owner, I want a size-exempt title not to get the smaller profile on promote, so that archival movies stay on the profile I chose.
 80. As a library owner, I want a missing or rejected profile assign to leave the file replaced and show the Arr error, so that promote still succeeds.
-81. As an operator, I want changing a GB/hr cap to update the suggested-profile preview, and I want Optimizarr-named profiles on the Arr to update only when I sync them, so that a typo in Settings does not rewrite Radarr until I say so.
+81. As an operator, I want changing a GB/hr cap to update the suggested-profile preview, and I want Polisharr-named profiles on the Arr to update only when I sync them, so that a typo in Settings does not rewrite Radarr until I say so.
 
 ### Operator, empty states, and developers
 
-82. As an operator, I want Settings to let me disable profile auto-assign without disabling profile preview or explicit sync, and to say that Arr size limits (MB/min) are global per quality name, so that Optimizarr does not move titles between profiles unless I allow it.
+82. As an operator, I want Settings to let me disable profile auto-assign without disabling profile preview or explicit sync, and to say that Arr size limits (MB/min) are global per quality name, so that Polisharr does not move titles between profiles unless I allow it.
 83. As an operator, I want hardware video encode to remain CUDA or VAAPI only, so that a custom quality slider cannot fall back to a multi-day CPU encode.
 84. As an operator, I want AAC codec replace and downmix to run in ffmpeg even when no GPU is required for audio, so that a tracks-and-audio job is not blocked on NVENC.
 85. As a library owner, I want an empty Movies or Series table to keep the v1 empty copy, so that first run still tells me to connect an Arr.
@@ -151,8 +151,8 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 - Audio generate: ffmpeg AAC only, from an existing audio stream. **Codec replace**: same channel layout, replaces the source track. **Downmix**: smaller layout down to stereo (offer each step the source can drop to, at least 5.1 and stereo when the source is wider); operator chooses replace or additional. No external files, no uploads.
 - Subtitle custom work is remove-only. Adding subtitle files is out of scope.
 - Write mode: default sidecar + Review + Keep (ENG-09). Settings global direct write applies to bulk and custom. Title page override applies to that custom job only and is stored on the plan. Direct write: encode to temp, integrity (duration present; do not copy source duration onto the result), then replace library file, no Review row. Failure deletes temp and leaves the original. Cancel of a direct-write job must not leave a half-written library file.
-- Promote after transcode Keep or transcode direct write: assign a suggested Arr profile only when profile auto-assign is enabled; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, ISO remux-only, and size-exempt plans do not assign. Failed assign does not undo replace. After either promote path updates Optimizarr's stored path and size, invalidate the old inspection and suggestion, inspect that promoted path, and recompute its suggestion before marking the background operation complete. A failed reinspection records an Errors row and a follow-up warning without restoring the old file.
-- Suggested profiles: one per size category, stable Optimizarr-prefixed names, create or update only on explicit Settings sync. Sync repairs drift in Optimizarr-named allowed qualities, cutoff, and upgrade behavior. Do not overwrite unrelated profiles. Do not silently rewrite global Arr quality definitions (MB/min is help text and preview).
+- Promote after transcode Keep or transcode direct write: assign a suggested Arr profile only when profile auto-assign is enabled; do not search. Sonarr assign is the series. Tracks-only, stereo-only, codec-replace/downmix-only, ISO remux-only, and size-exempt plans do not assign. Failed assign does not undo replace. After either promote path updates Polisharr's stored path and size, invalidate the old inspection and suggestion, inspect that promoted path, and recompute its suggestion before marking the background operation complete. A failed reinspection records an Errors row and a follow-up warning without restoring the old file.
+- Suggested profiles: one per size category, stable Polisharr-prefixed names, create or update only on explicit Settings sync. Sync repairs drift in Polisharr-named allowed qualities, cutoff, and upgrade behavior. Do not overwrite unrelated profiles. Do not silently rewrite global Arr quality definitions (MB/min is help text and preview).
 - Hardware video failure still fails the job. No software video fallback (ENG-05).
 - ffmpeg, ffprobe, and `mkvmerge` still `execFile` argument arrays (ENG-08). ISO paths are file operands, not shell fragments.
 - Modules: keep v1 modules. Add **Custom plan**. Extend Inspector (ISO listing and targeted post-promote reinspection), Suggestion engine (ISO reports and automatic-operation settings), Optimize runner (ISO remux, size XOR quality, codec replace, downmix add/replace, 4K→1080p), Promote (direct write, Arr profile assign), Settings (direct write, profile sync, suggestion defaults), Web UI (dense tables, collapsible series, title pages). Inspector and custom plan still do not encode. Promote still does not encode.
@@ -162,14 +162,14 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 - A good test asserts public behavior: inspection reports, custom-plan drafts, job payloads, sidecar vs library path, Arr HTTP, and user-visible sentences. Tests do not lock ffmpeg flag order, SQL tables, or React internals (ENG-04).
 - Tests will be written for every v2 module in the sketch: Inspector (ISO and non-ISO), Suggestion engine, Custom plan, Optimize runner, Promote, Arr profiles, Settings write-mode, Web UI/HTTP for library rows and title pages. No live NAS, GPU, or Radarr.
-- Prior art: existing inspect fixtures, `buildSuggestion` tables, fake optimizer in app/jobs tests, fake Arr HTTP, fake ffmpeg/`mkvmerge` in optimize tests. Extend those styles; do not import the retired Optimizarr suite.
+- Prior art: existing inspect fixtures, `buildSuggestion` tables, fake optimizer in app/jobs tests, fake Arr HTTP, fake ffmpeg/`mkvmerge` in optimize tests. Extend those styles; do not import the retired Polisharr suite.
 - Inspector: `.iso` path never calls ffprobe; ffmpeg listing fixture yields audio/subs; listing failure is a bounded error; `.mkv` still uses ffprobe; Keep and direct write target the promoted path and leave a visible error without rolling back when that probe fails.
 - Suggestion defaults: legacy Settings load all four toggles enabled; each toggle independently removes its automatic action and its reason; Force, Add stereo, and custom plans remain available; saving Settings recomputes Suggestions from stored inspections without probing unchanged files.
 - Custom plan: empty draft cannot queue; size XOR quality; 4K→1080p rejected on remux-only; codec replace is replace-only; downmix add vs replace; ISO remux when no size/quality; queueing custom clears the automatic suggestion.
 - Runner: ISO remux does not video-encode; size-mode and quality-mode encode are distinct; downscale requires encode; AAC replace vs extra downmix; hardware miss still fails video encode.
 - Promote: sidecar Keep and direct write both refresh integrations and finish targeted reinspection; direct write skips Review and replaces; failed direct write leaves original; profile assign requires an enabled setting and a video transcode; ISO remux-only and size-exempt plans skip it; follow-up failures do not undo replace.
 - Library HTTP: two reasons both appear; uninspected dashes; unreadable error; Series returns summaries before any episode rows and fetches one show’s episodes on expansion.
-- Arr profiles: fake GET/POST/PUT qualityprofile and PUT movie/series; explicit sync repairs a drifted Optimizarr profile; disabled auto-assign performs no title PUT; no search command.
+- Arr profiles: fake GET/POST/PUT qualityprofile and PUT movie/series; explicit sync repairs a drifted Polisharr profile; disabled auto-assign performs no title PUT; no search command.
 
 ## Out of Scope
 

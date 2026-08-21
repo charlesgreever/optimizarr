@@ -59,7 +59,7 @@ export function buildReportIssueBody(ctx: ReportContext): string {
 }
 
 export function buildReportIssueUrl(kind: ReportKind, ctx: ReportContext): string {
-  const title = kind === "bug" ? "Bug: Optimizarr" : "Change request: Optimizarr";
+  const title = kind === "bug" ? "Bug: Polisharr" : "Change request: Polisharr";
   const labels = kind === "bug" ? "bug" : "enhancement";
   const params = new URLSearchParams({
     title,

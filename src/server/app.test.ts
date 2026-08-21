@@ -77,7 +77,7 @@ describe("public HTTP behavior", () => {
     const ctx = await setup();
     apps.push(ctx);
     const res = await ctx.app.app.request("/api/health");
-    expect(await res.json()).toEqual({ ok: true, service: "optimizarr" });
+    expect(await res.json()).toEqual({ ok: true, service: "polisharr" });
   });
 
   it("bounds library pages and loads episodes for one series", async () => {
@@ -903,7 +903,7 @@ describe("public HTTP behavior", () => {
     await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
     const settings = (await (await ctx.app.app.request("/api/settings", { headers })).json()) as { profilePreviews?: Array<{ name: string }>; writeMode?: string };
     expect(settings.writeMode).toBe("sidecar");
-    expect(settings.profilePreviews?.[0]?.name).toMatch(/^Optimizarr /);
+    expect(settings.profilePreviews?.[0]?.name).toMatch(/^Polisharr /);
     const search = (await (await ctx.app.app.request("/api/search?q=underdog", { headers })).json()) as { items: Array<{ href: string }> };
     expect(search.items[0]?.href).toMatch(/^\/movies\//);
   });

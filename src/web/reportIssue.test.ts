@@ -11,7 +11,7 @@ describe("report issue", () => {
     expect(url.startsWith("https://github.com/charlesgreever/optimizarr/issues/new?")).toBe(true);
     const parsed = new URL(url);
     expect(parsed.searchParams.get("labels")).toBe("bug");
-    expect(parsed.searchParams.get("title")).toBe("Bug: Optimizarr");
+    expect(parsed.searchParams.get("title")).toBe("Bug: Polisharr");
     const body = parsed.searchParams.get("body") ?? "";
     expect(body).toContain("Route: /queue");
     expect(body).toContain("Inspect leftovers: 12");
@@ -23,7 +23,7 @@ describe("report issue", () => {
   it("uses an enhancement label for a change request", () => {
     const url = buildReportIssueUrl("change", { route: "/settings" });
     expect(new URL(url).searchParams.get("labels")).toBe("enhancement");
-    expect(new URL(url).searchParams.get("title")).toBe("Change request: Optimizarr");
+    expect(new URL(url).searchParams.get("title")).toBe("Change request: Polisharr");
   });
 
   it("scrubs paths, URLs, and secret-looking assignments out of the report", () => {

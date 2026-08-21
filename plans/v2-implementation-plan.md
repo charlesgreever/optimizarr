@@ -1,4 +1,4 @@
-# Optimizarr v2 Implementation Plan
+# Polisharr v2 Implementation Plan
 
 This plan turns [v2 prd.md](../docs/v2%20prd.md) into bounded implementation tasks for an AI coding agent. The agent must also read [prd.md](../docs/prd.md), [ENGINEERING_STANDARDS.md](../ENGINEERING_STANDARDS.md), and [CODING_STANDARDS.md](../CODING_STANDARDS.md) before changing code or user-facing copy. The v2 PRD wins where it conflicts with v1.
 
@@ -386,7 +386,7 @@ Done when custom and bulk jobs share one queue and a second job for the same tit
 
 Files: new `src/server/arr-profiles.ts` or `src/server/arr.ts`, tests, `src/server/types.ts`.
 
-1. Define one stable Optimizarr-prefixed profile name per size category.
+1. Define one stable Polisharr-prefixed profile name per size category.
 2. Derive preview GB/hour and equivalent MB/min from current settings.
 3. Keep movie categories separate from TV categories.
 4. Describe that Arr size limits attach globally to quality names; profile assignment does not silently rewrite those definitions.
@@ -398,8 +398,8 @@ Done when changing a size cap changes only the local preview until explicit sync
 Files: `src/server/arr.ts` or `src/server/arr-profiles.ts`, fake HTTP tests.
 
 1. List quality profiles for an enabled Arr instance.
-2. Create missing Optimizarr-named profiles.
-3. Update only profiles identified by stable Optimizarr names.
+2. Create missing Polisharr-named profiles.
+3. Update only profiles identified by stable Polisharr names.
 4. Never delete or overwrite unrelated operator profiles.
 5. Assign the matching profile to a Radarr movie without issuing a search.
 6. Assign the matching profile to a Sonarr series without issuing a search.
@@ -663,7 +663,7 @@ Done when existing users remain in sidecar mode and direct mode requires an expl
 Files: `src/web/pages/Settings.tsx`, `src/web/api.ts`, app tests.
 
 1. Show each suggested profile name, GB/hour cap, and MB/min equivalent.
-2. Explain global Arr quality-size definitions and that Optimizarr does not silently rewrite them.
+2. Explain global Arr quality-size definitions and that Polisharr does not silently rewrite them.
 3. Add a Sync profiles action separate from Save settings.
 4. Display per-instance create/update/unchanged/failure results.
 5. Update preview immediately when local cap fields change, without remote writes.
@@ -780,7 +780,7 @@ v2 is complete only when:
 - custom audio, subtitle, ISO remux, size, quality, and downscale plans validate and execute as specified;
 - custom queueing negates the automatic suggestion and shares existing job locks;
 - sidecar remains default, direct write is explicit and integrity-gated, and failures preserve the original;
-- eligible promoted transcodes assign an explicitly synced Optimizarr profile without starting an Arr search;
+- eligible promoted transcodes assign an explicitly synced Polisharr profile without starting an Arr search;
 - tests require no live NAS, GPU, ISO image, Radarr, Sonarr, Plex, or Jellyfin;
 - `npm test`, `npm run typecheck`, and `npm run build` pass;
 - the spec and standards review axes both pass, with the direct-write ENG-09 exception named.

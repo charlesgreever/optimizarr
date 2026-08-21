@@ -36,7 +36,7 @@ export async function testPlex(url: string, token: string, httpFetch: typeof fet
     if (!res.ok) return { ok: false, message: `Plex returned HTTP ${res.status}.` };
     return { ok: true };
   } catch {
-    return { ok: false, message: "Optimizarr could not reach Plex." };
+    return { ok: false, message: "Polisharr could not reach Plex." };
   }
 }
 
@@ -47,7 +47,7 @@ export async function testJellyfin(url: string, token: string, httpFetch: typeof
     if (!res.ok) return { ok: false, message: `Jellyfin returned HTTP ${res.status}.` };
     return { ok: true };
   } catch {
-    return { ok: false, message: "Optimizarr could not reach Jellyfin." };
+    return { ok: false, message: "Polisharr could not reach Jellyfin." };
   }
 }
 

@@ -21,7 +21,7 @@ export function App() {
     void api.status().then(setAuth).catch(() => setAuth({ authenticated: false, firstRun: emptyFirst() }));
   }, []);
 
-  if (!auth) return <div className="auth-page"><p className="help">Loading Optimizarr…</p></div>;
+  if (!auth) return <div className="auth-page"><p className="help">Loading Polisharr…</p></div>;
   if (!auth.firstRun.hasAdmin || !auth.authenticated) {
     return <LoginPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />;
   }

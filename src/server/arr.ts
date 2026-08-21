@@ -139,7 +139,7 @@ function connectionError(error: unknown): ConnectionResult {
   const err = error as { kind?: string; message?: string };
   if (err.kind === "auth") return { ok: false, kind: "auth", message: "The Arr rejected this API key." };
   if (err.kind === "shape") return { ok: false, kind: "shape", message: err.message ?? "Unexpected response." };
-  return { ok: false, kind: "connect", message: "Optimizarr could not reach that URL." };
+  return { ok: false, kind: "connect", message: "Polisharr could not reach that URL." };
 }
 
 function shape(what: string): Error {

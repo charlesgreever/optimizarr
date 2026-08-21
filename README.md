@@ -1,6 +1,6 @@
-# Optimizarr
+# Polisharr
 
-Optimizarr is a companion container for Radarr and Sonarr. It inspects the same library those apps already know, suggests smaller HEVC (or AV1) files and cleaner tracks, and writes a sidecar you Keep or Discard before the library file changes. Custom title plans, ISO remux, and optional direct write are also supported.
+Polisharr is a companion container for Radarr and Sonarr. It inspects the same library those apps already know, suggests smaller HEVC (or AV1) files and cleaner tracks, and writes a sidecar you Keep or Discard before the library file changes. Custom title plans, ISO remux, and optional direct write are also supported.
 
 This tree is a greenfield rewrite. Do not import the previous application code.
 
@@ -25,13 +25,13 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 
 ## Installation
 
-Optimizarr runs as a Docker container next to Radarr and Sonarr. It reads the same library files those apps already know, so the media bind in compose must be that path on both sides. Video encode needs a GPU: NVIDIA (NVENC) or Intel (VAAPI, the Video Acceleration API). There is no CPU encode fallback.
+Polisharr runs as a Docker container next to Radarr and Sonarr. It reads the same library files those apps already know, so the media bind in compose must be that path on both sides. Video encode needs a GPU: NVIDIA (NVENC) or Intel (VAAPI, the Video Acceleration API). There is no CPU encode fallback.
 
 ### 1. Get the files
 
 ```bash
-git clone https://github.com/charlesgreever/optimizarr.git
-cd optimizarr
+git clone https://github.com/charlesgreever/optimizarr.git polisharr
+cd polisharr
 ```
 
 ### 2. Copy and edit compose
@@ -39,14 +39,14 @@ cd optimizarr
 Copy [compose.example.yaml](compose.example.yaml) to `compose.yaml`. Change these values:
 
 - **Media bind.** `/path/to/media:/path/to/media` must match the file path Radarr and Sonarr report. If they see `/mnt/media/Movies/Title.mkv`, both sides of the bind are `/mnt/media`.
-- **`PUID` / `PGID`.** Owner of `/config` and files Optimizarr writes. Use the same ids as your Arr containers.
+- **`PUID` / `PGID`.** Owner of `/config` and files Polisharr writes. Use the same ids as your Arr containers.
 - **`TZ`.** Container timezone.
 
 NVIDIA is already selected (`runtime: nvidia` and the `NVIDIA_*` variables). The host needs the NVIDIA container toolkit. `utility` provides `nvidia-smi`. `video` provides NVENC.
 
 For an Intel GPU, comment out `runtime: nvidia` and the `NVIDIA_*` variables, then uncomment `devices: /dev/dri`. ffmpeg uses `/dev/dri/renderD128`. If encode cannot open that device, set `group_add` to the host render group id (`getent group render`).
 
-If Radarr and Sonarr already share a Docker network, attach Optimizarr to that network so Settings can use `http://radarr:7878`.
+If Radarr and Sonarr already share a Docker network, attach Polisharr to that network so Settings can use `http://radarr:7878`.
 
 ### 3. Start
 
@@ -62,12 +62,12 @@ Open `http://localhost:7373` (or the host address you published). Create the adm
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PUID` / `PGID` | `1000` | Owner of `/config` and files Optimizarr writes |
+| `PUID` / `PGID` | `1000` | Owner of `/config` and files Polisharr writes |
 | `TZ` | `UTC` | Container timezone |
 | `CONFIG_DIR` | `/config` | Persistent SQLite and settings |
 | `PORT` | `7373` | Listen port |
-| `OPTIMIZARR_WIDGET_KEY` | unset | Optional Homepage widget key |
-| `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
+| `POLISHARR_WIDGET_KEY` | unset | Optional Homepage widget key |
+| `POLISHARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
 
 ## Run locally
 
@@ -90,4 +90,4 @@ Signed-in pages keep a **Report** control on screen. **Bug** and **Change reques
 
 ## Homepage
 
-Optimizarr exposes `GET /api/widget` for a Homepage `customapi` tile. Example YAML: [docs/homepage.md](docs/homepage.md).
+Polisharr exposes `GET /api/widget` for a Homepage `customapi` tile. Example YAML: [docs/homepage.md](docs/homepage.md).

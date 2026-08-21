@@ -14,7 +14,7 @@ describe("store schema migration", () => {
 
   it("adds a missing jobs.position column on an existing database", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-schema-"));
-    const path = join(dir, "optimizarr.db");
+    const path = join(dir, "polisharr.db");
     const legacy = new Database(path);
     legacy.exec(`
       CREATE TABLE jobs (
@@ -47,7 +47,7 @@ describe("store schema migration", () => {
 
   it("defaults an existing settings row to sidecar write mode", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-settings-"));
-    const path = join(dir, "optimizarr.db");
+    const path = join(dir, "polisharr.db");
     const store = new Store(path);
     stores.push(store);
     store.saveSettings({
@@ -75,7 +75,7 @@ describe("store schema migration", () => {
 
   it("fills missing automatic suggestion defaults from older settings", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-suggestion-settings-"));
-    const path = join(dir, "optimizarr.db");
+    const path = join(dir, "polisharr.db");
     const store = new Store(path);
     stores.push(store);
     store.db
@@ -91,7 +91,7 @@ describe("store schema migration", () => {
   });
 
   it("falls back to defaults when the persisted Settings JSON is corrupt", () => {
-    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-corrupt-settings-")), "optimizarr.db"));
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-corrupt-settings-")), "polisharr.db"));
     stores.push(store);
     store.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('app', ?)").run("{broken");
     expect(store.getSettings()).toMatchObject({ writeMode: "sidecar", concurrency: 1, videoTarget: "hevc" });
@@ -99,7 +99,7 @@ describe("store schema migration", () => {
 
   it("defaults profile auto-assign on for existing installs and persists an opt-out", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-profile-settings-"));
-    const path = join(dir, "optimizarr.db");
+    const path = join(dir, "polisharr.db");
     const store = new Store(path);
     stores.push(store);
     expect(store.getSettings().profileAutoAssign).toBe(true);
@@ -112,7 +112,7 @@ describe("store schema migration", () => {
 
   it("persists a custom executable plan, write mode, and promote error", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-job-plan-"));
-    const path = join(dir, "optimizarr.db");
+    const path = join(dir, "polisharr.db");
     const store = new Store(path);
     stores.push(store);
     store.insertJob({
@@ -151,7 +151,7 @@ describe("store schema migration", () => {
 
   it("returns interrupted running jobs to the queue after restart", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-recovery-"));
-    const store = new Store(join(dir, "optimizarr.db"));
+    const store = new Store(join(dir, "polisharr.db"));
     stores.push(store);
     store.insertJob({
       id: "job-running", itemId: "item-1", suggestionId: null, status: "running", phase: "transcoding",
@@ -164,7 +164,7 @@ describe("store schema migration", () => {
 
     expect(store.recoverInterruptedJobs()).toBe(1);
     expect(store.getJob("job-running")).toMatchObject({
-      status: "queued", phase: "queued", progress: 0, error: "Recovered after Optimizarr restarted.",
+      status: "queued", phase: "queued", progress: 0, error: "Recovered after Polisharr restarted.",
     });
   });
 });

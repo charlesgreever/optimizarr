@@ -20,14 +20,14 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
         }}
       >
         <div className="brand">
-          <b>O</b>
-          <strong>Optimizarr</strong>
+          <b>P</b>
+          <strong>Polisharr</strong>
         </div>
         <p className="eyebrow">{setup ? "FIRST RUN" : "WELCOME BACK"}</p>
-        <h1>{setup ? "Create the Optimizarr admin" : "Sign in"}</h1>
+        <h1>{setup ? "Create the Polisharr admin" : "Sign in"}</h1>
         <p>
           {setup
-            ? "This account is the only login. Choose a password you can remember; Optimizarr stores a hash, not the password itself."
+            ? "This account is the only login. Choose a password you can remember; Polisharr stores a hash, not the password itself."
             : "Use the administrator account created on first run."}
         </p>
         <label>

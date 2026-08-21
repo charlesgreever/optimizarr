@@ -14,8 +14,8 @@ This document covers every GitHub issue that was open during the audit. The audi
 | --- | --- | --- |
 | [#22: Transcode ISO files with ffmpeg; skip ffprobe](https://github.com/charlesgreever/optimizarr/issues/22) | Fixed; ready to close | Commits `782bba3`, `a8f1a2c`, and `4d81bf8` implement the superseding v2 ISO contract. ISO paths bypass ffprobe, ffmpeg listings populate inspection reports, unlisted ISOs remain custom-queueable, remux writes MKV, transcodes use the feature duration, and the output receives an integrity probe. Focused inspector, suggestion, and runner tests pass. |
 | [#24: Make library rows denser](https://github.com/charlesgreever/optimizarr/issues/24) | Fixed; ready to close | Movies and Series share ordered dense cells, normalized audio/subtitle labels, every plan reason, and explicit waiting/unreadable/none/healthy states. Public HTTP and row-helper tests cover the acceptance states. |
-| [#25: Assign a GB/hr-matched Arr profile](https://github.com/charlesgreever/optimizarr/issues/25) | Fixed; ready to close | Auto-assign defaults on but can be disabled. One predicate restricts assignment to successful, non-exempt video transcodes. Explicit sync creates or repairs only Optimizarr profiles. Fake Radarr/Sonarr tests cover assignment, skip cases, no search, and visible follow-up failures. |
-| [#26: PRD: Optimizarr v2](https://github.com/charlesgreever/optimizarr/issues/26) | Fixed; ready to close | The remaining dense-row, profile, and progressive-Series acceptance gaps are complete. [The v2 verification matrix](../docs/v2-verification.md) maps all 92 stories to passing evidence and records the integrated gate. |
+| [#25: Assign a GB/hr-matched Arr profile](https://github.com/charlesgreever/optimizarr/issues/25) | Fixed; ready to close | Auto-assign defaults on but can be disabled. One predicate restricts assignment to successful, non-exempt video transcodes. Explicit sync creates or repairs only Polisharr profiles. Fake Radarr/Sonarr tests cover assignment, skip cases, no search, and visible follow-up failures. |
+| [#26: PRD: Polisharr v2](https://github.com/charlesgreever/optimizarr/issues/26) | Fixed; ready to close | The remaining dense-row, profile, and progressive-Series acceptance gaps are complete. [The v2 verification matrix](../docs/v2-verification.md) maps all 92 stories to passing evidence and records the integrated gate. |
 | [#33: Queue bulk cancel and finished-row removal](https://github.com/charlesgreever/optimizarr/issues/33) | Fixed; ready to close | Authenticated Cancel all, Remove, and Clear finished flows now pass through HTTP and Queue UI. Active removal returns a conflict. Removed Queue rows retain the job data required by Review while History, sidecars, suggestions, and media remain intact. |
 | [#34: Track real Queue encode progress](https://github.com/charlesgreever/optimizarr/issues/34) | Fixed; ready to close | Commit `4c82334` makes ffmpeg emit machine-readable elapsed time. The runner maps it against media duration, progress stays below completion during encode, and the integrity phase precedes 100%. ISO remux progress uses the listed feature duration. Parser and phase-scaling tests pass. |
 | [#38: Heavy screens load slowly](https://github.com/charlesgreever/optimizarr/issues/38) | Fixed; closed | Batched bounded reads replace the per-row query path. Movies, Suggestions, Queue, Review, Errors, and History return progressive pages; Series returns paged headers first and fetches bounded episode pages only on expansion. Queue and Review suppress overlapping polls while retaining loaded pages. Home and the widget use aggregate counts. The 5,000-episode benchmark reduced the first Series payload from 3,787,645 bytes to 7,023 bytes. |
@@ -120,12 +120,12 @@ Files: `types.ts`, settings persistence/API, `Settings.tsx`, tests.
 
 Done when ISO remux-only, tracks-only, stereo-only, audio-only, exempt, and disabled-setting cases all return ineligible.
 
-### OI-025-2: Create or Repair Only Optimizarr Profiles
+### OI-025-2: Create or Repair Only Polisharr Profiles
 
 Files: `arr-profiles.ts`, fake HTTP tests.
 
-1. Define allowed qualities, cutoff, and upgrade behavior for each stable Optimizarr profile name.
-2. POST missing profiles and PUT drifted Optimizarr-named profiles during explicit sync.
+1. Define allowed qualities, cutoff, and upgrade behavior for each stable Polisharr profile name.
+2. POST missing profiles and PUT drifted Polisharr-named profiles during explicit sync.
 3. Report created, updated, unchanged, and failed names accurately.
 4. Preserve unrelated profiles and global quality-size definitions.
 

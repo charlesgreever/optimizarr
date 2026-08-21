@@ -8,7 +8,7 @@ import { Store } from "./store.ts";
 describe("inspection runner", () => {
   it("reinspects the promoted path before reporting success", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-reinspect-"));
-    const store = new Store(join(dir, "optimizarr.db"));
+    const store = new Store(join(dir, "polisharr.db"));
     const instanceId = store.upsertInstance({
       kind: "radarr",
       name: "Radarr",
@@ -67,7 +67,7 @@ describe("inspection runner", () => {
 
   it("turns an unexpected readability failure into a visible reinspection warning", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-reinspect-error-"));
-    const store = new Store(join(dir, "optimizarr.db"));
+    const store = new Store(join(dir, "polisharr.db"));
     const instanceId = store.upsertInstance({
       kind: "radarr",
       name: "Radarr",

@@ -8,7 +8,7 @@ The full-main review reported 18 unique findings. This document records the impl
 
 | Finding | Implemented behavior | Regression evidence |
 | --- | --- | --- |
-| Forwarded-address authentication bypass | Local login bypass reads the Node connection address. Forwarding headers apply only when `OPTIMIZARR_TRUST_PROXY=1`; `X-Real-IP` is never a peer-address source. | `app.test.ts`: spoofed local headers receive `401`. |
+| Forwarded-address authentication bypass | Local login bypass reads the Node connection address. Forwarding headers apply only when `POLISHARR_TRUST_PROXY=1`; `X-Real-IP` is never a peer-address source. | `app.test.ts`: spoofed local headers receive `401`. |
 | Arr key sent to an external poster host | Arr-hosted poster paths are preferred. The proxy adds `X-Api-Key` only when the resolved poster origin matches the configured Arr origin. | `arr.test.ts` and `app.test.ts`: local path selection and external-host header check. |
 | Plex token in refresh URL | Plex refresh uses the `X-Plex-Token` request header. | `promote.test.ts`: URL and header assertion. |
 | Review path checked against title folders | Sync stores `/api/v3/rootfolder` paths per Arr instance. Settings and sync reject review paths that contain, equal, or sit inside a stored root. | `app.test.ts`: a sibling of a title inside the Arr root is rejected. |

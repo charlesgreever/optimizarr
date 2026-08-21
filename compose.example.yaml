@@ -5,7 +5,7 @@
 #   docker compose up -d --build
 
 services:
-  optimizarr:
+  polisharr:
     build: .
     ports:
       - "7373:7373"

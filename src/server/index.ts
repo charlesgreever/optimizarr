@@ -6,5 +6,5 @@ const env = loadEnv();
 const { app } = createApp({ env });
 
 serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
-  console.log(`Optimizarr is listening on http://${info.address}:${info.port}`);
+  console.log(`Polisharr is listening on http://${info.address}:${info.port}`);
 });

@@ -1,4 +1,4 @@
-# PRD: Optimizarr Rewrite
+# PRD: Polisharr Rewrite
 
 Canonical v1 product spec. This document replaces GitHub issue #20. v2 is [v2 prd.md](v2%20prd.md) (issue #26).
 
@@ -6,13 +6,13 @@ Canonical v1 product spec. This document replaces GitHub issue #20. v2 is [v2 pr
 
 I run a Plex and Jellyfin library with Radarr, Sonarr, and a large NAS. A lot of the media is wasteful or awkward to play: huge files, H.264 that could be HEVC, dozens of subtitle and audio tracks that are not in my language, and surround or Atmos tracks that TVs cannot play without a sound system.
 
-I can fix individual files with ffmpeg and MKVtoolnix, and I already have one-off NVENC scripts, but that does not scale. I want a companion Arr app, Optimizarr, that sees the same library Radarr and Sonarr already know, tells me what is worth fixing, and does the work in a queue I can trust.
+I can fix individual files with ffmpeg and MKVtoolnix, and I already have one-off NVENC scripts, but that does not scale. I want a companion Arr app, Polisharr, that sees the same library Radarr and Sonarr already know, tells me what is worth fixing, and does the work in a queue I can trust.
 
 The first implementation proved the product is right and the execution is not. Sync blocked the UI while thousands of files were probed. Keep froze Review while a multi-gigabyte replace ran. A 4K movie was scored against the 1080p cap because the probe read cover art. Suggestion cards said "remux" without saying why. Force claimed success when nothing changed. Sixteen unread files showed up as a failed count with no path and no reason. Storage-aware NAS copies (SSH, clonefile, same-volume detection) added complexity without earning a v1 keep. I am starting the codebase over. The product stays. The old TypeScript does not.
 
 ## Solution
 
-Optimizarr is a portable companion container that syncs one or more Radarr and Sonarr libraries over their APIs, using the same network paths those apps report. It inspects each file in the background, compares it to tunable size-per-hour caps (movie vs TV, 1080p vs 4K, HDR vs SDR), and suggests work: transcode to HEVC (AV1 when hardware allows), strip non-preferred and untagged tracks, and add an AAC stereo track when the file is not already stereo.
+Polisharr is a portable companion container that syncs one or more Radarr and Sonarr libraries over their APIs, using the same network paths those apps report. It inspects each file in the background, compares it to tunable size-per-hour caps (movie vs TV, 1080p vs 4K, HDR vs SDR), and suggests work: transcode to HEVC (AV1 when hardware allows), strip non-preferred and untagged tracks, and add an AAC stereo track when the file is not already stereo.
 
 I land on a Home dashboard that shows files optimized, space saved, and what still needs attention. I browse Movies and Series as sortable tables with posters. Each row shows the plan for that title. I can act on that row: queue work, add stereo, or mark a sticky size-cap exemption so an archival copy keeps the large video and still gets language cleanup and stereo. Suggestions remains the filtered work list of everything that still needs work. Errors lists every file that could not be read, with the path and the reason.
 
@@ -23,7 +23,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 ## User Stories
 
 1. As a library owner, I want a companion Arr container I can install next to Radarr and Sonarr, so that optimization lives with the rest of my media stack.
-2. As a library owner, I want to run Optimizarr on ubuntuserver first, so that it can see my real `/mnt/nas` library and NVIDIA GPU.
+2. As a library owner, I want to run Polisharr on ubuntuserver first, so that it can see my real `/mnt/nas` library and NVIDIA GPU.
 3. As an operator installing the container anywhere, I want hardware encode to follow the device I pass in (CUDA or VAAPI), so that the same image works on NVIDIA and Intel or AMD boxes.
 4. As a first-time installer, I want a first-run flow that creates the admin account and collects Radarr/Sonarr instances, player apps, review path, and preferred language, so that I cannot start an optimize run half-configured.
 5. As a first-time installer, I want to confirm my preferred language once before the first optimize run, so that tracks are not stripped in the wrong language by accident.
@@ -36,11 +36,11 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 12. As an operator, I want PUID, PGID, and timezone environment, so that files written to the NAS have the same ownership as the Arrs.
 13. As an operator, I want HTTPS and API-key handling that never echoes secrets back in the UI after save, so that a screenshot of settings is safer.
 14. As an operator, I want a test-connection action for each Arr and each player, so that I find a bad token before the first Keep.
-15. As a library owner, I want Optimizarr to sync movies from every configured Radarr over the API, so that I do not maintain a second library index by hand.
-16. As a library owner, I want Optimizarr to sync series and episodes from every configured Sonarr over the API, so that TV is covered the same way as movies.
+15. As a library owner, I want Polisharr to sync movies from every configured Radarr over the API, so that I do not maintain a second library index by hand.
+16. As a library owner, I want Polisharr to sync series and episodes from every configured Sonarr over the API, so that TV is covered the same way as movies.
 17. As a library owner, I want multiple Radarr and Sonarr instances (for example 1080p and 4K), so that a split Arr setup still appears as one optimization library.
 18. As a library owner, I want each instance to have its own URL, API key, and enabled flag, so that I can add, pause, or remove an Arr without editing others.
-19. As a library owner, I want Optimizarr to use the same network paths Radarr and Sonarr report, so that a file the Arrs know is the file Optimizarr opens.
+19. As a library owner, I want Polisharr to use the same network paths Radarr and Sonarr report, so that a file the Arrs know is the file Polisharr opens.
 20. As a library owner, I want a sync that updates when I open the app and on a background interval, so that new imports and upgrades show up without a manual refresh.
 21. As a library owner, I want Arr sync to finish and show titles before ffprobe has walked the library, so that I am not staring at an empty Movies page during first import.
 22. As a library owner, I want new Radarr and Sonarr imports to be inspected automatically, so that I do not have to remember to scan each download.
@@ -50,18 +50,18 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 26. As a library owner, I want to browse series and episodes in an Arr-like view, so that TV is not a second-class list of files.
 27. As a library owner, I want library pages to be a sortable column-and-row table with the poster on the row, so that I can scan and sort a large library faster than with cards.
 28. As a library owner, I want each row to show current codec, bit depth, resolution, HDR type, quality, size, size-per-hour, audio, and subtitles, so that I can see why it was flagged.
-29. As a library owner, I want each row to show the optimization plan for that title in plain language, so that I do not have to open Suggestions to learn what Optimizarr would do.
+29. As a library owner, I want each row to show the optimization plan for that title in plain language, so that I do not have to open Suggestions to learn what Polisharr would do.
 30. As a library owner, I want to queue work, add stereo, force a suggestion, or set a size-cap exemption from the movie or episode row, so that I can act where I already am.
 31. As a library owner, I want episode rows to offer the same actions as movie rows, so that Series is not a read-only tree.
 32. As a library owner, I want an Optimize all episodes control on the series header, so that I can queue every episode of that show that already has open work.
 33. As a library owner, I want Optimize all episodes to skip healthy, unread, dismissed, and pending-review episodes, and to tell me how many were queued and how many were skipped, so that I do not invent work or stack jobs.
-34. As a library owner, I want posters synced from the Arr APIs and served through Optimizarr, so that the browser never needs an Arr API key.
+34. As a library owner, I want posters synced from the Arr APIs and served through Polisharr, so that the browser never needs an Arr API key.
 35. As a library owner, I want a missing poster to be a neutral placeholder, so that a broken image does not break the table.
 36. As a library owner, I want each title to show which Arr instance it came from, so that a 4K copy and a 1080p copy are not mixed up.
 37. As a library owner, I want episode vs movie rules applied from the Arr type (Sonarr vs Radarr), so that a 40-minute file is not scored as a movie.
 38. As a library owner, I want a suggestions page that lists only items with recommended work, so that I am not wading through files that are already fine.
 39. As a library owner, I want to approve one suggestion or a whole plan onto the queue from Suggestions, so that I still have one place to work the backlog.
-40. As a library owner, I want to reject or dismiss a suggestion, so that Optimizarr stops nagging me about a file I want to leave alone.
+40. As a library owner, I want to reject or dismiss a suggestion, so that Polisharr stops nagging me about a file I want to leave alone.
 41. As a library owner, I want bulk-approve for a movie, a series, or a filtered list, so that I can work a season or a 4K pile at once.
 42. As a library owner, I want filters for movie vs TV, resolution, HDR, codec, over-cap, extra tracks, exemptions, and hardware warnings, so that I can work one problem type at a time.
 43. As a library owner, I want search by title and show name, so that I can find one film or every Ted Lasso row without scrolling the whole library.
@@ -88,7 +88,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 64. As a library owner, I want a tracks-only plan to leave After size and GB/hour blank rather than repeat Now as a fake target, so that I do not think the video will shrink.
 65. As a library owner, I want a forced tracks-only job that has no extra languages to avoid claiming tracks will be dropped, so that the reason matches the plan.
 66. As a library owner, I want estimated space savings on size-related suggestions, so that I can prioritize the biggest wins.
-67. As a library owner, I want already-good files (under cap or exempt, preferred-language tracks only, stereo already present or not required) to show as healthy, so that I know Optimizarr looked and said no work.
+67. As a library owner, I want already-good files (under cap or exempt, preferred-language tracks only, stereo already present or not required) to show as healthy, so that I know Polisharr looked and said no work.
 68. As a library owner, I want size caps expressed as GB (or MB) per hour, so that a 45-minute episode and a 3-hour film are judged fairly.
 69. As a library owner, I want separate tunable caps for Movie 1080p, Movie 4K SDR, Movie 4K HDR, TV 1080p, and TV 4K, so that TV and movies are not forced into one budget.
 70. As a library owner, I want shipped defaults of 2.5 / 6 / 8 / 1.0 / 4.0 GB per hour for those categories, so that I have a sensible starting point.
@@ -120,7 +120,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 96. As a library owner, I want exemption to apply only to that movie or that episode, so that marking one Ted Lasso episode archival does not exempt the whole show.
 97. As a library owner, I want to clear an exemption from the same row, so that I can later decide the file should meet the cap after all.
 98. As a TV watcher, I want a stereo AAC track suggested when the file has Atmos or more than 5.1, so that a TV without surround can play dialogue.
-99. As a TV watcher, I want adding AAC stereo available on any file that is not already stereo, so that I can add it even when Optimizarr did not auto-suggest it.
+99. As a TV watcher, I want adding AAC stereo available on any file that is not already stereo, so that I can add it even when Polisharr did not auto-suggest it.
 100. As a TV watcher, I want the original surround or Atmos track left in the file, so that the living-room AVR still gets the fancy mix.
 101. As a library owner, I want chapters and attachments copied when we mux or transcode, so that extras and fonts do not disappear.
 102. As a library owner, I want track cleanup and stereo mux to use MKVtoolnix (`mkvmerge`), so that those jobs finish faster than an ffmpeg remux.
@@ -191,14 +191,14 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 167. As a library owner, I want space saved to be the sum of (original size minus kept sidecar size) for successful Keeps, so that the tally is a real number I can trust.
 168. As a library owner, I want files optimized to count successful Keeps, so that a discarded sidecar does not inflate the total.
 169. As a library owner, I want Home empty-state copy that tells me to connect an Arr and wait for inspect when nothing has been kept yet, so that a new install is not a blank dashboard.
-170. As a library owner, I want activity history (finished, flagged, discarded, kept, failed, cancelled), so that I can see what Optimizarr already did.
+170. As a library owner, I want activity history (finished, flagged, discarded, kept, failed, cancelled), so that I can see what Polisharr already did.
 171. As a library owner, I want to exclude a path, quality profile, tag, or individual title from suggestions, so that a reference archive or kids profile is left alone.
 172. As an operator, I want to connect Plex and Jellyfin with their own URLs and tokens, so that notify is explicit and testable.
 173. As a Plex user in the living room, I want optimized files to direct-play more often on a TV without surround, so that I am not waiting on a live transcode.
 174. As a Plex user, I want smaller HEVC files, so that the NAS lasts longer and remote streams are less painful.
 175. As a library owner, I want the shell to follow Arr information architecture (Home, Movies, Series, Suggestions, Queue, Review, Errors, History, Settings) with a Vision UI-inspired dark glass look, so that I can find things in a modern Arr companion.
 176. As a library owner, I want iconography that matches the action: distinct sidebar icons, distinct row actions (queue, stereo, exempt, Keep, Discard, help), and distinct queue phases, so that I can scan the UI without reading every label.
-177. As a library owner, I want a favicon and mobile header mark that read as Optimizarr, so that the tab and the phone menu match the app.
+177. As a library owner, I want a favicon and mobile header mark that read as Polisharr, so that the tab and the phone menu match the app.
 178. As a mobile user on the LAN, I want the UI to work on a phone browser, so that I can Keep or Discard from the couch.
 179. As a first-time user, I want on-page help on every primary view that explains what the buttons do and how the workflow runs (inspect, suggest, queue, review, Keep), so that I do not need a separate wiki.
 180. As a first-time user, I want help copy to define sidecar, Keep, size cap, exemption, and tracks-only in everyday words, so that a junior operator is not expected to know Arr jargon.
@@ -227,9 +227,9 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 
 ## Implementation Decisions
 
-- This is a greenfield companion app. Do not copy, move, or wrap the previous Optimizarr TypeScript, tests, Docker image, or plan file. Keep `ENGINEERING_STANDARDS.md` (ENG-01 through ENG-14) and `CODING_STANDARDS.md` as the code and prose standards. Cite those ids in review.
+- This is a greenfield companion app. Do not copy, move, or wrap the previous Polisharr TypeScript, tests, Docker image, or plan file. Keep `ENGINEERING_STANDARDS.md` (ENG-01 through ENG-14) and `CODING_STANDARDS.md` as the code and prose standards. Cite those ids in review.
 - New portable companion container, not a plugin inside Radarr or Sonarr. First test deploy is ubuntuserver on the same Docker network and NAS mount the Arrs already use (`/mnt/nas`, network `arr_net`).
-- Library of record stays in Radarr and Sonarr. Optimizarr syncs via their APIs and treats reported file paths as authoritative. No path-translation layer in v1.
+- Library of record stays in Radarr and Sonarr. Polisharr syncs via their APIs and treats reported file paths as authoritative. No path-translation layer in v1.
 - Multiple Arr instances are first-class: each has URL, API key, and enable flag. Movies come from Radarr instances, episodes from Sonarr instances.
 - Arr sync and inspect are separate jobs. Persist library rows (and artwork URLs) as soon as the Arr APIs return. Return refresh as soon as lists are stored. Probe in the background with a small concurrency cap. Never re-probe when path and size match. Bound retries, then record a distinct Error. Do not increment a forever-growing failed counter.
 - New imports are inspected automatically. There is no auto-optimize in v1. Every encode, mux, or stereo job waits for approval (or for an explicit row action that queues that title).
@@ -287,7 +287,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Auth: set password, login, bad password, logout, session expiry, optional local bypass on/off. No plaintext password at rest. Widget route: key works, missing key on a public IP is 401, payload has no secrets or paths.
 - Report: the GitHub URL encodes route and inspect leftovers; a sample path or secret is absent from the query.
 - Web UI / HTTP: bounded Movies, Suggestions, Queue, Review, Errors, and History pages; Series summaries; episodes for one expanded show; search `q`; enqueue; Keep/Discard; Home payload; settings. Seeded list tests assert first-page cardinality and continuation metadata. Large-library tests assert a bounded first response and no episode payload before expansion. Polling cleanup when a request is still in flight. Force/stereo HTTP: unreadable is not 200; stereo no-op is not 200.
-- Prior art: the previous Optimizarr test suite is not to be reused. Tests are written next to the new modules, with fixtures, not the live NAS.
+- Prior art: the previous Polisharr test suite is not to be reused. Tests are written next to the new modules, with fixtures, not the live NAS.
 
 ## Out of Scope
 
@@ -299,9 +299,9 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Storage-aware transfers: SSH to the NAS, clonefile, same-volume detection, CIFS/NFS path maps, and copy-to-local-disk before encode.
 - Writing sidecars into movie or show library folders.
 - Live or on-the-fly playback transcoding (that remains the player’s job).
-- Path mapping between different mount layouts in v1 (Optimizarr must see the same paths as the Arrs).
+- Path mapping between different mount layouts in v1 (Polisharr must see the same paths as the Arrs).
 - Guaranteeing Dolby Vision or HDR10+ metadata survival through hardware encode.
-- Migrating or wrapping the previous Optimizarr codebase or the older Windows/WSL `ffmpeg-reencode` scripts.
+- Migrating or wrapping the previous Polisharr codebase or the older Windows/WSL `ffmpeg-reencode` scripts.
 - Multi-user accounts or SSO beyond a single Arr-style admin login.
 - Changing library files in place before Keep.
 - Series-wide or season-wide size exemptions.
@@ -315,5 +315,5 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - The current open-issue audit, fixed-issue evidence, and remaining implementation sequence live in [open-issues.md](../plans/open-issues.md).
 - First install target is ubuntuserver, which already runs Radarr, Sonarr, Plex, Jellyfin, and an NVIDIA stack. CUDA is the on-box encode path; VAAPI remains required for portable installs.
 - Media lives on the Synology Plex share mounted at the same network path the Arrs use. The review path must also live on the NAS but outside those library roots.
-- The operator already has working HEVC NVENC and English-only remux habits. Optimizarr should feel like that workflow with a library, suggestions, review, and a running savings tally, not a blank ffmpeg form.
+- The operator already has working HEVC NVENC and English-only remux habits. Polisharr should feel like that workflow with a library, suggestions, review, and a running savings tally, not a blank ffmpeg form.
 - After this PRD is accepted, the existing application tree is wiped. A later agent writes a new implementation plan from this document. That plan must not import the old code.

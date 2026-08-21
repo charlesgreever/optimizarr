@@ -9,7 +9,7 @@ export function ErrorsPage() {
   return (
     <section>
       <PageHead title="Errors" />
-      <Help>Each row is one file Optimizarr could not read or probe. The count is distinct files, not retry attempts.</Help>
+      <Help>Each row is one file Polisharr could not read or probe. The count is distinct files, not retry attempts.</Help>
       {items.length === 0 && list.loading && <div className="empty">Loading errors…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">No unread files. Nothing needs attention here.</div>}
       {items.length > 0 && (

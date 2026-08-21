@@ -1,10 +1,10 @@
-# Plan: Optimizarr Rewrite
+# Plan: Polisharr Rewrite
 
 > Source PRD: `docs/prd.md` on `main` at commit `81f2f72`
 
 ## How to use this plan
 
-Implement the phases in order. Each phase is a thin, testable increment and must leave the application runnable. Write tests against public behavior in the same phase as the behavior. Apply `ENGINEERING_STANDARDS.md` and `CODING_STANDARDS.md` throughout; user story 185 therefore applies to every phase. Do not import code, tests, images, containers, or plans from the retired Optimizarr implementation.
+Implement the phases in order. Each phase is a thin, testable increment and must leave the application runnable. Write tests against public behavior in the same phase as the behavior. Apply `ENGINEERING_STANDARDS.md` and `CODING_STANDARDS.md` throughout; user story 185 therefore applies to every phase. Do not import code, tests, images, containers, or plans from the retired Polisharr implementation.
 
 ## Architectural decisions
 
@@ -41,7 +41,7 @@ Create the new TypeScript service, web application, test harness, and developmen
 ### Acceptance criteria
 
 - [ ] A clean checkout installs, type-checks, tests, builds, and starts with documented commands.
-- [ ] The browser renders an Optimizarr placeholder and the health endpoint returns a typed success payload.
+- [ ] The browser renders an Polisharr placeholder and the health endpoint returns a typed success payload.
 - [ ] Strict TypeScript is enabled, no `any` is introduced, and tests observe only public behavior.
 
 ---
@@ -292,7 +292,7 @@ Synchronize all enabled Sonarr instances into a unified series library while pre
 
 ### What to build
 
-Persist Arr artwork references and serve poster bytes through authenticated Optimizarr routes with a neutral fallback.
+Persist Arr artwork references and serve poster bytes through authenticated Polisharr routes with a neutral fallback.
 
 ### Acceptance criteria
 
@@ -1242,7 +1242,7 @@ Adapt navigation, tables, controls, Review actions, and bulk Keep for practical 
 
 - [ ] Movies, Series, Queue, and Review remain readable without hiding required identity or state.
 - [ ] Keep, Discard, Cancel, and selection controls have usable touch targets.
-- [ ] The mobile header carries the Optimizarr mark and provides access to every primary view.
+- [ ] The mobile header carries the Polisharr mark and provides access to every primary view.
 
 ---
 

@@ -147,12 +147,12 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             checked={data.profileAutoAssign}
             onChange={(event) => setData({ ...data, profileAutoAssign: event.target.checked })}
           />
-          Assign an Optimizarr profile after an eligible video transcode
+          Assign an Polisharr profile after an eligible video transcode
         </label>
         <button className="btn" type="button" onClick={() => void api.syncProfiles().then((r) => setMsg(r.results.map((x) => `${x.created.length} created, ${x.updated.length} updated`).join(" · ") || "Profiles synced.")).catch((e: Error) => setMsg(e.message))}>
           Sync quality profiles
         </button>
-        <p className="help">Sync creates or repairs Optimizarr-named profiles without changing other profiles or global quality-size limits. Auto-assign applies only after a video transcode and never starts a search. Sonarr assigns the profile to the whole series.</p>
+        <p className="help">Sync creates or repairs Polisharr-named profiles without changing other profiles or global quality-size limits. Auto-assign applies only after a video transcode and never starts a search. Sonarr assigns the profile to the whole series.</p>
       </div>
       <EncodeSettings
         data={data}
