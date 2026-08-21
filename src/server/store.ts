@@ -303,6 +303,14 @@ export class Store {
     this.db.prepare("UPDATE library_items SET size_exempt = ? WHERE id = ?").run(exempt ? 1 : 0, id);
   }
 
+  updateItemFile(id: string, path: string, sizeBytes: number): void {
+    this.db.prepare("UPDATE library_items SET path = ?, size_bytes = ? WHERE id = ?").run(path, sizeBytes, id);
+  }
+
+  deleteInspection(itemId: string): void {
+    this.db.prepare("DELETE FROM inspections WHERE item_id = ?").run(itemId);
+  }
+
   saveInspection(itemId: string, report: InspectionReport): void {
     this.db
       .prepare("INSERT OR REPLACE INTO inspections (item_id, source_sig, report) VALUES (?, ?, ?)")

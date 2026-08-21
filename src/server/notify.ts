@@ -14,7 +14,10 @@ export async function notifyPlayers(players: PlayerNotify[], httpFetch: typeof f
         const res = await httpFetch(`${trimUrl(player.url)}/library/sections/all/refresh?X-Plex-Token=${encodeURIComponent(player.token)}`);
         if (!res.ok) errors.push(`Plex at ${player.url} returned HTTP ${res.status}.`);
       } else {
-        const res = await httpFetch(`${trimUrl(player.url)}/Library/refresh`, { headers: { "X-Emby-Token": player.token } });
+        const res = await httpFetch(`${trimUrl(player.url)}/Library/Refresh`, {
+          method: "POST",
+          headers: { "X-Emby-Token": player.token },
+        });
         if (!res.ok) errors.push(`Jellyfin at ${player.url} returned HTTP ${res.status}.`);
       }
     } catch {

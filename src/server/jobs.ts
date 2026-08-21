@@ -175,6 +175,9 @@ export class JobService {
           this.opts.store.addHistory(item.id, "failed", 0, this.now());
           return;
         }
+        this.opts.store.updateItemFile(item.id, outcome.destPath, result.output.sizeBytes);
+        this.opts.store.deleteInspection(item.id);
+        this.opts.store.clearFileError(item.path);
         this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1, promoteError: outcome.warning });
         this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
         return;
@@ -249,6 +252,9 @@ export class JobService {
       return;
     }
     this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
+    this.opts.store.updateItemFile(item.id, outcome.destPath, review.sidecar.sizeBytes ?? item.sizeBytes);
+    this.opts.store.deleteInspection(item.id);
+    this.opts.store.clearFileError(item.path);
     this.opts.store.deleteReview(reviewId);
     if (outcome.warning && job) this.opts.store.updateJob(job.id, { promoteError: outcome.warning });
   }

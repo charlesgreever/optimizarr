@@ -24,7 +24,7 @@ export type PromoteResult = {
   error: string | null;
 };
 
-export async function replaceLibraryFile(outputPath: string, destPath: string): Promise<void> {
+export async function replaceLibraryFile(outputPath: string, destPath: string, originalPath = destPath): Promise<void> {
   const dir = dirname(destPath);
   const staged = join(dir, `${Date.now()}-${Math.random().toString(16).slice(2)}.opt-new`);
   const backup = `${destPath}.opt-old`;
@@ -47,6 +47,7 @@ export async function replaceLibraryFile(outputPath: string, destPath: string): 
   }
   await unlink(backup).catch(() => undefined);
   if (outputPath !== destPath) await unlink(outputPath).catch(() => undefined);
+  if (originalPath !== destPath) await unlink(originalPath).catch(() => undefined);
 }
 
 export function promotedPath(sourcePath: string, plan?: ExecutablePlan): string {
@@ -58,7 +59,7 @@ export function promotedPath(sourcePath: string, plan?: ExecutablePlan): string 
 export async function promote(input: PromoteInput): Promise<PromoteResult> {
   const destPath = promotedPath(input.item.path, input.plan);
   try {
-    await replaceLibraryFile(input.outputPath, destPath);
+    await replaceLibraryFile(input.outputPath, destPath, input.item.path);
   } catch (error) {
     return {
       replaced: false,
@@ -74,7 +75,8 @@ export async function promote(input: PromoteInput): Promise<PromoteResult> {
     const msg = await refreshArr(input.instance.kind, input.instance.url, input.decrypt(input.instance.secret), arrId, input.fetch);
     if (msg) warning = msg;
   }
-  await notifyPlayers(input.players, input.fetch);
+  const playerErrors = await notifyPlayers(input.players, input.fetch);
+  if (playerErrors.length) warning = warning ? `${warning} ${playerErrors.join(" ")}` : playerErrors.join(" ");
   void planHasVideoTranscode;
   return {
     replaced: true,
