@@ -144,9 +144,55 @@ a {
   border-radius: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .shell header small {
   color: #70efc9;
   white-space: nowrap;
+}
+
+.report-bug {
+  position: relative;
+}
+
+.report-bug-toggle {
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.report-bug-menu {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  z-index: 6;
+  display: grid;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid #ffffff1c;
+  border-radius: 10px;
+  background: #0b101c;
+  box-shadow: 0 15px 45px #0009;
+}
+
+.report-bug-menu button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #dce7f7;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-bug-menu button:hover {
+  background: #ffffff0c;
 }
 
 .search-results {

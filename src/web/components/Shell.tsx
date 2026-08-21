@@ -1,6 +1,7 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
+import { downloadBlob, submitReport, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
 const NAV = [
@@ -96,7 +97,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </div>
-          <small>{inspecting ? `Inspecting · ${inspect?.pending ?? 0} left` : "● Ready"}</small>
+          <div className="header-actions">
+            <ReportBug inspect={inspect} />
+            <small>{inspecting ? `Inspecting · ${inspect?.pending ?? 0} left` : "● Ready"}</small>
+          </div>
         </header>
         {inspecting && (
           <div className="inspect-banner">
@@ -108,6 +112,66 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </main>
     </div>
   );
+}
+
+function ReportBug({ inspect }: { inspect: InspectState | null }) {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function report(kind: ReportKind) {
+    setOpen(false);
+    setBusy(true);
+    try {
+      const jobs = await api.jobs();
+      const running = jobs.items.find((job) => job.status === "running") ?? null;
+      await submitReport(
+        kind,
+        {
+          route: location.pathname,
+          inspect,
+          running,
+        },
+        {
+          capture: capturePage,
+          download: downloadBlob,
+          open: (url) => {
+            window.open(url, "_blank", "noopener,noreferrer");
+          },
+        },
+      );
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="report-bug">
+      <button className="btn-secondary report-bug-toggle" type="button" onClick={() => setOpen((v) => !v)} disabled={busy}>
+        {Icons.bug()}
+        <span>{busy ? "Preparing…" : "Report a bug"}</span>
+      </button>
+      {open && !busy && (
+        <div className="report-bug-menu">
+          <button type="button" onClick={() => void report("bug")}>
+            Bug
+          </button>
+          <button type="button" onClick={() => void report("change")}>
+            Change request
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function capturePage(): Promise<Blob> {
+  const { toBlob } = await import("html-to-image");
+  const root = document.querySelector(".shell") ?? document.body;
+  const blob = await toBlob(root as HTMLElement, { cacheBust: true, pixelRatio: 1 });
+  if (!blob) throw new Error("Could not capture this page.");
+  return blob;
 }
 
 export function PageHead({ title, children }: { title: string; children?: React.ReactNode }) {
