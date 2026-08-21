@@ -10,7 +10,10 @@ import {
   muxArgs,
   nvencBitrate,
   optimizeSteps,
+  parseFfmpegProgress,
+  parseMkvmergeProgress,
   planFromSuggestion,
+  scaleProgress,
 } from "./optimize.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
@@ -110,6 +113,8 @@ describe("ffmpeg encode arguments", () => {
     } satisfies OptimizeRequest;
     const args = encodeArgs(source, "/tmp/out.mkv", req);
     expect(args.slice(0, 4)).toEqual(["-hide_banner", "-nostdin", "-loglevel", "error"]);
+    expect(args).toContain("-progress");
+    expect(args).toContain("pipe:1");
     expect(args).toContain("hevc_nvenc");
     expect(args).toContain("main10");
     expect(args).toContain("p010le");
@@ -328,6 +333,26 @@ describe("ffmpeg encode arguments", () => {
         conservative: false,
       }),
     ).toThrow(/duration/i);
+  });
+});
+
+describe("tool progress", () => {
+  it("reads encode time from ffmpeg progress lines", () => {
+    expect(parseFfmpegProgress("frame=12\nout_time_ms=90000000\nprogress=continue\n")).toBe(90);
+    expect(parseFfmpegProgress("out_time_us=15000000\n")).toBe(15);
+    expect(parseFfmpegProgress("out_time=00:02:05.50\n")).toBeCloseTo(125.5, 1);
+    expect(parseFfmpegProgress("out_time_ms=N/A\n")).toBeNull();
+  });
+
+  it("reads mkvmerge percent lines", () => {
+    expect(parseMkvmergeProgress("Progress: 45%\n")).toBe(0.45);
+    expect(parseMkvmergeProgress("Progress: 100%\n")).toBe(1);
+  });
+
+  it("maps a phase ratio onto the overall job bar", () => {
+    expect(scaleProgress(0.5, 0.9, 0)).toBe(0.5);
+    expect(scaleProgress(0.5, 0.9, 1)).toBe(0.9);
+    expect(scaleProgress(0.5, 0.9, 0.5)).toBeCloseTo(0.7, 5);
   });
 });
 

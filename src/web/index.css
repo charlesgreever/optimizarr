@@ -385,6 +385,25 @@ table.dense td {
   font-size: 0.82rem;
 }
 
+.job-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 8rem;
+}
+
+.job-progress-bar {
+  height: 8px;
+  min-width: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #62e7d5, #8bf8e2);
+}
+
+.job-progress span {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+
 table.dense a {
   color: var(--accent);
   text-decoration: none;

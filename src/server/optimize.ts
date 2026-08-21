@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { copyFile, mkdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
@@ -87,24 +87,34 @@ export function ffmpegOptimizer(): Optimizer {
     const temps: string[] = [];
     try {
       let current = req.sourcePath;
+      const emit = progressEmitter(req.onPhase);
       if (isIsoPath(req.sourcePath)) {
-        req.onPhase?.("muxing", 0.2);
+        emit("muxing", 0.02);
         const remuxed = join(workDir, `${Date.now()}-iso.mkv`);
         temps.push(remuxed);
-        await remuxIso(req.ffmpeg, req.ffprobe, current, remuxed, req.report);
+        await remuxIso(req.ffmpeg, req.ffprobe, current, remuxed, req.report, {
+          onTime: (sec) => emit("muxing", scaleProgress(0.02, 0.28, sec / Math.max(req.report.durationSec, 1))),
+          isCancelled: req.isCancelled,
+        });
         current = remuxed;
       }
       const extras = await createAudioExtras(req, plan, workDir, current, temps);
       if (needsMux(plan) || extras.length) {
-        req.onPhase?.("muxing", 0.35);
+        emit("muxing", 0.3);
         const muxed = join(workDir, `${Date.now()}-mux.mkv`);
         temps.push(muxed);
-        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras));
+        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras), {
+          onChunk: (text) => {
+            const ratio = parseMkvmergeProgress(text);
+            if (ratio != null) emit("muxing", scaleProgress(0.3, 0.42, ratio));
+          },
+          isCancelled: req.isCancelled,
+        });
         current = muxed;
       }
       if (planHasVideoTranscode(plan)) {
         if (req.isCancelled?.()) throw new CancelledError();
-        req.onPhase?.("transcoding", 0.5);
+        emit("transcoding", 0.45);
         const encodeReport = await probeOutput(req.ffprobe, current).catch(() => req.report);
         const encoded = join(workDir, `${Date.now()}-enc.mkv`);
         temps.push(encoded);
@@ -116,10 +126,17 @@ export function ffmpegOptimizer(): Optimizer {
           : encodeReport.durationSec > 1
             ? encodeReport
             : req.report;
-        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }));
+        const durationSec = Math.max(durationReport.durationSec, 1);
+        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }), {
+          onChunk: (text) => {
+            const sec = parseFfmpegProgress(text);
+            if (sec != null) emit("transcoding", scaleProgress(0.45, 0.92, sec / durationSec));
+          },
+          isCancelled: req.isCancelled,
+        });
         current = encoded;
       }
-      req.onPhase?.("finishing", 0.9);
+      emit("finishing", 0.95);
       if (current !== sidecarPath) await copyFile(current, sidecarPath);
       const output = await probeOutput(req.ffprobe, sidecarPath);
       if (output.durationSec <= 0 || (req.report.durationSec > 0 && output.durationSec < req.report.durationSec * 0.9)) {
@@ -261,6 +278,9 @@ export function isoRemuxArgSets(source: string, dest: string, report?: Inspectio
     "-nostdin",
     "-loglevel",
     "error",
+    "-nostats",
+    "-progress",
+    "pipe:1",
     "-y",
     "-analyzeduration",
     "100M",
@@ -282,11 +302,18 @@ async function remuxIso(
   source: string,
   dest: string,
   report: InspectionReport,
+  progress?: { onTime?: (sec: number) => void; isCancelled?: () => boolean },
 ): Promise<void> {
   let lastError: unknown;
   for (const args of isoRemuxArgSets(source, dest, report)) {
     try {
-      await run(ffmpeg, args);
+      await run(ffmpeg, args, {
+        onChunk: (text) => {
+          const sec = parseFfmpegProgress(text);
+          if (sec != null) progress?.onTime?.(sec);
+        },
+        isCancelled: progress?.isCancelled,
+      });
       const remuxed = await probeOutput(ffprobe, dest).catch(() => null);
       if (!remuxed || isoRemuxIsShort(report.durationSec, remuxed.durationSec)) {
         await safeUnlink(dest);
@@ -352,7 +379,7 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     ? req.backend === "vaapi" ? "av1_vaapi" : "av1_nvenc"
     : req.backend === "vaapi" ? "hevc_vaapi" : "hevc_nvenc";
   const tenBit = (video && video.kind !== "copy" ? video.bitDepth : req.report.bitDepth) >= 10;
-  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source];
+  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-y", "-i", source];
   if (req.backend === "vaapi") args.push("-vaapi_device", "/dev/dri/renderD128");
   args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?");
   if (video?.kind !== "copy" && video?.downscale1080p) args.push("-vf", "scale=1920:1080");
@@ -388,13 +415,81 @@ export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"
   return bitrate;
 }
 
-async function run(bin: string, args: string[]): Promise<void> {
-  try {
-    await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024 });
-  } catch (error) {
-    const err = error as { message?: string; stderr?: string };
-    throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr }));
+export function parseFfmpegProgress(text: string): number | null {
+  const us = [...text.matchAll(/out_time_us=(\d+)/g)].pop();
+  if (us) return Number(us[1]) / 1_000_000;
+  // ffmpeg's out_time_ms is microseconds despite the name.
+  const ms = [...text.matchAll(/out_time_ms=(\d+)/g)].pop();
+  if (ms) return Number(ms[1]) / 1_000_000;
+  const clock = [...text.matchAll(/out_time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)].pop();
+  if (clock) return Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+  return null;
+}
+
+export function parseMkvmergeProgress(text: string): number | null {
+  const match = [...text.matchAll(/Progress:\s*(\d+(?:\.\d+)?)%/g)].pop();
+  return match ? Math.min(1, Number(match[1]) / 100) : null;
+}
+
+export function scaleProgress(start: number, end: number, ratio: number): number {
+  const r = Math.min(1, Math.max(0, ratio));
+  return start + (end - start) * r;
+}
+
+function progressEmitter(
+  onPhase?: (phase: "muxing" | "creating_stereo" | "transcoding" | "finishing", progress: number) => void,
+): (phase: "muxing" | "creating_stereo" | "transcoding" | "finishing", progress: number) => void {
+  let lastValue = -1;
+  let lastAt = 0;
+  return (phase, progress) => {
+    const now = Date.now();
+    if (progress < lastValue + 0.002 && now - lastAt < 400) return;
+    lastValue = progress;
+    lastAt = now;
+    onPhase?.(phase, progress);
+  };
+}
+
+async function run(
+  bin: string,
+  args: string[],
+  opts?: { onChunk?: (text: string) => void; isCancelled?: () => boolean },
+): Promise<void> {
+  if (!opts?.onChunk && !opts?.isCancelled) {
+    try {
+      await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024 });
+      return;
+    } catch (error) {
+      const err = error as { message?: string; stderr?: string };
+      throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr }));
+    }
   }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    const onCancel = setInterval(() => {
+      if (opts.isCancelled?.()) child.kill("SIGTERM");
+    }, 400);
+    child.stdout.on("data", (buf: Buffer) => {
+      opts.onChunk?.(buf.toString("utf8"));
+    });
+    child.stderr.on("data", (buf: Buffer) => {
+      stderr = (stderr + buf.toString("utf8")).slice(-2_000_000);
+    });
+    child.on("error", (error) => {
+      clearInterval(onCancel);
+      reject(new Error(formatToolError(bin, { message: error.message, stderr })));
+    });
+    child.on("close", (code) => {
+      clearInterval(onCancel);
+      if (opts.isCancelled?.()) {
+        reject(new CancelledError());
+        return;
+      }
+      if (code === 0) resolve();
+      else reject(new Error(formatToolError(bin, { stderr })));
+    });
+  });
 }
 
 async function probeOutput(ffprobe: string, path: string): Promise<InspectionReport> {

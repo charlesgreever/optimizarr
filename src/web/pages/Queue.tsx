@@ -7,14 +7,14 @@ export function QueuePage() {
   const load = () => void api.jobs().then((r) => setItems(r.items));
   useEffect(() => {
     load();
-    const id = setInterval(load, 3000);
+    const id = setInterval(load, 1000);
     return () => clearInterval(id);
   }, []);
 
   return (
     <section>
       <PageHead title="Queue" />
-      <Help>Queue is approved work that has not finished. Phase names the real step. Cancel never replaces the library file.</Help>
+      <Help>Queue is approved work that has not finished. Progress during a remux or transcode is elapsed media time, updated about once a second. Cancel never replaces the library file.</Help>
       {items.length === 0 ? (
         <div className="empty">The queue is idle. Approve a suggestion to add work.</div>
       ) : (
@@ -35,7 +35,16 @@ export function QueuePage() {
                   <td>{job.displayTitle}</td>
                   <td>{job.status}</td>
                   <td>{phaseLabel(job.phase, job.status)}</td>
-                  <td>{job.status === "running" ? `${Math.round(job.progress * 100)}%` : "—"}</td>
+                  <td>
+                    {job.status === "running" ? (
+                      <div className="job-progress">
+                        <div className="job-progress-bar" style={{ width: `${Math.max(1, Math.round(job.progress * 100))}%` }} />
+                        <span>{Math.round(job.progress * 100)}%</span>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>
                     {(job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused") && (
                       <button className="btn-secondary" type="button" onClick={() => void api.cancel(job.id).then(load)}>
