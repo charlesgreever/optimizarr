@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isIsoPath, parseFfprobe, parseFfmpegListing, pickPlayableVideo, trackEditingAvailable, unlistedIsoReport } from "./inspect.ts";
+import {
+  isIsoPath,
+  longestBlurayPlaylist,
+  parseFfprobe,
+  parseFfmpegListing,
+  parseListedDuration,
+  pickPlayableVideo,
+  trackEditingAvailable,
+  unlistedIsoReport,
+} from "./inspect.ts";
 import { isoFailedFfmpeg, isoListedFfmpeg, mkv4kHdrFfprobe, mkvNormalFfprobe } from "./fixtures/index.ts";
 
 describe("parseFfprobe", () => {
@@ -89,5 +98,27 @@ describe("parseFfprobe", () => {
     expect(report.sourceMethod).toBe("iso_ffmpeg");
     expect(report.listingState).toBe("iso_unlisted");
     expect(trackEditingAvailable(report)).toBe(false);
+  });
+
+  it("picks the longest usable Blu-ray playlist and skips 0-channel dummy audio", () => {
+    const listing = [
+      "[bluray @ 0x1] 12 usable playlists:",
+      "[bluray @ 0x1] playlist 00000.mpls (2:26:16)",
+      "[bluray @ 0x1] playlist 00010.mpls (2:24:56)",
+      "[bluray @ 0x1] playlist 00011.mpls (0:11:08)",
+      "Input #0, mpegts, from 'bluray:/mnt/nas/Catching Fire.iso':",
+      "  Duration: 02:26:16.39, start: 4199.000000, bitrate: 74062 kb/s",
+      "  Stream #0:0[0x1011]: Video: hevc (Main 10), yuv420p10le, 3840x2160",
+      "  Stream #0:1[0x1100](eng): Audio: truehd, 48000 Hz, 7.1",
+      "  Stream #0:2[0x1101](eng): Audio: ac3, 48000 Hz, 5.1(side)",
+      "  Stream #0:10[0x1fff]: Audio: ac3, 0 channels",
+    ].join("\n");
+    expect(parseListedDuration(listing)).toBeCloseTo(8776.39, 1);
+    expect(longestBlurayPlaylist(listing)).toEqual({ id: 0, durationSec: 2 * 3600 + 26 * 60 + 16 });
+    const report = parseFfmpegListing("/mnt/nas/Catching Fire.iso", 40_000_000_000, listing);
+    expect(report.isoPlaylist).toBe(0);
+    expect(report.durationSec).toBeGreaterThan(8700);
+    expect(report.audio.some((t) => t.index === 10 && t.channels === 0)).toBe(true);
+    expect(report.audio.find((t) => t.index === 1)?.channels).toBe(8);
   });
 });

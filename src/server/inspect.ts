@@ -32,6 +32,7 @@ export function parseFfprobe(path: string, sizeBytes: number, probe: Record<stri
     sourceMethod: "ffprobe",
     listingState: "complete",
     durationSec,
+    isoPlaylist: null,
     sizeBytes,
     sizePerHourGb: hours > 0 ? sizeBytes / (1024 ** 3) / hours : 0,
     videoCodec: stringOr(video?.codec_name, "unknown"),
@@ -133,6 +134,7 @@ export function normalizeInspection(raw: Record<string, unknown>, path = "", siz
     sourceMethod,
     listingState,
     durationSec: typeof raw.durationSec === "number" ? raw.durationSec : 0,
+    isoPlaylist: typeof raw.isoPlaylist === "number" ? raw.isoPlaylist : null,
     sizeBytes: typeof raw.sizeBytes === "number" ? raw.sizeBytes : sizeBytes,
     sizePerHourGb: typeof raw.sizePerHourGb === "number" ? raw.sizePerHourGb : 0,
     videoCodec: typeof raw.videoCodec === "string" ? raw.videoCodec : "unknown",
@@ -154,7 +156,9 @@ export function parseFfmpegListing(path: string, sizeBytes: number, listing: str
   const size = videoLine.match(/(\d{3,5})x(\d{3,5})/);
   const audio = streams.filter((m) => m[3] === "Audio").map((m, i) => parseListedAudio(m, i));
   const subtitles = streams.filter((m) => m[3] === "Subtitle").map((m, i) => parseListedSub(m, i));
-  const durationSec = parseListedDuration(listing);
+  const playlist = longestBlurayPlaylist(listing);
+  const listedDuration = parseListedDuration(listing);
+  const durationSec = Math.max(listedDuration, playlist?.durationSec ?? 0);
   const hours = durationSec > 0 ? durationSec / 3600 : 0;
   const codec = videoLine.split(",")[0]?.trim().split(" ")[0] ?? "unknown";
   return {
@@ -162,6 +166,7 @@ export function parseFfmpegListing(path: string, sizeBytes: number, listing: str
     sourceMethod: "iso_ffmpeg",
     listingState: "complete",
     durationSec,
+    isoPlaylist: playlist?.id ?? null,
     sizeBytes,
     sizePerHourGb: hours > 0 ? sizeBytes / 1024 ** 3 / hours : 0,
     videoCodec: codec,
@@ -176,13 +181,34 @@ export function parseFfmpegListing(path: string, sizeBytes: number, listing: str
   };
 }
 
-function parseListedDuration(listing: string): number {
+export function parseListedDuration(listing: string): number {
   const match = listing.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
   if (!match) return 0;
-  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return clockToSeconds(match[1], match[2], match[3]);
+}
+
+export function parseBlurayPlaylists(listing: string): Array<{ id: number; durationSec: number }> {
+  return [...listing.matchAll(/playlist\s+(\d+)\.mpls\s+\(([^)]+)\)/gi)].map((row) => {
+    const parts = row[2]?.split(":") ?? [];
+    const durationSec = parts.length === 3
+      ? clockToSeconds(parts[0], parts[1], parts[2])
+      : parts.length === 2
+        ? clockToSeconds("0", parts[0], parts[1])
+        : 0;
+    return { id: Number(row[1]), durationSec };
+  });
+}
+
+export function longestBlurayPlaylist(listing: string): { id: number; durationSec: number } | undefined {
+  return parseBlurayPlaylists(listing).sort((a, b) => b.durationSec - a.durationSec)[0];
+}
+
+function clockToSeconds(hours: string, minutes: string, seconds: string): number {
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
 }
 
 function listedChannels(detail: string): number {
+  if (/\b0\s*channels\b/i.test(detail)) return 0;
   if (/\b7\.1\b/.test(detail)) return 8;
   if (/\b5\.1\b/.test(detail)) return 6;
   if (/\bmono\b/i.test(detail)) return 1;
@@ -231,6 +257,7 @@ export function unlistedIsoReport(path: string, sizeBytes: number): InspectionRe
     sourceMethod: "iso_ffmpeg",
     listingState: "iso_unlisted",
     durationSec: 0,
+    isoPlaylist: null,
     sizeBytes,
     sizePerHourGb: 0,
     videoCodec: "unknown",

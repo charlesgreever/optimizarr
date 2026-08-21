@@ -2,8 +2,7 @@ import { execFile } from "node:child_process";
 import { copyFile, mkdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { isIsoPath } from "./inspect.ts";
-import { parseFfprobe } from "./inspect.ts";
+import { isIsoPath, parseFfprobe } from "./inspect.ts";
 import type { ExecutablePlan, InspectionReport, Suggestion, WriteMode } from "./types.ts";
 import { planHasVideoTranscode } from "./types.ts";
 
@@ -92,7 +91,7 @@ export function ffmpegOptimizer(): Optimizer {
         req.onPhase?.("muxing", 0.2);
         const remuxed = join(workDir, `${Date.now()}-iso.mkv`);
         temps.push(remuxed);
-        await remuxIso(req.ffmpeg, current, remuxed, plan);
+        await remuxIso(req.ffmpeg, req.ffprobe, current, remuxed, req.report);
         current = remuxed;
       }
       const extras = await createAudioExtras(req, plan, workDir, current, temps);
@@ -112,7 +111,12 @@ export function ffmpegOptimizer(): Optimizer {
         const encodePlan = plan.video.kind === "copy"
           ? plan
           : { ...plan, video: { ...plan.video, bitDepth: encodeReport.bitDepth || plan.video.bitDepth } };
-        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: encodeReport.durationSec > 1 ? encodeReport : req.report }));
+        const durationReport = isoRemuxIsShort(req.report.durationSec, encodeReport.durationSec)
+          ? req.report
+          : encodeReport.durationSec > 1
+            ? encodeReport
+            : req.report;
+        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }));
         current = encoded;
       }
       req.onPhase?.("finishing", 0.9);
@@ -216,28 +220,43 @@ export function isoInputAttempts(source: string): string[][] {
   return [plain, bluray, ...playlists];
 }
 
-export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, force?: "bluray" | "plain"): string[] {
+export function isoRemuxIsShort(expectedSec: number, actualSec: number): boolean {
+  if (!(actualSec > 1)) return true;
+  if (actualSec < 60) return true;
+  return expectedSec > 120 && actualSec < expectedSec * 0.5;
+}
+
+export function isoCopyMaps(report?: InspectionReport): string[] {
+  const maps = ["-map", "0"];
+  // Dummy 0-channel AC3 on some Blu-rays makes Matroska reject the header ("sample rate not set").
+  for (const track of report?.audio ?? []) {
+    if (track.channels <= 0) maps.push("-map", `-0:${track.index}`);
+  }
+  return maps;
+}
+
+export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, report?: InspectionReport): string[] {
+  return isoRemuxArgSets(source, dest, report)[0] ?? [];
+}
+
+export function isoRemuxInputs(source: string, report?: InspectionReport): string[][] {
+  const preferred = report?.isoPlaylist != null
+    ? [["-playlist", String(report.isoPlaylist), "-i", `bluray:${source}`]]
+    : [];
+  const rest = isoInputAttempts(source).filter((args) => JSON.stringify(args) !== JSON.stringify(preferred[0]));
+  return [...preferred, ...rest];
+}
+
+export function isoMapVariants(report?: InspectionReport): string[][] {
   return [
-    "-hide_banner",
-    "-nostdin",
-    "-loglevel",
-    "error",
-    "-y",
-    "-analyzeduration",
-    "100M",
-    "-probesize",
-    "100M",
-    ...isoDemuxArgs(source, force),
-    "-map",
-    "0",
-    "-c",
-    "copy",
-    dest,
+    isoCopyMaps(report),
+    ["-map", "0:v:0", "-map", "0:a:0", "-map", "0:a:1", "-map", "0:a:2", "-map", "0:a:3", "-map", "0:a:4"],
+    ["-map", "0:v:0", "-map", "0:a:0"],
   ];
 }
 
-export function isoRemuxArgSets(source: string, dest: string): string[][] {
-  return isoInputAttempts(source).map((input) => [
+export function isoRemuxArgSets(source: string, dest: string, report?: InspectionReport): string[][] {
+  const head = [
     "-hide_banner",
     "-nostdin",
     "-loglevel",
@@ -247,23 +266,41 @@ export function isoRemuxArgSets(source: string, dest: string): string[][] {
     "100M",
     "-probesize",
     "100M",
-    ...input,
-    "-map",
-    "0",
-    "-c",
-    "copy",
-    dest,
-  ]);
+  ];
+  const sets: string[][] = [];
+  for (const input of isoRemuxInputs(source, report)) {
+    for (const maps of isoMapVariants(report)) {
+      sets.push([...head, ...input, ...maps, "-c", "copy", dest]);
+    }
+  }
+  return sets;
 }
 
-async function remuxIso(ffmpeg: string, source: string, dest: string, _plan: ExecutablePlan): Promise<void> {
+async function remuxIso(
+  ffmpeg: string,
+  ffprobe: string,
+  source: string,
+  dest: string,
+  report: InspectionReport,
+): Promise<void> {
   let lastError: unknown;
-  for (const args of isoRemuxArgSets(source, dest)) {
+  for (const args of isoRemuxArgSets(source, dest, report)) {
     try {
       await run(ffmpeg, args);
+      const remuxed = await probeOutput(ffprobe, dest).catch(() => null);
+      if (!remuxed || isoRemuxIsShort(report.durationSec, remuxed.durationSec)) {
+        await safeUnlink(dest);
+        const minutes = Math.max(1, Math.round((remuxed?.durationSec ?? 0) / 60));
+        const listed = Math.max(1, Math.round(report.durationSec / 60));
+        lastError = new Error(
+          `The remuxed file is ${minutes} minutes; the disc listing was ${listed} minutes. ffmpeg likely copied a short title instead of the feature.`,
+        );
+        continue;
+      }
       return;
     } catch (error) {
       lastError = error;
+      await safeUnlink(dest);
     }
   }
   throw lastError instanceof Error
