@@ -279,9 +279,14 @@ describe("public HTTP behavior", () => {
     });
     await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
     await ctx.app.inspectPending();
-    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as { items: Array<{ id: string; videoLabel?: string }> };
+    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as {
+      items: Array<{ id: string; videoLabel?: string; report?: unknown }>;
+    };
     const id = movies.items[0]?.id ?? "";
     expect(movies.items[0]?.videoLabel).toMatch(/h264/i);
+    expect(movies.items[0]?.report).toBeUndefined();
+    const title = (await (await ctx.app.app.request(`/api/library/items/${id}`, { headers })).json()) as { item: { report?: { durationSec?: number } } };
+    expect(title.item.report?.durationSec).toBeGreaterThan(0);
     const empty = await ctx.app.app.request(`/api/library/items/${id}/plan`, { method: "POST", headers, body: JSON.stringify({ draft: {} }) });
     expect(empty.status).toBe(400);
     const body = (await empty.json()) as { errors?: Array<{ field: string }> };

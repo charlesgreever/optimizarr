@@ -13,10 +13,6 @@ export function MoviesPage() {
   const load = () => void api.movies().then((r) => setItems(r.items)).catch((e: Error) => setError(e.message));
   useEffect(() => {
     load();
-    void api.refresh().then(load).catch((e: Error) => {
-      setError(e.message);
-      load();
-    });
   }, []);
 
   const rows = useMemo(() => {

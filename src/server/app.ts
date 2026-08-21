@@ -388,6 +388,15 @@ export function createApp(opts: AppOptions) {
   }
 
   async function runInspectWalk(): Promise<void> {
+    try {
+      await walkPending();
+    } catch (error) {
+      if (error instanceof Error && /not open/i.test(error.message)) return;
+      throw error;
+    }
+  }
+
+  async function walkPending(): Promise<void> {
     const items = store.listItems();
     const pending = items.filter((item) => inspectStillOpen(item));
     publishInspect(true, pending.length, items.length);
@@ -395,6 +404,7 @@ export function createApp(opts: AppOptions) {
     for (const item of pending) {
       remaining -= 1;
       publishInspect(true, remaining, items.length);
+      await new Promise<void>((resolve) => setImmediate(resolve));
       const readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
       if (!readable) {
         store.setFileError(item.path, item.id, "This path is not readable inside the container. Check the volume mount.");
@@ -483,8 +493,8 @@ export function createApp(opts: AppOptions) {
     });
   }
 
-  app.get("/api/library/movies", (c) => c.json({ items: store.listItems("movie").map(presentItem) }));
-  app.get("/api/library/series", (c) => c.json({ items: store.listItems("episode").map(presentItem) }));
+  app.get("/api/library/movies", (c) => c.json({ items: store.listItems("movie").map((item) => presentItem(item, false)) }));
+  app.get("/api/library/series", (c) => c.json({ items: store.listItems("episode").map((item) => presentItem(item, false)) }));
   app.get("/api/inspect/status", (c) => c.json(store.getInspectState()));
   app.get("/api/errors", (c) => c.json({ items: store.listErrors() }));
 
@@ -549,7 +559,7 @@ export function createApp(opts: AppOptions) {
     const item = store.getItem(c.req.param("id"));
     if (!item) return c.json({ error: "That title is not in the library." }, 404);
     return c.json({
-      item: presentItem(item),
+      item: presentItem(item, true),
       hardware: lastHardware,
       settings: { writeMode: store.getSettings().writeMode, videoTarget: store.getSettings().videoTarget },
     });
@@ -806,7 +816,7 @@ export function createApp(opts: AppOptions) {
     });
   }
 
-  function presentItem(item: NonNullable<ReturnType<Store["getItem"]>>) {
+  function presentItem(item: NonNullable<ReturnType<Store["getItem"]>>, detail = false) {
     const report = store.getInspection(item.id);
     const suggestion = store.openSuggestionForItem(item.id);
     const error = store.listErrors().find((e) => e.itemId === item.id);
@@ -814,8 +824,10 @@ export function createApp(opts: AppOptions) {
       ...item,
       displayTitle: displayTitle(item),
       inspected: Boolean(report),
-      report,
-      suggestion,
+      report: detail ? report : undefined,
+      suggestion: suggestion
+        ? { id: suggestion.id, actions: suggestion.actions, reasons: suggestion.reasons }
+        : null,
       error: error?.reason ?? null,
       reasons: suggestion?.reasons ?? [],
       href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
@@ -869,7 +881,7 @@ async function defaultProbe(ffprobe: string, path: string): Promise<Record<strin
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
-  const { stdout } = await run(ffprobe, ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path], {
+  const { stdout } = await run(ffprobe, ["-v", "quiet", "-threads", "1", "-print_format", "json", "-show_format", "-show_streams", path], {
     maxBuffer: 1024 * 512,
   });
   return JSON.parse(stdout) as Record<string, unknown>;
@@ -881,7 +893,7 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const run = promisify(execFile);
   let lastText = "";
   for (const input of isoInputAttempts(path).slice(0, 2)) {
-    const args = ["-hide_banner", "-analyzeduration", "20M", "-probesize", "20M", ...input];
+    const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
     try {
       const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
       const text = `${stderr}\n${stdout}`;

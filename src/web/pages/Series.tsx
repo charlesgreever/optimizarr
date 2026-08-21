@@ -19,10 +19,6 @@ export function SeriesPage() {
   const load = () => void api.series().then((r) => setItems(r.items)).catch((e: Error) => setMsg(e.message));
   useEffect(() => {
     load();
-    void api.refresh().then(load).catch((e: Error) => {
-      setMsg(e.message);
-      load();
-    });
   }, []);
 
   const groups = useMemo(() => {
@@ -39,7 +35,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={load} />
       </PageHead>
-      <Help>Click a show name, or Collapse, to hide its episode table. Optimize all episodes queues that show without collapsing it.</Help>
+      <Help>Shows start collapsed so a large library does not freeze the browser. Expand a show to see episodes. Optimize all episodes queues that show without expanding it.</Help>
       {groups.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
@@ -68,7 +64,7 @@ function SeriesGroup({
   onDone: () => void;
   onMsg: (msg: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => Boolean(focusId && eps.some((ep) => ep.id === focusId)));
   const head = eps[0];
   const title = head.showTitle || head.title || head.displayTitle;
 
