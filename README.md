@@ -43,7 +43,7 @@ CONFIG_DIR=./config npm start
 docker compose up -d --build
 ```
 
-Open `http://192.168.1.10:7373`. In Settings, add Radarr at `http://radarr:7878` and Sonarr at `http://sonarr:8989`, set a review folder outside the library roots, and confirm your preferred language.
+Open `http://192.168.1.10:7373`. In Settings, add Radarr at `http://radarr:7878` and Sonarr at `http://sonarr:8989`, set a review folder outside the library roots, and confirm your preferred language. You can also paste a GitHub token so **Report** attaches screenshots (see [Report a bug](#report-a-bug)).
 
 The shipped `compose.yaml` passes the host NVIDIA GPU the same way Frigate does: `runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES=all`, and `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`. `utility` provides `nvidia-smi`. `video` provides NVENC. Recreate the container after changing those values.
 
@@ -55,6 +55,14 @@ The shipped `compose.yaml` passes the host NVIDIA GPU the same way Frigate does:
 | `PORT` | `7373` | Listen port |
 | `OPTIMIZARR_WIDGET_KEY` | unset | Optional Homepage widget key |
 | `OPTIMIZARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
+
+## Report a bug
+
+Signed-in pages keep a **Report** control on screen. **Bug** and **Change request** open a GitHub issue on this repository with the current route, inspect leftovers, a running job if there is one, and a screenshot of the viewport. The prefill never includes file paths, API keys, tokens, or passwords.
+
+GitHub’s new-issue URL cannot attach a file. Paste a GitHub personal access token in Settings so Report uploads the screenshot and puts it on the new issue. Use a classic token with the `public_repo` scope, or a fine-grained token that can write issues on `charlesgreever/optimizarr`. Optimizarr encrypts the token and never shows it again.
+
+Without a token, Report copies the screenshot if the browser allows it (paste with Ctrl+V or Cmd+V on GitHub). On a LAN `http://` origin the browser often blocks that copy, so Report downloads a PNG as a last fallback.
 
 ## Homepage
 

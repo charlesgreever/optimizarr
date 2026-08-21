@@ -213,6 +213,13 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 189. As a developer, I want Keep, Discard, and notifiers testable against fake Arr and player APIs and a fake slow move, so that promote does not require a live Plex or NAS.
 190. As a developer, I want mux and stereo jobs testable with fake `mkvmerge` and fake ffmpeg, so that track plans do not require MKVtoolnix on the developer laptop.
 191. As a developer, I want auth tested for login, logout, bad password, session expiry, and local bypass on or off, so that the secure Arr login claim is real.
+192. As an operator, I want a Report control that stays on screen on every signed-in page, so that I can file a bug or change request from the view I am looking at.
+193. As an operator, I want Bug and Change request to open a GitHub issue with the current route, inspect leftovers, and a running job, so that I do not retype what the UI already shows.
+194. As an operator, I want Report to capture a screenshot of the current viewport at the current scroll, so that the GitHub issue shows the table, banner, or job I was staring at.
+195. As an operator, I want an optional GitHub token in Settings so Report can put that screenshot on the new issue, so that I do not download a PNG to this computer.
+196. As an operator, I want that token encrypted and never echoed after save, so that a screenshot of Settings is safer (ENG-06).
+197. As an operator, I want Report to copy the screenshot or download it when no token is saved, so that a machine without GitHub credentials can still attach the image by hand.
+198. As an operator, I want the report text to omit paths, API keys, tokens, and passwords, so that a public GitHub issue is not a secret leak.
 
 ## Implementation Decisions
 
@@ -240,6 +247,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Home dashboard is the post-login landing page. Files optimized equals successful Keeps. Space saved equals the sum of original size minus kept sidecar size for those Keeps. Home also shows open suggestions, queued, pending review, error count, and recent activity.
 - UI follows Arr information architecture with a Vision UI-inspired presentation (dark glass, neon accents) as visual inspiration, not Creative Tim template code. Library pages are sortable tables with posters on the row, not card grids as the default. Iconography is required and must be distinct per nav item and action. Small-viewport layout is required. Contextual help lives on each primary page next to the controls it explains.
 - Homepage widget: `GET /api/widget` (alias `/api/homepage`), widget key or local-address bypass, stats only. Example YAML in docs. Installing the tile on the household Homepage host is out of this repo.
+- Report a bug: a fixed on-screen control on signed-in pages. Bug and Change request open GitHub’s new-issue form with route, inspect leftovers, and running job. Capture the current viewport. An optional encrypted GitHub token uploads the PNG onto the issue. Without a token, clipboard then download. Prefill never includes paths or secrets (ENG-06). Login and first-run have no Report control.
 - Modules (each with a small interface other code depends on):
   - Auth
   - Settings and first-run
@@ -271,6 +279,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Player notifier: Plex and Jellyfin are called after Keep; a player outage is reported and does not undo Keep.
 - Activity and savings: a Keep of a 10 GB source to a 4 GB sidecar increases files optimized by 1 and space saved by 6 GB; Discard does not; failed Keep does not.
 - Auth: set password, login, bad password, logout, session expiry, optional local bypass on/off. No plaintext password at rest. Widget route: key works, missing key on a public IP is 401, payload has no secrets or paths.
+- Report: the GitHub URL encodes route and inspect leftovers; a sample path or secret is absent from the query; a saved token uploads a PNG fixture and returns an attachment URL without echoing the token; missing token does not call GitHub; crop uses the current scroll box.
 - Web UI / HTTP: list library, search `q`, enqueue, Keep/Discard, Errors list, Home payload, settings. Polling cleanup when a request is still in flight. Force/stereo HTTP: unreadable is not 200; stereo no-op is not 200.
 - Prior art: the previous Optimizarr test suite is not to be reused. Tests are written next to the new modules, with fixtures, not the live NAS.
 
@@ -296,7 +305,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 
 ## Further Notes
 
-- This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-optimize, which are dropped.
+- This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-optimize, which are dropped. GitHub issue #35 (Report a bug, viewport screenshot, optional token attach) is shipped behavior.
 - First install target is ubuntuserver, which already runs Radarr, Sonarr, Plex, Jellyfin, and an NVIDIA stack. CUDA is the on-box encode path; VAAPI remains required for portable installs.
 - Media lives on the Synology Plex share mounted at the same network path the Arrs use. The review path must also live on the NAS but outside those library roots.
 - The operator already has working HEVC NVENC and English-only remux habits. Optimizarr should feel like that workflow with a library, suggestions, review, and a running savings tally, not a blank ffmpeg form.
