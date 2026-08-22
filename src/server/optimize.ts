@@ -109,6 +109,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
         const muxed = join(workDir, `${Date.now()}-mux.mkv`);
         temps.push(muxed);
         await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras), {
+          successfulExitCodes: [0, 1],
           onChunk: (text) => {
             const ratio = parseMkvmergeProgress(text);
             if (ratio != null) emit("muxing", scaleProgress(0.3, 0.42, ratio));
@@ -381,9 +382,9 @@ export function audioAacArgs(source: string, dest: string, index: number, channe
 
 const BANNER = /^(ffmpeg version|copyright|built with|configuration:|libav)/i;
 
-export function formatToolError(bin: string, error: { message?: string; stderr?: string | Buffer }): string {
-  const stderr = String(error.stderr ?? "").trim();
-  const lines = stderr
+export function formatToolError(bin: string, error: { message?: string; stderr?: string | Buffer; stdout?: string | Buffer }): string {
+  const output = `${String(error.stderr ?? "")}\n${String(error.stdout ?? "")}`.trim();
+  const lines = output
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !BANNER.test(line));
@@ -476,32 +477,35 @@ function progressEmitter(
 async function run(
   bin: string,
   args: string[],
-  opts?: { onChunk?: (text: string) => void; isCancelled?: () => boolean },
+  opts?: { onChunk?: (text: string) => void; isCancelled?: () => boolean; successfulExitCodes?: readonly number[] },
 ): Promise<void> {
   if (!opts?.onChunk && !opts?.isCancelled) {
     try {
       await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024 });
       return;
     } catch (error) {
-      const err = error as { message?: string; stderr?: string };
-      throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr }));
+      const err = error as { message?: string; stderr?: string; stdout?: string };
+      throw new Error(formatToolError(bin, { message: err.message, stderr: err.stderr, stdout: err.stdout }));
     }
   }
   await new Promise<void>((resolve, reject) => {
     const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
     let stderr = "";
     const onCancel = setInterval(() => {
       if (opts.isCancelled?.()) child.kill("SIGTERM");
     }, 400);
     child.stdout.on("data", (buf: Buffer) => {
-      opts.onChunk?.(buf.toString("utf8"));
+      const text = buf.toString("utf8");
+      stdout = (stdout + text).slice(-2_000_000);
+      opts.onChunk?.(text);
     });
     child.stderr.on("data", (buf: Buffer) => {
       stderr = (stderr + buf.toString("utf8")).slice(-2_000_000);
     });
     child.on("error", (error) => {
       clearInterval(onCancel);
-      reject(new Error(formatToolError(bin, { message: error.message, stderr })));
+      reject(new Error(formatToolError(bin, { message: error.message, stderr, stdout })));
     });
     child.on("close", (code) => {
       clearInterval(onCancel);
@@ -509,8 +513,8 @@ async function run(
         reject(new CancelledError());
         return;
       }
-      if (code === 0) resolve();
-      else reject(new Error(formatToolError(bin, { stderr })));
+      if ((opts.successfulExitCodes ?? [0]).includes(code ?? -1)) resolve();
+      else reject(new Error(formatToolError(bin, { stderr, stdout })));
     });
   });
 }

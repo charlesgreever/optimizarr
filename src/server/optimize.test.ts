@@ -1,7 +1,11 @@
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   audioAacArgs,
   encodeArgs,
+  ffmpegOptimizer,
   formatToolError,
   isoDemuxArgs,
   isoInputAttempts,
@@ -64,6 +68,80 @@ describe("mkvmerge arguments", () => {
     expect(message).toContain("mkvmerge failed");
     expect(message).toContain("The file could not be opened.");
     expect(message).not.toContain("Command failed:");
+  });
+
+  it("keeps a useful mkvmerge error written to standard output", () => {
+    const output = {
+      stderr: "",
+      stdout: "Error: The source file type is unsupported.\n",
+    };
+
+    const message = formatToolError("mkvmerge", output);
+
+    expect(message).toBe("mkvmerge failed. Error: The source file type is unsupported.");
+  });
+
+  it("keeps a valid remux when mkvmerge completes with warnings", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "polisharr-mkvmerge-warning-"));
+    try {
+      const sourcePath = join(dir, "episode.mp4");
+      const reviewDir = join(dir, "review");
+      const mkvmerge = join(dir, "mkvmerge.cjs");
+      const ffprobe = join(dir, "ffprobe.cjs");
+      await writeFile(sourcePath, "fixture media");
+      await writeFile(mkvmerge, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "fs.copyFileSync(args.at(-1), args[args.indexOf('-o') + 1]);",
+        "process.stdout.write('Warning: The MP4 timestamps required normalization.\\nProgress: 100%\\n');",
+        "process.exitCode = 1;",
+      ].join("\n"));
+      await writeFile(ffprobe, [
+        "#!/usr/bin/env node",
+        "process.stdout.write(JSON.stringify({",
+        "  format: { duration: '120' },",
+        "  streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, bits_per_raw_sample: '8' }]",
+        "}));",
+      ].join("\n"));
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755)]);
+
+      const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
+      const remux = planFromSuggestion({ ...suggestion, actions: ["remux"] });
+      const result = await optimizer({
+        sourcePath,
+        reviewDir,
+        plan: remux,
+        report: {
+          sourceSig: "episode.mp4|13",
+          sourceMethod: "ffprobe",
+          listingState: "complete",
+          durationSec: 120,
+          sizeBytes: 13,
+          sizePerHourGb: 0.001,
+          videoCodec: "h264",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [],
+          subtitles: [],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "none",
+        ffmpeg: "ffmpeg",
+        ffprobe,
+        mkvmerge,
+        conservative: false,
+      });
+
+      expect(result.sidecarPath).toBe(join(reviewDir, "episode.mkv"));
+      expect(result.output.durationSec).toBe(120);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("passes --no-subtitles when every subtitle is removed", () => {
