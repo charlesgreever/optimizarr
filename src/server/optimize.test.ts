@@ -86,7 +86,7 @@ describe("mkvmerge arguments", () => {
     expect(message).toBe("mkvmerge failed. Error: The source file type is unsupported.");
   });
 
-  it("keeps a valid remux when mkvmerge completes with warnings", async () => {
+  it("keeps the selected MP4 caption when ffprobe and mkvmerge track IDs differ", async () => {
     const dir = await mkdtemp(join(tmpdir(), "polisharr-mkvmerge-warning-"));
     try {
       const sourcePath = join(dir, "episode.mp4");
@@ -98,13 +98,22 @@ describe("mkvmerge arguments", () => {
         "#!/usr/bin/env node",
         "const fs = require('node:fs');",
         "const args = process.argv.slice(2);",
-        "const selected = args.includes('--subtitle-tracks') ? args[args.indexOf('--subtitle-tracks') + 1] : null;",
-        "const keptCaptions = selected === null || selected.split(',').includes('2');",
-        "fs.writeFileSync(args[args.indexOf('-o') + 1], keptCaptions ? 'captions' : 'no captions');",
-        "process.stdout.write(keptCaptions",
-        "  ? 'Warning: The MP4 timestamps required normalization.\\nProgress: 100%\\n'",
-        "  : 'Warning: A subtitle track ID was requested but not found.\\nProgress: 100%\\n');",
-        "process.exitCode = 1;",
+        "if (args.includes('-J')) {",
+        "  process.stdout.write(JSON.stringify({ tracks: [",
+        "    { id: 0, type: 'video' },",
+        "    { id: 1, type: 'audio' },",
+        "    { id: 2, type: 'subtitles' },",
+        "    { id: 3, type: 'subtitles' }",
+        "  ] }));",
+        "} else {",
+        "  const selected = args.includes('--subtitle-tracks') ? args[args.indexOf('--subtitle-tracks') + 1] : null;",
+        "  const keptCaptions = selected === null || selected.split(',').includes('2');",
+        "  fs.writeFileSync(args[args.indexOf('-o') + 1], keptCaptions ? 'captions' : 'no captions');",
+        "  process.stdout.write(keptCaptions",
+        "    ? 'Warning: The MP4 timestamps required normalization.\\nProgress: 100%\\n'",
+        "    : 'Warning: A subtitle track ID was requested but not found.\\nProgress: 100%\\n');",
+        "  process.exitCode = 1;",
+        "}",
       ].join("\n"));
       await writeFile(ffprobe, [
         "#!/usr/bin/env node",
@@ -126,8 +135,8 @@ describe("mkvmerge arguments", () => {
         actions: ["remux"],
         keepAudio: [],
         stripAudio: [],
-        keepSubs: [3],
-        stripSubs: [],
+        keepSubs: [4],
+        stripSubs: [5],
       });
       const result = await optimizer({
         sourcePath,
@@ -147,7 +156,8 @@ describe("mkvmerge arguments", () => {
           hdr: "none",
           audio: [],
           subtitles: [
-            { index: 3, language: "eng", codec: "mov_text", title: "English", untagged: false, forced: false, sdh: false },
+            { index: 4, language: "eng", codec: "mov_text", title: "English", untagged: false, forced: false, sdh: false },
+            { index: 5, language: "spa", codec: "mov_text", title: "Spanish", untagged: false, forced: false, sdh: false },
           ],
           hasChapters: false,
           hasAttachments: false,

@@ -108,7 +108,10 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
         emit("muxing", 0.3);
         const muxed = join(workDir, `${Date.now()}-mux.mkv`);
         temps.push(muxed);
-        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras), {
+        const trackIds = needsTrackSelection(plan)
+          ? await identifyMkvmergeTrackIds(req.mkvmerge, current, req.report)
+          : undefined;
+        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras, trackIds), {
           successfulExitCodes: [0, 1],
           onChunk: (text) => {
             const ratio = parseMkvmergeProgress(text);
@@ -202,6 +205,11 @@ function needsMux(plan: ExecutablePlan): boolean {
   return Boolean(plan.remuxInput) || plan.audio.some((op) => op.op !== "keep") || plan.subtitles.some((op) => op.op !== "keep");
 }
 
+function needsTrackSelection(plan: ExecutablePlan): boolean {
+  return plan.audio.some((op) => op.op === "remove" || op.op === "replace_aac" || op.op === "replace_downmix") ||
+    plan.subtitles.some((op) => op.op === "remove");
+}
+
 export class CancelledError extends Error {
   constructor() {
     super("The job was cancelled.");
@@ -213,11 +221,24 @@ export function muxArgs(source: string, dest: string, suggestion: Suggestion, st
   return muxPlanArgs(source, dest, planFromSuggestion(suggestion), stereo ? [stereo] : []);
 }
 
-export function muxPlanArgs(source: string, dest: string, plan: ExecutablePlan, extras: string[] = []): string[] {
+type MkvmergeTrackIds = {
+  audio: ReadonlyMap<number, number>;
+  subtitles: ReadonlyMap<number, number>;
+};
+
+export function muxPlanArgs(
+  source: string,
+  dest: string,
+  plan: ExecutablePlan,
+  extras: string[] = [],
+  trackIds?: MkvmergeTrackIds,
+): string[] {
   const keepAudio = plan.audio.filter((op) => op.op === "keep" || op.op === "add_downmix").map((op) => op.index);
   const replaced = new Set(plan.audio.filter((op) => op.op === "replace_aac" || op.op === "replace_downmix").map((op) => op.index));
-  const audio = keepAudio.filter((index) => !replaced.has(index));
-  const keepSubs = plan.subtitles.filter((op) => op.op === "keep").map((op) => op.index);
+  const audio = keepAudio.filter((index) => !replaced.has(index)).map((index) => trackId(trackIds?.audio, index, "audio"));
+  const keepSubs = plan.subtitles
+    .filter((op) => op.op === "keep")
+    .map((op) => trackId(trackIds?.subtitles, op.index, "subtitle"));
   const editsAudio = plan.audio.some((op) => op.op === "remove" || op.op === "replace_aac" || op.op === "replace_downmix");
   const editsSubtitles = plan.subtitles.some((op) => op.op === "remove");
   const args = ["-o", dest];
@@ -227,6 +248,42 @@ export function muxPlanArgs(source: string, dest: string, plan: ExecutablePlan, 
   args.push(source);
   args.push(...extras);
   return args;
+}
+
+function trackId(ids: ReadonlyMap<number, number> | undefined, ffprobeIndex: number, kind: string): number {
+  if (!ids) return ffprobeIndex;
+  const id = ids.get(ffprobeIndex);
+  if (id == null) throw new Error(`mkvmerge could not match the planned ${kind} track.`);
+  return id;
+}
+
+async function identifyMkvmergeTrackIds(
+  mkvmerge: string,
+  source: string,
+  report: InspectionReport,
+): Promise<MkvmergeTrackIds> {
+  try {
+    const { stdout } = await execFileAsync(mkvmerge, ["-J", source], { maxBuffer: 1024 * 512 });
+    const identified = JSON.parse(stdout) as { tracks?: Array<{ id?: unknown; type?: unknown }> };
+    const tracks = Array.isArray(identified.tracks) ? identified.tracks : [];
+    const ids = (type: "audio" | "subtitles") => tracks
+      .filter((track) => track.type === type && Number.isSafeInteger(track.id))
+      .map((track) => Number(track.id));
+    return {
+      audio: trackIdsByOrder(report.audio, ids("audio")),
+      subtitles: trackIdsByOrder(report.subtitles, ids("subtitles")),
+    };
+  } catch (error) {
+    const err = error as { message?: string; stderr?: string; stdout?: string };
+    throw new Error(formatToolError(mkvmerge, { message: err.message, stderr: err.stderr, stdout: err.stdout }));
+  }
+}
+
+function trackIdsByOrder(tracks: Array<{ index: number }>, mkvmergeIds: number[]): ReadonlyMap<number, number> {
+  return new Map(tracks.flatMap((track, index) => {
+    const id = mkvmergeIds[index];
+    return id == null ? [] : [[track.index, id] as const];
+  }));
 }
 
 export async function assertReviewCapacity(
