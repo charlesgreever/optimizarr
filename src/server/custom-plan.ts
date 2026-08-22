@@ -60,6 +60,7 @@ export function validateCustomPlan(input: CustomPlanInput): CustomPlanResult {
     audio: audioOps,
     subtitles: subOps,
     container: "mkv",
+    remuxInput: false,
     writeMode,
     warning: videoWarning(report, video),
     reasons: planReasons({ iso: remux, video, audio: audioOps, subtitles: subOps, writeMode, globalWrite: settings.writeMode, report }),

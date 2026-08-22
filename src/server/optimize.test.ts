@@ -441,6 +441,23 @@ describe("ISO remux and custom audio arguments", () => {
     expect(optimizeSteps("/mnt/nas/Movies/Cars 3.mkv", plan)).toEqual(["encode"]);
   });
 
+  it("remuxes an opted-in MP4 before encoding and leaves MKV and disabled plans unchanged", () => {
+    const remuxThenEncode = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode", "remux", "tracks", "add_stereo"],
+      keepAudio: [1],
+      stripAudio: [2],
+    });
+    const encodeOnly = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
+    const remuxOnly = planFromSuggestion({ ...suggestion, actions: ["remux"] });
+
+    expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mp4", remuxThenEncode)).toEqual(["mux", "encode"]);
+    expect(muxPlanArgs("/mnt/nas/Shows/Curious George S04E14.mp4", "/tmp/remuxed.mkv", remuxThenEncode)).toContain("--audio-tracks");
+    expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mkv", encodeOnly)).toEqual(["encode"]);
+    expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mp4", encodeOnly)).toEqual(["encode"]);
+    expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mp4", remuxOnly)).toEqual(["mux"]);
+  });
+
   it("builds AAC from a selected source stream", () => {
     const args = audioAacArgs("/in.mkv", "/out.aac", 1, 6, "160k");
     expect(args).toContain("0:1");

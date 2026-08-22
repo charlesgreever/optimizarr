@@ -99,6 +99,7 @@ export type SettingsPayload = {
     removeNonPreferredAudio: boolean;
     addStereo: boolean;
     transcodeToSizeCap: boolean;
+    convertMp4ToMkv: boolean;
   };
   videoTarget: "hevc" | "av1";
   concurrency: number;

@@ -14,7 +14,7 @@ export type JobPhase =
   | "idle";
 export type ReviewStatus = "pending" | "keeping" | "discarding";
 export type SizeCategory = "movie1080p" | "movie4kSdr" | "movie4kHdr" | "tv1080p" | "tv4k";
-export type SuggestionAction = "transcode" | "tracks" | "add_stereo";
+export type SuggestionAction = "transcode" | "remux" | "tracks" | "add_stereo";
 export type VideoTarget = "hevc" | "av1";
 export type HardwareBackend = "cuda" | "vaapi" | "none";
 export type ActivityOutcome = "kept" | "discarded" | "flagged" | "failed" | "cancelled";
@@ -33,6 +33,7 @@ export type SuggestionDefaults = {
   removeNonPreferredAudio: boolean;
   addStereo: boolean;
   transcodeToSizeCap: boolean;
+  convertMp4ToMkv: boolean;
 };
 
 export const DEFAULT_SIZE_CAPS: SizeCaps = {
@@ -48,6 +49,7 @@ export const DEFAULT_SUGGESTION_DEFAULTS: SuggestionDefaults = {
   removeNonPreferredAudio: true,
   addStereo: true,
   transcodeToSizeCap: true,
+  convertMp4ToMkv: false,
 };
 
 export type Settings = {
@@ -315,6 +317,8 @@ export type ExecutablePlan = {
   audio: AudioOp[];
   subtitles: SubtitleOp[];
   container: OutputContainer;
+  // Jobs saved before MP4 conversion omit this field and retain the old encode path.
+  remuxInput?: boolean;
   writeMode: WriteMode;
   warning: string | null;
   reasons: string[];

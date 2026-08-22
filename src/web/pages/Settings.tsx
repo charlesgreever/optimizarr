@@ -3,6 +3,7 @@ import { api, type Exclusion, type FirstRun, type Hardware, type SettingsPayload
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { EncodeSettings } from "../components/EncodeSettings";
+import { SuggestionDefaultsSettings } from "../components/SuggestionDefaultsSettings";
 
 export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onChange: () => void }) {
   const [data, setData] = useState<SettingsPayload | null>(null);
@@ -87,55 +88,11 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             <input className="ml-2 w-20" type="number" step="0.1" value={value} onChange={(e) => setData({ ...data, sizeCaps: { ...data.sizeCaps, [key]: Number(e.target.value) } })} />
           </label>
         ))}
-        <div className="space-y-2 border-t border-white/10 pt-3">
-          <h3 className="font-semibold">Default suggestion operations</h3>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={data.suggestionDefaults.removeNonPreferredSubtitles}
-              onChange={(e) => setData({
-                ...data,
-                suggestionDefaults: { ...data.suggestionDefaults, removeNonPreferredSubtitles: e.target.checked },
-              })}
-            />
-            Remove non-preferred subtitles
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={data.suggestionDefaults.removeNonPreferredAudio}
-              onChange={(e) => setData({
-                ...data,
-                suggestionDefaults: { ...data.suggestionDefaults, removeNonPreferredAudio: e.target.checked },
-              })}
-            />
-            Remove non-preferred audio tracks
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={data.suggestionDefaults.addStereo}
-              onChange={(e) => setData({
-                ...data,
-                suggestionDefaults: { ...data.suggestionDefaults, addStereo: e.target.checked },
-              })}
-            />
-            Add stereo from surround audio
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={data.suggestionDefaults.transcodeToSizeCap}
-              onChange={(e) => setData({
-                ...data,
-                suggestionDefaults: { ...data.suggestionDefaults, transcodeToSizeCap: e.target.checked },
-              })}
-            />
-            Transcode files over their size cap
-          </label>
-          <p className="help">These choices control automatic Suggestions. Force, Add stereo, and custom title plans stay available.</p>
-          <button className="btn" type="button" onClick={save}>Save suggestion defaults</button>
-        </div>
+        <SuggestionDefaultsSettings
+          value={data.suggestionDefaults}
+          onChange={(suggestionDefaults) => setData({ ...data, suggestionDefaults })}
+          onSave={save}
+        />
         <div className="space-y-1 text-sm">
           {(data.profilePreviews ?? []).map((p) => (
             <div key={p.category}>{p.name}: {p.gbPerHour.toFixed(2)} GB/hr · {p.mbPerMin.toFixed(1)} MB/min</div>

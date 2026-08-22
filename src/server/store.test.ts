@@ -87,6 +87,7 @@ describe("store schema migration", () => {
       removeNonPreferredAudio: true,
       addStereo: false,
       transcodeToSizeCap: true,
+      convertMp4ToMkv: false,
     });
   });
 

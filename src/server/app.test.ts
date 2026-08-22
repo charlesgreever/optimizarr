@@ -940,6 +940,7 @@ describe("public HTTP behavior", () => {
           removeNonPreferredAudio: false,
           addStereo: false,
           transcodeToSizeCap: false,
+          convertMp4ToMkv: true,
         },
       }),
     });
@@ -953,6 +954,7 @@ describe("public HTTP behavior", () => {
       removeNonPreferredAudio: false,
       addStereo: false,
       transcodeToSizeCap: false,
+      convertMp4ToMkv: true,
     });
     expect(suggestions.items).toHaveLength(0);
     expect(ctx.probeCalls()).toBe(probesBeforeSave);

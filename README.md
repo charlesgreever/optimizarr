@@ -16,6 +16,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Opens the network path each Arr reports
 - Inspects MKV with ffprobe and ISO disc images with ffmpeg
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
+- Can suggest converting MP4 files to MKV before a hardware encode, or as remux-only work
 - Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions
 - Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in
@@ -59,6 +60,8 @@ Recreate the container after you change GPU settings.
 ### 4. First run
 
 Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language.
+
+Under **Default suggestion operations**, **Convert MP4 to MKV** is off by default. When enabled, Polisharr uses `mkvmerge` to create an MKV before any hardware encode. An MP4 that needs no other work gets a remux-only suggestion.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

@@ -20,8 +20,9 @@ This document covers every GitHub issue that was open during the audit. The audi
 | [#34: Track real Queue encode progress](https://github.com/charlesgreever/optimizarr/issues/34) | Fixed; ready to close | Commit `4c82334` makes ffmpeg emit machine-readable elapsed time. The runner maps it against media duration, progress stays below completion during encode, and the integrity phase precedes 100%. ISO remux progress uses the listed feature duration. Parser and phase-scaling tests pass. |
 | [#38: Heavy screens load slowly](https://github.com/charlesgreever/optimizarr/issues/38) | Fixed; closed | Batched bounded reads replace the per-row query path. Movies, Suggestions, Queue, Review, Errors, and History return progressive pages; Series returns paged headers first and fetches bounded episode pages only on expansion. Queue and Review suppress overlapping polls while retaining loaded pages. Home and the widget use aggregate counts. The 5,000-episode benchmark reduced the first Series payload from 3,787,645 bytes to 7,023 bytes. |
 | [#39: Concurrent jobs will not save](https://github.com/charlesgreever/optimizarr/issues/39) | Fixed; ready to close | This issue was filed after the initial audit. The persistence API was already correct; Encode lacked a local Save control. Encode now has an explicit Save encode settings action with a focused rendered-component regression test. |
+| [#40: Remux MP4 to MKV from suggestion defaults](https://github.com/charlesgreever/optimizarr/issues/40) | Fixed; ready to publish and close | Settings persists an off-by-default MP4 conversion choice. Automatic MP4 suggestions carry an explicit remux action, and the executable plan runs `mkvmerge` before hardware encoding. Under-cap MP4 files can produce remux-only work. Focused setting, suggestion, and optimizer tests cover enabled MP4, MKV, and disabled behavior. |
 
-The focused issue-audit run passed 58 tests across `inspect`, `inspection-runner`, `suggest`, `optimize`, `arr-profiles`, and `app`. The full baseline passed 103 tests, typecheck, and the production build. After the full-main review follow-up, the current gate passes 127 tests across 22 files, typecheck, the production build, the production dependency audit, and the diff whitespace check.
+The focused issue-audit run passed 58 tests across `inspect`, `inspection-runner`, `suggest`, `optimize`, `arr-profiles`, and `app`. The full baseline passed 103 tests, typecheck, and the production build. After issue #40, the current gate passes 133 tests across 24 files, typecheck, the production build, and the diff whitespace check. The latest production dependency audit, run before this dependency-free change, also passed.
 
 ## Execution Results
 
@@ -31,6 +32,7 @@ The focused issue-audit run passed 58 tests across `inspect`, `inspection-runner
 - OI-033: complete. Queue lifecycle operations are transactional and authenticated. Queue hiding preserves promotion data needed by Review instead of physically deleting it.
 - OI-026: complete. [All v2 stories 1–92 map to evidence](../docs/v2-verification.md), including the revised summary-first Series contract.
 - OI-039: complete. The post-audit issue is included so the audit remains exhaustive as of the final GitHub query.
+- OI-040: complete and verified in the working tree. MP4 conversion is an explicit suggestion and job-plan intent, so the runner uses the same mux stage for remux-only and remux-then-transcode jobs.
 
 ## Delivery Order
 
@@ -188,8 +190,21 @@ Files: `EncodeSettings.tsx`, `Settings.tsx`, focused rendered-component test, v1
 
 Done: the button calls the shared Settings save path, and the focused test verifies it is visible beside Concurrent jobs.
 
+## OI-040: Convert MP4 Inputs to MKV
+
+Files: `types.ts`, `settings.ts`, `suggest.ts`, `optimize.ts`, `Settings.tsx`, API types, tests, README, and v1 PRD.
+
+1. Add `convertMp4ToMkv` to `suggestionDefaults`, default it off, validate stored and HTTP values, and show **Convert MP4 to MKV** in Settings.
+2. Add a remux action only when the automatic setting is enabled and the library path ends in `.mp4`, ignoring letter case.
+3. Carry the action into the executable plan as an explicit input-remux intent.
+4. Run the existing `mkvmerge` stage before ffmpeg. Combine track removal and stereo insertion with this mux when those operations also apply.
+5. Create remux-only suggestions for under-cap MP4 files. Leave MKV inputs and disabled MP4 behavior unchanged.
+6. Cover persisted settings, enabled MP4, remux-only MP4, MKV, and disabled MP4 behavior with public module tests.
+
+Done when an enabled MP4 transcode has `mux` before `encode`, an enabled under-cap MP4 has only `mux`, and the same plans omit `mux` for MKV or a disabled setting.
+
 ## Closure Actions
 
-- #22, #24, #25, #26, #33, #34, #38, and #39 are ready to close after these changes are committed and published.
+- #22, #24, #25, #26, #33, #34, #38, #39, and #40 are ready to close after their changes are committed and published.
 - The final `gh issue list --state open` query found #39, which was filed after the audit and is now included above.
 - Re-run the open-issue query after publication and before closing the final issue so this audit does not hide a still-newer report.

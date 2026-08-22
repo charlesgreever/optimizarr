@@ -130,6 +130,7 @@ describe("suggestion engine", () => {
         removeNonPreferredAudio: false,
         addStereo: false,
         transcodeToSizeCap: false,
+        convertMp4ToMkv: false,
       },
     };
     const automatic = buildSuggestion({
@@ -165,6 +166,73 @@ describe("suggestion engine", () => {
     expect(automatic).toBeNull();
     expect(forcedStereo?.actions).toEqual(["add_stereo"]);
     expect(forcedTranscode?.actions).toEqual(["transcode"]);
+  });
+
+  it("adds an opt-in remux to MP4 suggestions and preserves MKV and disabled behavior", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        removeNonPreferredSubtitles: false,
+        removeNonPreferredAudio: false,
+        addStereo: false,
+        convertMp4ToMkv: true,
+      },
+    };
+    const underCap = report({ sizePerHourGb: 1, videoCodec: "hevc", audio: [], subtitles: [], hdr: "none" });
+    const overCap = report({ audio: [], subtitles: [], hdr: "none" });
+    const remuxOnlyMp4 = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/Avatar.MP4" },
+      report: underCap,
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const underCapMkv = buildSuggestion({
+      item: movie,
+      report: underCap,
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const remuxThenTranscode = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/Avatar.mp4" },
+      report: overCap,
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const mkvTranscode = buildSuggestion({
+      item: movie,
+      report: overCap,
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const disabledMp4 = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/Avatar.mp4" },
+      report: overCap,
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+
+    expect(remuxOnlyMp4?.actions).toEqual(["remux"]);
+    expect(remuxOnlyMp4?.reasons).toEqual(["Convert the MP4 container to MKV before any video encode."]);
+    expect(underCapMkv).toBeNull();
+    expect(remuxThenTranscode?.actions).toEqual(["transcode", "remux"]);
+    expect(mkvTranscode?.actions).toEqual(["transcode"]);
+    expect(disabledMp4?.actions).toEqual(["transcode"]);
   });
 
   it("does not suggest HEVC for AV1 sources", () => {

@@ -66,9 +66,11 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     !input.sizeExempt &&
     (input.forceTranscode ||
       (settings.suggestionDefaults.transcodeToSizeCap && overCap && (inefficient || /hevc|h265/.test(codec))));
+  const remux = settings.suggestionDefaults.convertMp4ToMkv && /\.mp4$/i.test(item.path);
 
   const actions: SuggestionAction[] = [];
   if (transcode) actions.push("transcode");
+  if (remux) actions.push("remux");
   if (extraTracks) actions.push("tracks");
   if (addStereo) actions.push("add_stereo");
   if (actions.length === 0) return null;
@@ -79,6 +81,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   } else if (transcode && input.forceTranscode) {
     reasons.push(`Re-encode to ${target.toUpperCase()} because you asked to force this title.`);
   }
+  if (remux) reasons.push("Convert the MP4 container to MKV before any video encode.");
   if (stripAudio.length) reasons.push("Drop audio tracks that are not in your preferred language.");
   if (stripSubs.length) reasons.push("Drop subtitle tracks that are not in your preferred language.");
   if (addStereo) reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");

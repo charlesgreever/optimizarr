@@ -60,6 +60,7 @@ export function planFromSuggestion(suggestion: Suggestion, writeMode: WriteMode 
       ...suggestion.stripSubs.map((index) => ({ op: "remove" as const, index })),
     ],
     container: "mkv",
+    remuxInput: suggestion.actions.includes("remux"),
     writeMode,
     warning: suggestion.warning,
     reasons: [...suggestion.reasons],
@@ -185,7 +186,7 @@ async function createAudioExtras(
 }
 
 function needsMux(plan: ExecutablePlan): boolean {
-  return plan.audio.some((op) => op.op !== "keep") || plan.subtitles.some((op) => op.op !== "keep");
+  return Boolean(plan.remuxInput) || plan.audio.some((op) => op.op !== "keep") || plan.subtitles.some((op) => op.op !== "keep");
 }
 
 export class CancelledError extends Error {
