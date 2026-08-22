@@ -154,6 +154,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
             : "The finished file is missing duration or is shorter than the original.",
         );
       }
+      assertTrackIntegrity(plan, output);
       return { sidecarPath, output };
     } catch (error) {
       await safeUnlink(sidecarPath);
@@ -162,6 +163,17 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
       await Promise.all(temps.map(safeUnlink));
     }
   };
+}
+
+function assertTrackIntegrity(plan: ExecutablePlan, output: InspectionReport): void {
+  const expectedAudio = plan.audio.filter((op) => op.op !== "remove").length;
+  const expectedSubtitles = plan.subtitles.filter((op) => op.op === "keep").length;
+  if (output.audio.length < expectedAudio) {
+    throw new Error("The finished file is missing one or more planned audio tracks.");
+  }
+  if (output.subtitles.length < expectedSubtitles) {
+    throw new Error("The finished file is missing one or more planned subtitle tracks.");
+  }
 }
 
 async function createAudioExtras(
@@ -206,10 +218,12 @@ export function muxPlanArgs(source: string, dest: string, plan: ExecutablePlan, 
   const replaced = new Set(plan.audio.filter((op) => op.op === "replace_aac" || op.op === "replace_downmix").map((op) => op.index));
   const audio = keepAudio.filter((index) => !replaced.has(index));
   const keepSubs = plan.subtitles.filter((op) => op.op === "keep").map((op) => op.index);
+  const editsAudio = plan.audio.some((op) => op.op === "remove" || op.op === "replace_aac" || op.op === "replace_downmix");
+  const editsSubtitles = plan.subtitles.some((op) => op.op === "remove");
   const args = ["-o", dest];
-  if (audio.length) args.push("--audio-tracks", [...new Set(audio)].join(","));
-  if (keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
-  else if (plan.subtitles.some((op) => op.op === "remove")) args.push("--no-subtitles");
+  if (editsAudio && audio.length) args.push("--audio-tracks", [...new Set(audio)].join(","));
+  if (editsSubtitles && keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
+  else if (editsSubtitles) args.push("--no-subtitles");
   args.push(source);
   args.push(...extras);
   return args;

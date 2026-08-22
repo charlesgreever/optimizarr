@@ -46,7 +46,12 @@ const source =
 
 describe("mkvmerge arguments", () => {
   it("keeps a parenthesized source path as one operand and applies track options to that file", () => {
-    const args = muxArgs(source, "/mnt/nas/review-path/.work/out.mkv", suggestion, "/tmp/stereo.aac");
+    const args = muxArgs(
+      source,
+      "/mnt/nas/review-path/.work/out.mkv",
+      { ...suggestion, keepAudio: [1], stripAudio: [2], keepSubs: [3], stripSubs: [4] },
+      "/tmp/stereo.aac",
+    );
     expect(args).toContain(source);
     expect(args.filter((part) => part.includes("Big Hero 6")).length).toBe(1);
     const sourceAt = args.indexOf(source);
@@ -88,26 +93,42 @@ describe("mkvmerge arguments", () => {
       const reviewDir = join(dir, "review");
       const mkvmerge = join(dir, "mkvmerge.cjs");
       const ffprobe = join(dir, "ffprobe.cjs");
-      await writeFile(sourcePath, "fixture media");
+      await writeFile(sourcePath, "source with captions");
       await writeFile(mkvmerge, [
         "#!/usr/bin/env node",
         "const fs = require('node:fs');",
         "const args = process.argv.slice(2);",
-        "fs.copyFileSync(args.at(-1), args[args.indexOf('-o') + 1]);",
-        "process.stdout.write('Warning: The MP4 timestamps required normalization.\\nProgress: 100%\\n');",
+        "const selected = args.includes('--subtitle-tracks') ? args[args.indexOf('--subtitle-tracks') + 1] : null;",
+        "const keptCaptions = selected === null || selected.split(',').includes('2');",
+        "fs.writeFileSync(args[args.indexOf('-o') + 1], keptCaptions ? 'captions' : 'no captions');",
+        "process.stdout.write(keptCaptions",
+        "  ? 'Warning: The MP4 timestamps required normalization.\\nProgress: 100%\\n'",
+        "  : 'Warning: A subtitle track ID was requested but not found.\\nProgress: 100%\\n');",
         "process.exitCode = 1;",
       ].join("\n"));
       await writeFile(ffprobe, [
         "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const captions = fs.readFileSync(process.argv.at(-1), 'utf8') === 'captions';",
         "process.stdout.write(JSON.stringify({",
         "  format: { duration: '120' },",
-        "  streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, bits_per_raw_sample: '8' }]",
+        "  streams: [",
+        "    { index: 0, codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, bits_per_raw_sample: '8' },",
+        "    ...(captions ? [{ index: 1, codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'eng' } }] : [])",
+        "  ]",
         "}));",
       ].join("\n"));
       await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755)]);
 
       const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
-      const remux = planFromSuggestion({ ...suggestion, actions: ["remux"] });
+      const remux = planFromSuggestion({
+        ...suggestion,
+        actions: ["remux"],
+        keepAudio: [],
+        stripAudio: [],
+        keepSubs: [3],
+        stripSubs: [],
+      });
       const result = await optimizer({
         sourcePath,
         reviewDir,
@@ -125,7 +146,9 @@ describe("mkvmerge arguments", () => {
           bitDepth: 8,
           hdr: "none",
           audio: [],
-          subtitles: [],
+          subtitles: [
+            { index: 3, language: "eng", codec: "mov_text", title: "English", untagged: false, forced: false, sdh: false },
+          ],
           hasChapters: false,
           hasAttachments: false,
         },
@@ -139,6 +162,7 @@ describe("mkvmerge arguments", () => {
 
       expect(result.sidecarPath).toBe(join(reviewDir, "episode.mkv"));
       expect(result.output.durationSec).toBe(120);
+      expect(result.output.subtitles).toHaveLength(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
