@@ -28,6 +28,7 @@ import { createInspectionRunner } from "./inspection-runner.ts";
 import { createLibraryReadModel } from "./library-read-model.ts";
 import { updateSettings } from "./settings.ts";
 import { LibrarySync, pathsOverlap } from "./library-sync.ts";
+import { parseArrWebhook, presentedWebhookToken, webhookTokenMatches } from "./arr-webhook.ts";
 import { parseSuggestionFilters } from "./suggestion-filters.ts";
 
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
@@ -215,6 +216,7 @@ export function createApp(opts: AppOptions) {
     const settings = store.getSettings();
     return c.json({
       ...settings,
+      hasWebhookToken: Boolean(store.webhookTokenHash()),
       instances: publicInstances(),
       firstRun: firstRunState(),
       profilePreviews: profilePreviews(settings.sizeCaps),
@@ -716,6 +718,37 @@ export function createApp(opts: AppOptions) {
     const raw = randomBytes(24).toString("hex");
     store.setWidgetKeyHash(createHash("sha256").update(raw).digest("hex"));
     return c.json({ key: raw });
+  });
+
+  app.post("/api/settings/webhook-token", (c) => {
+    const raw = randomBytes(24).toString("hex");
+    store.setWebhookTokenHash(createHash("sha256").update(raw).digest("hex"));
+    return c.json({ token: raw, url: "/api/hooks/arr" });
+  });
+
+  app.post("/api/hooks/arr", async (c) => {
+    const presented = presentedWebhookToken({
+      apiKey: c.req.header("x-api-key") ?? undefined,
+      authorization: c.req.header("authorization") ?? undefined,
+      queryKey: c.req.query("apikey") ?? undefined,
+    });
+    if (!webhookTokenMatches(presented, store.webhookTokenHash())) {
+      return c.json({ error: "The webhook token is wrong." }, 401);
+    }
+    let payload: unknown = {};
+    try {
+      payload = await c.req.json();
+    } catch {
+      payload = {};
+    }
+    const event = parseArrWebhook(payload);
+    if (event.syncsLibrary) {
+      void sync.notifyFromWebhook(payload).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "unknown error";
+        console.error(`The Arr webhook could not refresh the library because ${message}`);
+      });
+    }
+    return c.json({ ok: true });
   });
 
   const widget = async (c: Context) => {

@@ -224,6 +224,9 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 203. As a library owner, I want active jobs to require Cancel before Remove, so that removing a row cannot hide work that is still running.
 204. As a library owner, I want Movies and Series to return a bounded first page, so that a large library becomes usable before every title has crossed the network and rendered.
 205. As a library owner, I want Series to load episode details when I expand a show, so that collapsed shows do not transfer or render rows I have not asked to inspect.
+206. As an operator, I want a webhook URL that Radarr and Sonarr can call when they import, upgrade, or rename a file, so that Polisharr sees new media without waiting for the 15-minute sync.
+207. As an operator, I want that webhook to inspect the new or changed file and not enqueue optimize, so that I still approve work.
+208. As an operator, I want the webhook to use a generated token that is hashed at rest and never echoed after I copy it, so that Connect does not need my Polisharr password (ENG-06).
 
 ## Implementation Decisions
 
@@ -232,7 +235,8 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Library of record stays in Radarr and Sonarr. Polisharr syncs via their APIs and treats reported file paths as authoritative. No path-translation layer in v1.
 - Multiple Arr instances are first-class: each has URL, API key, and enable flag. Movies come from Radarr instances, episodes from Sonarr instances.
 - Arr sync and inspect are separate jobs. Persist library rows (and artwork URLs) as soon as the Arr APIs return. Return refresh as soon as lists are stored. Probe in the background with a small concurrency cap. Never re-probe when path and size match. Bound retries, then record a distinct Error. Do not increment a forever-growing failed counter.
-- New imports are inspected automatically. There is no auto-optimize in v1. Every encode, mux, or stereo job waits for approval (or for an explicit row action that queues that title).
+- New imports are inspected automatically. There is no auto-optimize in v1. Every encode, mux, or stereo job waits for approval (or for an explicit row action that queues that title). Radarr and Sonarr Connect may POST `/api/hooks/arr` on import, upgrade, or rename so sync does not wait for the 15-minute timer. The hook is token-authenticated (not the login cookie). A Connect Test returns 200. The hook never enqueues optimize.
+- Webhook token: generated in Settings, SHA-256 at rest, shown once. Accept `X-Api-Key`, `Authorization: Bearer`, HTTP Basic password, or query `apikey`. Missing or wrong token is 401 with one generic error. Overlapping hooks join the in-flight library sync. Prefer a targeted movie or series refresh when the payload has an Arr id; otherwise refresh the enabled Arrs.
 - Preferred language is a user setting, confirmed once before the first optimize run. Optimize, queue, and Keep stay gated until first-run is complete (ENG-07).
 - Size policy is GB per hour, tunable per category. Shipped defaults: Movie 1080p 2.5, Movie 4K SDR 6, Movie 4K HDR 8, TV 1080p 1.0, TV 4K 4.0. Encodes aim at the category target. The cap is the encode aim, not a silent discard rule.
 - Size category uses Arr type (movie vs TV), Arr quality or resolution when it says 2160p / 4K / UHD, and the largest playable video stream (not cover art; coded size when display size is missing). Dolby Vision or HDR selects the HDR cap. Recompute the cap when listing suggestions and when enqueueing.
@@ -284,7 +288,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 - Review and promote: Keep returns while a fake slow move is still running; GET review shows in-progress; a second Keep is rejected; Keep replaces and deletes original and calls Arr rename/refresh; Keep selected accepts two pending and skips one already-keeping; Discard deletes sidecar only; flagged-over-cap stays; Arr rename failure does not delete the new file; permission failures leave both files.
 - Player notifier: Plex and Jellyfin are called after Keep; a player outage is reported and does not undo Keep.
 - Activity and savings: a Keep of a 10 GB source to a 4 GB sidecar increases files optimized by 1 and space saved by 6 GB; Discard does not; failed Keep does not.
-- Auth: set password, login, bad password, logout, session expiry, optional local bypass on/off. No plaintext password at rest. Widget route: key works, missing key on a public IP is 401, payload has no secrets or paths.
+- Auth: set password, login, bad password, logout, session expiry, optional local bypass on/off. No plaintext password at rest. Widget route: key works, missing key on a public IP is 401, payload has no secrets or paths. Arr webhook: header or Basic token starts sync; Test is 200; bad token is 401; GET settings has `hasWebhookToken` only; Download with a movie id upserts that title and does not enqueue a job.
 - Report: the GitHub URL encodes route and inspect leftovers; a sample path or secret is absent from the query.
 - Web UI / HTTP: bounded Movies, Suggestions, Queue, Review, Errors, and History pages; Series summaries; episodes for one expanded show; search `q`; enqueue; Keep/Discard; Home payload; settings. Seeded list tests assert first-page cardinality and continuation metadata. Large-library tests assert a bounded first response and no episode payload before expansion. Polling cleanup when a request is still in flight. Force/stereo HTTP: unreadable is not 200; stereo no-op is not 200.
 - Prior art: the previous Polisharr test suite is not to be reused. Tests are written next to the new modules, with fixtures, not the live NAS.
@@ -311,7 +315,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 
 ## Further Notes
 
-- This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-optimize, which are dropped. GitHub issue #35 (Report a bug) is shipped behavior: a GitHub new-issue form with route and job context. The operator attaches a screenshot on GitHub when one would help.
+- This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-optimize, which are dropped. GitHub issue #35 (Report a bug) is shipped behavior: a GitHub new-issue form with route and job context. The operator attaches a screenshot on GitHub when one would help. GitHub issue #41 (Arr webhooks) is shipped behavior: token-gated `POST /api/hooks/arr` starts library sync and inspect, never optimize.
 - The current open-issue audit, fixed-issue evidence, and remaining implementation sequence live in [open-issues.md](../plans/open-issues.md).
 - First install target is ubuntuserver, which already runs Radarr, Sonarr, Plex, Jellyfin, and an NVIDIA stack. CUDA is the on-box encode path; VAAPI remains required for portable installs.
 - Media lives on the Synology Plex share mounted at the same network path the Arrs use. The review path must also live on the NAS but outside those library roots.

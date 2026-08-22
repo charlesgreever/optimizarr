@@ -86,4 +86,39 @@ describe("LibrarySync", () => {
       store.close();
     }
   });
+
+  it("imports one Radarr movie from a Download webhook and ignores Test", async () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-hook-")), "polisharr.db"));
+    store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });
+    const urls: string[] = [];
+    const sync = new LibrarySync({
+      store,
+      decrypt: () => "key",
+      inspectPending: async () => undefined,
+      intervalMs: 0,
+      fetch: (async (input) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.endsWith("/movie/10")) {
+          return new Response(JSON.stringify({
+            id: 10,
+            title: "Imported",
+            movieFile: { path: "/media/imported.mkv", size: 2, quality: { quality: { name: "WEBDL-1080p" } } },
+          }));
+        }
+        return new Response("[]");
+      }) as typeof fetch,
+    });
+    try {
+      await sync.notifyFromWebhook({ eventType: "Test" });
+      expect(urls).toEqual([]);
+      await sync.notifyFromWebhook({ eventType: "Download", movie: { id: 10 } });
+      expect(urls.some((url) => url.endsWith("/movie/10"))).toBe(true);
+      expect(urls.some((url) => url.endsWith("/movie"))).toBe(false);
+      expect(store.listItems("movie")[0]?.title).toBe("Imported");
+    } finally {
+      sync.stop();
+      store.close();
+    }
+  });
 });

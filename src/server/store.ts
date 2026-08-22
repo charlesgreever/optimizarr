@@ -876,6 +876,15 @@ export class Store {
     this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('widget', ?)").run(hash);
   }
 
+  webhookTokenHash(): string | null {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'webhook'").get() as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setWebhookTokenHash(hash: string): void {
+    this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('webhook', ?)").run(hash);
+  }
+
   close(): void {
     this.db.close();
   }

@@ -14,6 +14,8 @@ Agents start at [AGENTS.md](AGENTS.md).
 
 Operators use **Report** on any signed-in page. That control opens a GitHub issue with the current route and job context. Attach a screenshot on GitHub if one would help. Do not put library paths or secrets in the issue body.
 
+Radarr and Sonarr can POST `/api/hooks/arr` with the Settings webhook token when they import media. That path is not cookie-authenticated. Do not log the token.
+
 ## Before you open a change
 
 ```bash

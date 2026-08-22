@@ -6,7 +6,10 @@ import {
   parseSonarrEpisodes,
   parseSonarrSeries,
   trimUrl,
+  type ArrEpisode,
+  type ArrMovie,
 } from "./arr.ts";
+import { parseArrWebhook } from "./arr-webhook.ts";
 import type { Store, StoredInstance } from "./store.ts";
 
 export type LibrarySyncResult = { ok: true; errors: string[] };
@@ -45,6 +48,19 @@ export class LibrarySync {
     return this.inFlight;
   }
 
+  notifyFromWebhook(payload: unknown): Promise<LibrarySyncResult> {
+    const event = parseArrWebhook(payload);
+    if (!event.syncsLibrary) return Promise.resolve({ ok: true, errors: [] });
+    if (this.inFlight) return this.refresh();
+    return this.performTargetedRefresh(event).then((hit) => {
+      if (hit) {
+        this.inspectAfterSync();
+        return { ok: true as const, errors: [] };
+      }
+      return this.refresh();
+    });
+  }
+
   private refreshInBackground(): void {
     void this.refresh().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : "unknown error";
@@ -62,11 +78,63 @@ export class LibrarySync {
         errors.push(`${instance.name}: ${error instanceof Error ? error.message : "Sync failed."}`);
       }
     }
+    this.inspectAfterSync();
+    return { ok: true, errors };
+  }
+
+  private inspectAfterSync(): void {
     void this.options.inspectPending().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : "unknown error";
       console.error(`The library inspector could not start after sync because ${message}`);
     });
-    return { ok: true, errors };
+  }
+
+  private async performTargetedRefresh(event: { movieId: number | null; seriesId: number | null }): Promise<boolean> {
+    if (event.movieId != null && (await this.refreshRadarrMovie(event.movieId))) return true;
+    if (event.seriesId != null && (await this.refreshSonarrSeries(event.seriesId))) return true;
+    return false;
+  }
+
+  private async refreshRadarrMovie(movieId: number): Promise<boolean> {
+    let found = false;
+    for (const instance of this.options.store.listInstances()) {
+      if (!instance.enabled || instance.kind !== "radarr" || !instance.secret) continue;
+      try {
+        const raw = await fetchJson(`${trimUrl(instance.url)}/api/v3/movie/${movieId}`, this.options.decrypt(instance.secret), this.options.fetch);
+        const movie = parseRadarrMovies(Array.isArray(raw) ? raw : [raw])[0];
+        if (!movie) continue;
+        this.storeMovie(instance, movie);
+        found = true;
+      } catch {
+        /* try the next Radarr */
+      }
+    }
+    return found;
+  }
+
+  private async refreshSonarrSeries(seriesId: number): Promise<boolean> {
+    let found = false;
+    for (const instance of this.options.store.listInstances()) {
+      if (!instance.enabled || instance.kind !== "sonarr" || !instance.secret) continue;
+      try {
+        const key = this.options.decrypt(instance.secret);
+        const rawShow = await fetchJson(`${trimUrl(instance.url)}/api/v3/series/${seriesId}`, key, this.options.fetch);
+        const show = parseSonarrSeries(Array.isArray(rawShow) ? rawShow : [rawShow])[0];
+        if (!show) continue;
+        const episodes = parseSonarrEpisodes(
+          await fetchJson(`${trimUrl(instance.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, this.options.fetch),
+          show.title,
+          show.posterUrl,
+          show.profile,
+          show.tags,
+        );
+        for (const episode of episodes) this.storeEpisode(instance, episode);
+        found = true;
+      } catch {
+        /* try the next Sonarr */
+      }
+    }
+    return found;
   }
 
   private async refreshInstance(instance: StoredInstance, key: string, errors: string[]): Promise<void> {
@@ -78,16 +146,7 @@ export class LibrarySync {
     }
     if (instance.kind === "radarr") {
       const movies = parseRadarrMovies(await fetchJson(`${trimUrl(instance.url)}/api/v3/movie`, key, this.options.fetch));
-      for (const movie of movies) {
-        const id = `${instance.id}:movie:${movie.id}`;
-        this.options.store.upsertItem({
-          id, instanceId: instance.id, arrId: movie.id, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
-          title: movie.title, showTitle: null, season: null, episode: null, episodeTitle: null, path: movie.path,
-          sizeBytes: movie.size, quality: movie.quality, resolution: movie.resolution, profile: movie.profile,
-          tags: movie.tags, posterRemoteUrl: movie.posterUrl,
-          sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
-        });
-      }
+      for (const movie of movies) this.storeMovie(instance, movie);
       return;
     }
     const series = parseSonarrSeries(await fetchJson(`${trimUrl(instance.url)}/api/v3/series`, key, this.options.fetch));
@@ -96,18 +155,31 @@ export class LibrarySync {
         await fetchJson(`${trimUrl(instance.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, this.options.fetch),
         show.title, show.posterUrl, show.profile, show.tags,
       );
-      for (const episode of episodes) {
-        const id = `${instance.id}:episode:${episode.id}`;
-        this.options.store.upsertItem({
-          id, instanceId: instance.id, arrId: episode.id, arrSeriesId: episode.seriesId,
-          arrEpisodeFileId: episode.episodeFileId, type: "episode", title: episode.seriesTitle,
-          showTitle: episode.seriesTitle, season: episode.season, episode: episode.episode,
-          episodeTitle: episode.episodeTitle, path: episode.path, sizeBytes: episode.size, quality: episode.quality,
-          resolution: episode.resolution, profile: episode.profile, tags: episode.tags,
-          posterRemoteUrl: episode.posterUrl, sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
-        });
-      }
+      for (const episode of episodes) this.storeEpisode(instance, episode);
     }
+  }
+
+  private storeMovie(instance: StoredInstance, movie: ArrMovie): void {
+    const id = `${instance.id}:movie:${movie.id}`;
+    this.options.store.upsertItem({
+      id, instanceId: instance.id, arrId: movie.id, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: movie.title, showTitle: null, season: null, episode: null, episodeTitle: null, path: movie.path,
+      sizeBytes: movie.size, quality: movie.quality, resolution: movie.resolution, profile: movie.profile,
+      tags: movie.tags, posterRemoteUrl: movie.posterUrl,
+      sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
+    });
+  }
+
+  private storeEpisode(instance: StoredInstance, episode: ArrEpisode): void {
+    const id = `${instance.id}:episode:${episode.id}`;
+    this.options.store.upsertItem({
+      id, instanceId: instance.id, arrId: episode.id, arrSeriesId: episode.seriesId,
+      arrEpisodeFileId: episode.episodeFileId, type: "episode", title: episode.seriesTitle,
+      showTitle: episode.seriesTitle, season: episode.season, episode: episode.episode,
+      episodeTitle: episode.episodeTitle, path: episode.path, sizeBytes: episode.size, quality: episode.quality,
+      resolution: episode.resolution, profile: episode.profile, tags: episode.tags,
+      posterRemoteUrl: episode.posterUrl, sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
+    });
   }
 
   private async refreshRoots(instance: StoredInstance, key: string): Promise<string[]> {

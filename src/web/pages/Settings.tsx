@@ -12,6 +12,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
   const [inst, setInst] = useState({ kind: "radarr", name: "", url: "", apiKey: "" });
   const [exclusions, setExclusions] = useState<Exclusion[]>([]);
   const [exclusion, setExclusion] = useState<{ kind: Exclusion["kind"]; value: string }>({ kind: "path", value: "" });
+  const [webhookToken, setWebhookToken] = useState<string | null>(null);
 
   const load = () => void api.settings().then(setData);
   useEffect(() => {
@@ -193,6 +194,38 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           ))}
         </ul>
         <RefreshLibrary />
+      </div>
+      <div className="glass space-y-3 p-4">
+        <h2 className="font-semibold">Radarr and Sonarr webhooks</h2>
+        <p className="help">
+          Polisharr can learn about a finished download as soon as Radarr or Sonarr imports it, instead of waiting for the next 15-minute sync. This does not start an encode.
+        </p>
+        <p className="text-sm">
+          URL: <code>{typeof window !== "undefined" ? `${window.location.origin}/api/hooks/arr` : "/api/hooks/arr"}</code>
+        </p>
+        <p className="help">
+          On the Arr Docker network use <code>http://polisharr:7373/api/hooks/arr</code>. In Connect, enable On Import, On Upgrade, and On Rename. Paste the token as header <code>X-Api-Key</code>, or as the Connect password. A query <code>?apikey=</code> works if the form only has a URL; that puts the token in access logs.
+        </p>
+        {webhookToken ? (
+          <p className="text-sm">
+            Token (shown once): <code>{webhookToken}</code>
+          </p>
+        ) : (
+          <p className="help">{data.hasWebhookToken ? "A token is saved. Generate a new one to replace it." : "No token yet. Generate one before you add the Connect webhook."}</p>
+        )}
+        <button
+          className="btn"
+          type="button"
+          onClick={() =>
+            void api.mintWebhookToken().then((result) => {
+              setWebhookToken(result.token);
+              load();
+              setMsg("Webhook token generated. Copy it now; Polisharr will not show it again.");
+            }).catch((e: Error) => setMsg(e.message))
+          }
+        >
+          {data.hasWebhookToken ? "Rotate webhook token" : "Generate webhook token"}
+        </button>
       </div>
       {msg && <p className="ok text-sm">{msg}</p>}
     </section>

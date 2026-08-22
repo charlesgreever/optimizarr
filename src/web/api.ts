@@ -16,6 +16,7 @@ export const api = {
   logout: () => req("/api/auth/logout", { method: "POST" }),
   settings: () => req<SettingsPayload>("/api/settings"),
   saveSettings: (body: Record<string, unknown>) => req("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  mintWebhookToken: () => req<{ token: string; url: string }>("/api/settings/webhook-token", { method: "POST" }),
   hardware: () => req<Hardware>("/api/hardware"),
   saveInstance: (body: Record<string, unknown>) => req("/api/integrations", { method: "POST", body: JSON.stringify(body) }),
   testInstance: (id: string) => req<{ ok: boolean; message?: string }>(`/api/integrations/${id}/test`, { method: "POST" }),
@@ -110,6 +111,7 @@ export type SettingsPayload = {
   localAuthBypass: boolean;
   writeMode: "sidecar" | "direct";
   profileAutoAssign: boolean;
+  hasWebhookToken?: boolean;
   instances: Array<{ id: string; kind: "radarr" | "sonarr" | "plex" | "jellyfin"; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
   profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;

@@ -87,9 +87,11 @@ Empty `catch` is forbidden unless the next line documents why ignore is safe (`u
 | Admin password | argon2id (already) | never |
 | Arr API key | encrypted or at least not returned | `hasApiKey: true` only |
 | Player token | same | `hasToken: true` only |
+| Homepage widget key | SHA-256 | never (shown once on mint) |
+| Arr webhook token | SHA-256 | `hasWebhookToken: true` only (raw token shown once on mint) |
 | Session | random id, httpOnly cookie | cookie only |
 
-Do not log API keys, tokens, or password hashes. Do not put them in query strings. Do not commit `.env` or `config/*.db`.
+Do not log API keys, tokens, or password hashes. Do not put them in query strings. Do not commit `.env` or `config/*.db`. Radarr/Sonarr Connect may send the webhook token as `?apikey=` when the form only has a URL (issue #41); prefer `X-Api-Key` or HTTP Basic so the token stays out of access logs.
 
 ## ENG-07: AuthZ is server-side. Optimize stays gated.
 

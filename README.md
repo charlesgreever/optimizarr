@@ -61,6 +61,8 @@ Recreate the container after you change GPU settings.
 
 Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language.
 
+To have Polisharr notice a finished download immediately, generate a webhook token in Settings and add a Connect webhook in Radarr and Sonarr. URL is `/api/hooks/arr` (on the Arr Docker network, `http://polisharr:7373/api/hooks/arr`). Enable On Import, On Upgrade, and On Rename. Send the token as header `X-Api-Key` or as the Connect password. This starts a library sync and inspect. It does not start an encode.
+
 Under **Default suggestion operations**, **Convert MP4 to MKV** is off by default. When enabled, Polisharr uses `mkvmerge` to create an MKV before any hardware encode. An MP4 that needs no other work gets a remux-only suggestion.
 
 | Variable | Default | Purpose |

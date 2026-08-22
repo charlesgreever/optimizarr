@@ -1248,4 +1248,74 @@ describe("public HTTP behavior", () => {
     await walk;
     expect(created.store.getInspectState().walking).toBe(false);
   });
+
+  it("mints a webhook token once and never echoes it from settings", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    expect((await ctx.app.app.request("/api/settings/webhook-token", { method: "POST" })).status).toBe(401);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    const minted = await ctx.app.app.request("/api/settings/webhook-token", { method: "POST", headers });
+    const body = (await minted.json()) as { token?: string; url?: string };
+    expect(body.token).toMatch(/^[a-f0-9]{48}$/);
+    expect(body.url).toBe("/api/hooks/arr");
+    const listed = await ctx.app.app.request("/api/settings", { headers });
+    const settings = (await listed.json()) as { hasWebhookToken?: boolean };
+    expect(settings.hasWebhookToken).toBe(true);
+    expect(JSON.stringify(settings)).not.toContain(body.token);
+  });
+
+  it("accepts an Arr webhook with a header or Basic token and rejects a bad token", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    const minted = (await (await ctx.app.app.request("/api/settings/webhook-token", { method: "POST", headers })).json()) as { token: string };
+    const denied = await ctx.app.app.request("/api/hooks/arr", { method: "POST", body: JSON.stringify({ eventType: "Test" }) });
+    expect(denied.status).toBe(401);
+    expect(await denied.json()).toEqual({ error: "The webhook token is wrong." });
+    const testOk = await ctx.app.app.request("/api/hooks/arr", {
+      method: "POST",
+      headers: { "X-Api-Key": minted.token },
+      body: JSON.stringify({ eventType: "Test" }),
+    });
+    expect(testOk.status).toBe(200);
+    const basicOk = await ctx.app.app.request("/api/hooks/arr", {
+      method: "POST",
+      headers: { Authorization: `Basic ${Buffer.from(`hook:${minted.token}`).toString("base64")}` },
+      body: JSON.stringify({ eventType: "Test" }),
+    });
+    expect(basicOk.status).toBe(200);
+    const queryOk = await ctx.app.app.request(`/api/hooks/arr?apikey=${minted.token}`, {
+      method: "POST",
+      body: JSON.stringify({ eventType: "Test" }),
+    });
+    expect(queryOk.status).toBe(200);
+  });
+
+  it("syncs a Radarr import from the webhook without enqueueing optimize", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const minted = (await (await ctx.app.app.request("/api/settings/webhook-token", { method: "POST", headers })).json()) as { token: string };
+    const jobsBefore = (await (await ctx.app.app.request("/api/jobs", { headers })).json()) as { items: unknown[] };
+    expect(jobsBefore.items).toEqual([]);
+    const accepted = await ctx.app.app.request("/api/hooks/arr", {
+      method: "POST",
+      headers: { "X-Api-Key": minted.token },
+      body: JSON.stringify({ eventType: "Download", movie: { id: 10 } }),
+    });
+    expect(accepted.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(ctx.store.listItems("movie").some((item) => item.title === "American Underdog")).toBe(true);
+    });
+    const jobsAfter = (await (await ctx.app.app.request("/api/jobs", { headers })).json()) as { items: unknown[] };
+    expect(jobsAfter.items).toEqual([]);
+  });
 });
