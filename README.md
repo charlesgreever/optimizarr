@@ -12,7 +12,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 ## What it does
 
 - Syncs movies from Radarr and episodes from Sonarr over their APIs
-- Refreshes Arr libraries at startup, every 15 minutes, and on request without overlapping a running refresh
+- Refreshes Arr libraries at startup, every 15 minutes, on request, and when Radarr or Sonarr posts a webhook after import
 - Opens the network path each Arr reports
 - Inspects MKV with ffprobe and ISO disc images with ffmpeg
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
@@ -59,9 +59,7 @@ Recreate the container after you change GPU settings.
 
 ### 4. First run
 
-Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language.
-
-To have Polisharr notice a finished download immediately, generate a webhook token in Settings and add a Connect webhook in Radarr and Sonarr. URL is `/api/hooks/arr` (on the Arr Docker network, `http://polisharr:7373/api/hooks/arr`). Enable On Import, On Upgrade, and On Rename. Send the token as header `X-Api-Key` or as the Connect password. This starts a library sync and inspect. It does not start an encode.
+Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language. Optional: add a webhook so new imports show up immediately ([Webhooks from Radarr and Sonarr](#webhooks-from-radarr-and-sonarr)).
 
 Under **Default suggestion operations**, **Convert MP4 to MKV** is off by default. When enabled, Polisharr uses `mkvmerge` to create an MKV before any hardware encode. An MP4 that needs no other work gets a remux-only suggestion.
 
@@ -88,6 +86,35 @@ The API listens on `http://127.0.0.1:7373`. The Vite UI listens on `http://127.0
 npm run build
 CONFIG_DIR=./config npm start
 ```
+
+## Webhooks from Radarr and Sonarr
+
+Polisharr already syncs Radarr and Sonarr every 15 minutes. A Connect webhook tells it about a finished import right away so the new file is inspected without waiting. The webhook does **not** start an encode.
+
+### 1. Generate a token in Polisharr
+
+In Settings, open **Radarr and Sonarr webhooks** and generate a token. Copy it now. Polisharr stores a hash and will not show the raw token again. Rotate the token if it leaks; the old one stops working.
+
+### 2. Add a Connect webhook in each Arr
+
+In Radarr and in Sonarr: **Settings → Connect → Add → Webhook**.
+
+| Field | Value |
+| --- | --- |
+| URL | `http://polisharr:7373/api/hooks/arr` on the Arr Docker network, or `http://<host>:7373/api/hooks/arr` from another machine |
+| Method | POST |
+| On Import | on |
+| On Upgrade | on |
+| On Rename | on |
+| Token | Header `X-Api-Key` with the generated token, **or** the Connect **Password** field (HTTP Basic). Username can be `polisharr`. |
+
+Prefer the header or the password field. A URL with `?apikey=` also works if the form only has a URL box; that puts the token in access logs.
+
+Use **Test**. Polisharr answers 200 when the token is correct.
+
+### 3. What happens on import
+
+Radarr or Sonarr posts after it imports, upgrades, or renames a file. Polisharr syncs that title (or the whole library if the payload has no id), then inspects it. Suggestions appear when inspect finishes. Grab events (download started, file not on disk yet) are ignored.
 
 ## Report a bug
 
