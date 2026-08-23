@@ -1,5 +1,5 @@
-# Intel UHD 770 (VAAPI). ffmpeg uses /dev/dri/renderD128 on this host.
-# NVIDIA copy: compose.nvidia.yaml
+# Household NVIDIA compose (RTX 4070 Ti SUPER).
+# Intel backup: compose.intel.yaml
 services:
   polisharr:
     build: .
@@ -10,17 +10,14 @@ services:
       PGID: "1000"
       TZ: America/New_York
       CONFIG_DIR: /config
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
     volumes:
       - /home/cgreever/appdata/arr/optimizarr/config:/config
       - /mnt/nas:/mnt/nas
-    devices:
-      - /dev/dri:/dev/dri
-    # Host render/video GIDs so ffmpeg can open /dev/dri after drop-root.
-    group_add:
-      - "991"
-      - "44"
     networks:
       - arr_net
+    runtime: nvidia
 
 networks:
   arr_net:
