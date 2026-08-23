@@ -71,7 +71,7 @@ export function MoviesPage() {
           <table className="dense">
             <thead>
               <tr>
-                <th>Poster</th>
+                <th className="w-12">Poster</th>
                 <th><button type="button" onClick={() => setSort("title")}>Title</button></th>
                 <LibraryMediaHeaders onQuality={() => setSort("quality")} onSize={() => setSort("size")} />
               </tr>
@@ -81,14 +81,16 @@ export function MoviesPage() {
                 <tr key={item.id} id={item.id}>
                   <td>
                     {item.hasPoster ? (
-                      <img src={`/api/library/${item.id}/poster`} alt="" className="h-10 w-7 rounded object-cover" />
+                      <img src={`/api/library/${item.id}/poster`} alt="" className="h-14 w-10 rounded-md object-cover ring-1 ring-white/10" />
                     ) : (
-                      <div className="h-10 w-7 rounded bg-white/10" />
+                      <div className="h-14 w-10 rounded-md bg-white/10 ring-1 ring-white/5" />
                     )}
                   </td>
-                  <td>
-                    <Link to={item.href || `/movies/${item.id}`}>{item.displayTitle}</Link>
-                    <div className="text-xs text-slate-400">{item.instanceName}</div>
+                  <td className="min-w-44">
+                    <Link className="font-medium text-ink hover:text-accent" to={item.href || `/movies/${item.id}`}>
+                      {item.displayTitle}
+                    </Link>
+                    <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
                   </td>
                   <LibraryMediaCells item={item} onDone={() => void load(true)} />
                 </tr>

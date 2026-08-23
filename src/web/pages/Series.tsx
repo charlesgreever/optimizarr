@@ -193,7 +193,7 @@ function SeriesGroup({
           {open ? "Collapse" : "Expand"}
         </button>
         <button
-          className="btn"
+          className="btn whitespace-nowrap"
           type="button"
           onClick={() => {
             void api.optimizeShow(summary.instanceId, summary.arrSeriesId).then((result) => {
@@ -223,7 +223,11 @@ function SeriesGroup({
             <tbody>
               {episodes.map((item) => (
                 <tr key={item.id} id={item.id}>
-                  <td><Link to={item.href || `/series/episodes/${item.id}`}>{item.displayTitle}</Link></td>
+                  <td className="min-w-52">
+                    <Link className="font-medium leading-snug text-ink hover:text-accent" to={item.href || `/series/episodes/${item.id}`}>
+                      {item.displayTitle}
+                    </Link>
+                  </td>
                   <LibraryMediaCells item={item} onDone={() => void loadEpisodes(true)} />
                 </tr>
               ))}

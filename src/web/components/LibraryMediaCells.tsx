@@ -1,6 +1,7 @@
 import { formatSize, type LibraryRow } from "../api";
 import { libraryRowView } from "../library-row";
 import { RowActions } from "./RowActions";
+import { Pill, PillList, PlanStatus, VideoLabel } from "./ui";
 
 export function LibraryMediaHeaders({ onQuality, onSize }: { onQuality?: () => void; onSize?: () => void }) {
   return (
@@ -20,14 +21,14 @@ export function LibraryMediaCells({ item, onDone }: { item: LibraryRow; onDone: 
   const view = libraryRowView(item);
   return (
     <>
-      <td>{item.quality || "—"}</td>
-      <td className="text-sm">{view.video}</td>
-      <td>{formatSize(item.sizeBytes)}</td>
-      <td className="max-w-40 text-sm">{view.audio}</td>
-      <td className="max-w-40 text-sm">{view.subtitles}</td>
-      <td className="max-w-xs text-sm text-slate-300">
-        {view.planLines.map((line, index) => <div key={`${index}:${line}`}>{line}</div>)}
+      <td className="whitespace-nowrap">
+        {item.quality ? <Pill>{item.quality}</Pill> : <span className="text-slate-500">—</span>}
       </td>
+      <td><VideoLabel label={view.video} /></td>
+      <td className="whitespace-nowrap tabular-nums">{formatSize(item.sizeBytes)}</td>
+      <td><PillList items={view.audioTracks} empty={view.audio} /></td>
+      <td><PillList items={view.subtitleTracks} empty={view.subtitles} /></td>
+      <td><PlanStatus lines={view.planLines} /></td>
       <td><RowActions item={item} onDone={onDone} /></td>
     </>
   );

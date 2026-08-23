@@ -29,7 +29,12 @@ function row(patch: Partial<LibraryRow> = {}): LibraryRow {
 
 describe("dense library row presentation", () => {
   it("distinguishes no subtitles, waiting, unreadable, and every plan reason", () => {
-    expect(libraryRowView(row())).toMatchObject({ subtitles: "None", planLines: ["Healthy"] });
+    expect(libraryRowView(row())).toMatchObject({
+      subtitles: "None",
+      subtitleTracks: [],
+      audioTracks: ["eng truehd 7.1"],
+      planLines: ["Healthy"],
+    });
     expect(libraryRowView(row({ reasons: ["Video is over the size cap.", "Spanish tracks will be removed."] })).planLines).toEqual([
       "Video is over the size cap.",
       "Spanish tracks will be removed.",

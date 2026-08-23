@@ -44,6 +44,9 @@ export const Icons = {
   exempt: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><path d="M12 3 4 7v5c0 5 3.5 8 8 9 4.5-1 8-4 8-9V7z" /></Svg>
   ),
+  open: (p?: SVGProps<SVGSVGElement>) => (
+    <Svg {...p}><path d="M14 5h5v5M19 5l-9 9" /><path d="M11 5H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5" /></Svg>
+  ),
   bug: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><circle cx="12" cy="14" r="6" /><path d="M8 8l-2-3M16 8l2-3M6 14H3M21 14h-3M8 20l-2 2M16 20l2 2" /></Svg>
   ),

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, formatSize, type SuggestionFilters, type SuggestionRow } from "../api";
+import { api, type SuggestionFilters, type SuggestionRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
+import { FilterChip, MediaSnapshot } from "../components/ui";
 import { usePagedList } from "../use-paged-list";
 
 export function SuggestionsPage() {
@@ -34,45 +35,56 @@ export function SuggestionsPage() {
       <Help>
         Suggestions is the work list: only titles that still need something. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
       </Help>
-      <div className="filter-row">
-        <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
-        <select value={filters.type ?? ""} onChange={(event) => setFilter("type", event.target.value)}>
-          <option value="">Movies and TV</option><option value="movie">Movies</option><option value="episode">TV episodes</option>
-        </select>
-        <select value={filters.resolution ?? ""} onChange={(event) => setFilter("resolution", event.target.value)}>
-          <option value="">Any resolution</option><option value="1080p">1080p</option><option value="4k">4K</option>
-        </select>
-        <select value={filters.hdr ?? ""} onChange={(event) => setFilter("hdr", event.target.value)}>
-          <option value="">HDR and SDR</option><option value="hdr">HDR</option><option value="sdr">SDR</option>
-        </select>
-        <select value={filters.codec ?? ""} onChange={(event) => setFilter("codec", event.target.value)}>
-          <option value="">Any codec</option><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option>
-        </select>
-        {(["overCap", "extraTracks", "exempt", "hardwareWarning"] as const).map((key) => (
-          <label key={key} className="flex items-center gap-1 text-xs">
-            <input type="checkbox" checked={filters[key] === true} onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.checked || undefined }))} />
-            {filterLabel(key)}
-          </label>
-        ))}
-        <button className="btn-secondary" type="button" onClick={() => void api.queueFiltered(debouncedQ, filters).then((result) => {
-          setMsg(`Queued ${result.queued}; skipped ${result.skipped}.`);
-          return list.reload();
-        }).catch((error: Error) => setMsg(error.message))}>Queue filtered</button>
-        <button
-          className="btn"
-          type="button"
-          disabled={!Object.values(selected).some(Boolean)}
-          onClick={() => {
-            const ids = items.filter((i) => selected[i.id]).map((i) => i.id);
-            void Promise.all(ids.map((id) => api.queue({ suggestionId: id }))).then(() => {
-              setMsg(`Queued ${ids.length}.`);
-              setSelected({});
+      <div className="glass mt-5 space-y-3 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
+            <select value={filters.type ?? ""} onChange={(event) => setFilter("type", event.target.value)}>
+              <option value="">Movies and TV</option><option value="movie">Movies</option><option value="episode">TV episodes</option>
+            </select>
+            <select value={filters.resolution ?? ""} onChange={(event) => setFilter("resolution", event.target.value)}>
+              <option value="">Any resolution</option><option value="1080p">1080p</option><option value="4k">4K</option>
+            </select>
+            <select value={filters.hdr ?? ""} onChange={(event) => setFilter("hdr", event.target.value)}>
+              <option value="">HDR and SDR</option><option value="hdr">HDR</option><option value="sdr">SDR</option>
+            </select>
+            <select value={filters.codec ?? ""} onChange={(event) => setFilter("codec", event.target.value)}>
+              <option value="">Any codec</option><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn-secondary" type="button" onClick={() => void api.queueFiltered(debouncedQ, filters).then((result) => {
+              setMsg(`Queued ${result.queued}; skipped ${result.skipped}.`);
               return list.reload();
-            });
-          }}
-        >
-          Add selected to queue
-        </button>
+            }).catch((error: Error) => setMsg(error.message))}>Queue filtered</button>
+            <button
+              className="btn"
+              type="button"
+              disabled={!Object.values(selected).some(Boolean)}
+              onClick={() => {
+                const ids = items.filter((i) => selected[i.id]).map((i) => i.id);
+                void Promise.all(ids.map((id) => api.queue({ suggestionId: id }))).then(() => {
+                  setMsg(`Queued ${ids.length}.`);
+                  setSelected({});
+                  return list.reload();
+                });
+              }}
+            >
+              Add selected to queue
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(["overCap", "extraTracks", "exempt", "hardwareWarning"] as const).map((key) => (
+            <FilterChip
+              key={key}
+              pressed={filters[key] === true}
+              onToggle={() => setFilters((current) => ({ ...current, [key]: current[key] ? undefined : true }))}
+            >
+              {filterLabel(key)}
+            </FilterChip>
+          ))}
+        </div>
       </div>
       {items.length === 0 && list.loading && <div className="empty">Loading suggestions…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">No open work. Healthy files stay off this list.</div>}
@@ -81,44 +93,49 @@ export function SuggestionsPage() {
           <table>
             <thead>
               <tr>
-                <th></th>
+                <th className="w-10"></th>
                 <th>Title</th>
                 <th>Why</th>
                 <th>Now</th>
                 <th>After</th>
-                <th></th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <input type="checkbox" checked={Boolean(selected[item.id])} onChange={(e) => setSelected((s) => ({ ...s, [item.id]: e.target.checked }))} />
+                    <input
+                      className="size-4 accent-accent"
+                      type="checkbox"
+                      checked={Boolean(selected[item.id])}
+                      onChange={(e) => setSelected((s) => ({ ...s, [item.id]: e.target.checked }))}
+                      aria-label={`Select ${item.displayTitle}`}
+                    />
                   </td>
+                  <td className="min-w-44">
+                    <div className="font-medium text-ink">{item.displayTitle}</div>
+                    <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
+                  </td>
+                  <td className="max-w-sm">
+                    <ul className="space-y-1 text-sm leading-5 text-slate-300">
+                      {item.reasons.map((reason, index) => (
+                        <li key={`${index}:${reason}`}>{reason}</li>
+                      ))}
+                    </ul>
+                    {item.warning && <p className="mt-1 text-xs text-warn">{item.warning}</p>}
+                  </td>
+                  <td><MediaSnapshot snapshot={item.now} /></td>
+                  <td><MediaSnapshot snapshot={item.after} savingsBytes={item.estimatedSavingsBytes} emphasize /></td>
                   <td>
-                    {item.displayTitle}
-                    <div className="text-xs text-slate-500">{item.instanceName}</div>
-                  </td>
-                  <td className="max-w-sm text-sm">{item.reasons.join(" ")}</td>
-                  <td className="text-sm">
-                    {item.now.codec}{item.now.quality ? ` · ${item.now.quality}` : ""} · {formatSize(item.now.sizeBytes)}
-                    {item.now.sizePerHourGb != null ? ` · ${item.now.sizePerHourGb.toFixed(2)} GB/hr` : ""}
-                    {item.now.tracks.map((track, index) => <div key={`${index}-${track}`} className="text-xs text-slate-400">{track}</div>)}
-                  </td>
-                  <td className="text-sm">
-                    {item.after.codec ?? "—"}{item.after.quality ? ` · ${item.after.quality}` : ""}
-                    {item.after.sizeBytes != null ? ` · ${formatSize(item.after.sizeBytes)}` : ""}
-                    {item.after.sizePerHourGb != null ? ` · ${item.after.sizePerHourGb.toFixed(2)} GB/hr` : ""}
-                    {item.estimatedSavingsBytes ? ` · save ${formatSize(item.estimatedSavingsBytes)}` : ""}
-                    {item.after.tracks.map((track, index) => <div key={`${index}-${track}`} className="text-xs text-slate-400">{track}</div>)}
-                  </td>
-                  <td>
-                    <button className="btn" type="button" onClick={() => void api.queue({ suggestionId: item.id }).then(() => setMsg("Added to queue."))}>
-                      Queue
-                    </button>
-                    <button className="btn-secondary danger ml-1" type="button" onClick={() => void api.dismiss(item.id).then(list.reload)}>
-                      Dismiss
-                    </button>
+                    <div className="flex min-w-24 flex-col gap-1.5">
+                      <button className="btn" type="button" onClick={() => void api.queue({ suggestionId: item.id }).then(() => setMsg("Added to queue."))}>
+                        Queue
+                      </button>
+                      <button className="btn-secondary danger" type="button" onClick={() => void api.dismiss(item.id).then(list.reload)}>
+                        Dismiss
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
