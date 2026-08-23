@@ -15,6 +15,7 @@ services:
       - /mnt/nas:/mnt/nas
     devices:
       - /dev/dri:/dev/dri
+    # Host render/video GIDs so ffmpeg can open /dev/dri after drop-root.
     group_add:
       - "991"
       - "44"
