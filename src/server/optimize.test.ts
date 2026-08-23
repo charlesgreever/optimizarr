@@ -395,6 +395,50 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("scale=1920:1080");
   });
 
+  it("builds a VAAPI encode graph instead of NVENC when that is the usable backend", () => {
+    const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
+    const args = encodeArgs(source, "/tmp/out.mkv", {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      suggestion,
+      plan: {
+        ...plan,
+        video: { kind: "quality", codec: "hevc", quality: 22, downscale1080p: true, bitDepth: 8 },
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "ffprobe",
+        listingState: "complete",
+        durationSec: 6000,
+        sizeBytes: 8_000_000_000,
+        sizePerHourGb: 4,
+        videoCodec: "h264",
+        width: 3840,
+        height: 2160,
+        bitDepth: 8,
+        hdr: "none",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc",
+      backend: "vaapi",
+      vaapiDevice: "/dev/dri/renderD128",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    expect(args).toContain("hevc_vaapi");
+    expect(args).not.toContain("hevc_nvenc");
+    expect(args.join(" ")).toContain("vaapi=va:/dev/dri/renderD128");
+    expect(args.join(" ")).toContain("format=nv12,hwupload=extra_hw_frames=64,scale_vaapi=w=1920:h=1080");
+    expect(args).toContain("-qp");
+    expect(args).not.toContain("yuv420p");
+    expect(args).not.toContain("p010le");
+  });
+
   it("converts timed-text subtitles to SubRip instead of copying them", () => {
     const report: InspectionReport = {
       sourceSig: "p|1",

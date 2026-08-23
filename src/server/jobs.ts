@@ -177,6 +177,7 @@ export class JobService {
         report,
         target: settings.videoTarget,
         backend: hardware.backend,
+        vaapiDevice: hardware.vaapiDevice,
         ffmpeg: this.opts.tools.ffmpeg,
         ffprobe: this.opts.tools.ffprobe,
         mkvmerge: this.opts.tools.mkvmerge,

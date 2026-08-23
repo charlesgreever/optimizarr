@@ -247,6 +247,7 @@ export type HardwareInfo = {
   vaapi: boolean;
   av1: boolean;
   reason: string | null;
+  vaapiDevice?: string | null;
 };
 
 export type HomePayload = {

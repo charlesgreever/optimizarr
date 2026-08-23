@@ -89,7 +89,7 @@ export type SeriesSummary = {
 
 export type FirstRun = { hasAdmin: boolean; languageConfirmed: boolean; hasReviewPath: boolean; hasArr: boolean; complete: boolean };
 export type HardwareBackend = "cuda" | "vaapi" | "none";
-export type Hardware = { backend: HardwareBackend; cuda: boolean; vaapi: boolean; av1: boolean; reason: string | null };
+export type Hardware = { backend: HardwareBackend; cuda: boolean; vaapi: boolean; av1: boolean; reason: string | null; vaapiDevice?: string | null };
 export type SettingsPayload = {
   preferredLanguage: string;
   languageConfirmed: boolean;

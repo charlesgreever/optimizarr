@@ -16,6 +16,7 @@ export type OptimizeRequest = {
   report: InspectionReport;
   target: "hevc" | "av1";
   backend: "cuda" | "vaapi" | "none";
+  vaapiDevice?: string | null;
   ffmpeg: string;
   ffprobe: string;
   mkvmerge: string;
@@ -544,19 +545,33 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     ? req.backend === "vaapi" ? "av1_vaapi" : "av1_nvenc"
     : req.backend === "vaapi" ? "hevc_vaapi" : "hevc_nvenc";
   const tenBit = (video && video.kind !== "copy" ? video.bitDepth : req.report.bitDepth) >= 10;
-  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-y", "-i", source];
-  if (req.backend === "vaapi") args.push("-vaapi_device", "/dev/dri/renderD128");
-  args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?");
-  if (video?.kind !== "copy" && video?.downscale1080p) args.push("-vf", "scale=1920:1080");
+  const downscale = video?.kind !== "copy" && Boolean(video?.downscale1080p);
+  const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-y"];
+  if (req.backend === "vaapi") {
+    const device = req.vaapiDevice || "/dev/dri/renderD128";
+    args.push("-init_hw_device", `vaapi=va:${device}`, "-filter_hw_device", "va");
+  }
+  args.push("-i", source, "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?");
+  if (req.backend === "vaapi") {
+    const format = tenBit ? "p010" : "nv12";
+    const filters = [`format=${format}`, "hwupload=extra_hw_frames=64"];
+    if (downscale) filters.push("scale_vaapi=w=1920:h=1080");
+    args.push("-vf", filters.join(","));
+  } else if (downscale) {
+    args.push("-vf", "scale=1920:1080");
+  }
   args.push("-c:v", encoder);
-  if (tenBit && encoder.includes("nvenc")) args.push("-profile:v", "main10");
+  if (tenBit) args.push("-profile:v", "main10");
   if (video?.kind === "quality") {
     if (req.backend === "vaapi") args.push("-qp", String(video.quality));
     else args.push("-cq", String(video.quality), "-rc", "vbr");
   } else {
-    args.push("-b:v", String(nvencBitrate(req, video)));
+    const bitrate = String(nvencBitrate(req, video));
+    args.push("-b:v", bitrate);
+    if (req.backend === "vaapi") args.push("-maxrate", bitrate);
   }
-  args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p", "-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
+  if (req.backend !== "vaapi") args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");
+  args.push("-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
   return args;
 }
 
