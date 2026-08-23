@@ -8,6 +8,7 @@ import type {
   VideoTarget,
 } from "./types.ts";
 import { normalizeLang } from "./inspect.ts";
+import { exceedsSizeCap } from "./size-budget.ts";
 
 export type SuggestInput = {
   item: LibraryItem;
@@ -43,7 +44,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const { item, report, settings } = input;
   const category = sizeCategory(item, report);
   const cap = settings.sizeCaps[category];
-  const overCap = report.sizePerHourGb > cap + 0.01;
+  const overCap = exceedsSizeCap(report.sizePerHourGb, cap);
   const lang = normalizeLang(settings.preferredLanguage);
   const keepAudio = settings.suggestionDefaults.removeNonPreferredAudio
     ? report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length))

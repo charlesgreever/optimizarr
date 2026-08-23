@@ -5,6 +5,7 @@ import type { HardwareInfo, Job, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
+import { exceedsSizeCap } from "./size-budget.ts";
 import { promote } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
@@ -205,7 +206,7 @@ export class JobService {
         this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
         return;
       }
-      const overCap = result.output.sizePerHourGb > settings.sizeCaps[plan.category];
+      const overCap = exceedsSizeCap(result.output.sizePerHourGb, settings.sizeCaps[plan.category]);
       const larger = result.output.sizeBytes > report.sizeBytes;
       this.opts.store.insertReview({
         id: randomUUID(),

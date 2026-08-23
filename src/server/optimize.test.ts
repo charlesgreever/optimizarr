@@ -23,6 +23,7 @@ import {
   scaleProgress,
   assertReviewCapacity,
 } from "./optimize.ts";
+import { videoBitrateForTarget } from "./size-budget.ts";
 import type { OptimizeRequest } from "./optimize.ts";
 import type { InspectionReport, Suggestion } from "./types.ts";
 
@@ -489,7 +490,10 @@ describe("ffmpeg encode arguments", () => {
   });
 
   it("encodes only the first video stream so Blu-ray menu titles do not hit NVENC", () => {
-    const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
+    const plan = {
+      ...planFromSuggestion({ ...suggestion, actions: ["transcode"] }),
+      video: { kind: "size" as const, codec: "hevc" as const, targetBytes: 8 * 1024 ** 3, downscale1080p: false, bitDepth: 8 },
+    };
     const args = encodeArgs(source, "/tmp/out.mkv", {
       sourcePath: source,
       reviewDir: "/tmp/review",
@@ -568,8 +572,10 @@ describe("ffmpeg encode arguments", () => {
       conservative: false,
     });
     const bitrate = Number(args[args.indexOf("-b:v") + 1]);
-    const expected = Math.round(((targetBytes - 80_000_000) * 8) / durationSec);
+    const expected = videoBitrateForTarget({ targetBytes, durationSec, audioBitrateBps: 0 });
     expect(bitrate).toBe(expected);
+    expect(args[args.indexOf("-maxrate") + 1]).toBe(String(expected));
+    expect(args[args.indexOf("-bufsize") + 1]).toBe(String(expected * 2));
     expect(bitrate).toBeGreaterThan(15_000_000);
     expect(bitrate).toBeLessThan(25_000_000);
   });
@@ -615,7 +621,7 @@ describe("ffmpeg encode arguments", () => {
       conservative: false,
     };
     expect(() => nvencBitrate(req, req.plan.video)).toThrow(
-      /A 19\.9 GB target over 1 minutes needs 17099 Mbps, which the hardware encoder will reject/,
+      /A 20\.0 GB target over 1 minutes needs \d+ Mbps, which the hardware encoder will reject/,
     );
   });
 

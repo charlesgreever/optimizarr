@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { isIsoPath, parseFfprobe } from "./inspect.ts";
 import type { ExecutablePlan, InspectionReport, Suggestion, WriteMode } from "./types.ts";
 import { planHasVideoTranscode } from "./types.ts";
+import { copiedAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -567,8 +568,7 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     else args.push("-cq", String(video.quality), "-rc", "vbr");
   } else {
     const bitrate = String(nvencBitrate(req, video));
-    args.push("-b:v", bitrate);
-    if (req.backend === "vaapi") args.push("-maxrate", bitrate);
+    args.push("-b:v", bitrate, "-maxrate", bitrate, "-bufsize", String(Number(bitrate) * 2));
   }
   if (req.backend !== "vaapi") args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");
   args.push("-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
@@ -606,17 +606,13 @@ export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"
   }
   const hours = durationSec / 3600;
   const targetBytes = video?.kind === "size"
-    ? Math.max(1_000_000, video.targetBytes - 80_000_000)
+    ? video.targetBytes
     : (req.suggestion?.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3;
-  const bitrate = Math.max(800_000, Math.round((targetBytes * 8) / durationSec));
-  if (bitrate > 300_000_000) {
-    const gb = (targetBytes / 1024 ** 3).toFixed(1);
-    const minutes = Math.max(1, Math.round(durationSec / 60));
-    throw new Error(
-      `A ${gb} GB target over ${minutes} minutes needs ${(bitrate / 1_000_000).toFixed(0)} Mbps, which the hardware encoder will reject. The remux is probably a short title, not the feature.`,
-    );
-  }
-  return bitrate;
+  return videoBitrateForTarget({
+    targetBytes,
+    durationSec,
+    audioBitrateBps: copiedAudioBitrateBps(req.report),
+  });
 }
 
 export function parseFfmpegProgress(text: string): number | null {

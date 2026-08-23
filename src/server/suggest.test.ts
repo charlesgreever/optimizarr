@@ -52,6 +52,25 @@ function report(over: Partial<InspectionReport> = {}): InspectionReport {
 }
 
 describe("suggestion engine", () => {
+  it("does not transcode a file that is only a little over the size cap", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({
+        sizePerHourGb: 8.2,
+        videoCodec: "hevc",
+        audio: [{ index: 1, language: "eng", channels: 6, codec: "eac3", title: "", untagged: false, commentary: false }],
+        subtitles: [{ index: 2, language: "eng", codec: "srt", title: "", untagged: false, forced: false, sdh: false }],
+        hdr: "hdr10",
+      }),
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion?.actions ?? []).not.toContain("transcode");
+  });
+
   it("scores a 2160p HDR movie against the 4K HDR cap", () => {
     expect(sizeCategory(movie, report())).toBe("movie4kHdr");
     const suggestion = buildSuggestion({
