@@ -116,7 +116,7 @@ ffmpeg, ffprobe, and `mkvmerge` get argument arrays (`execFile`), never a shell 
 
 A job writes only under the review path. The Arr library path is unchanged until Keep. Cancel, crash, integrity failure, and hardware failure leave the original. A pending sidecar locks a second job on that title. Review path must not sit inside an Arr library root.
 
-Tests must prove the original bytes survive the failure path.
+A crash during Keep must not leave a Review card stuck as keeping with no retry. If the replace did not finish, the original stays and the card becomes pending. If the library file already matches the sidecar, Keep counts as done. Tests must prove the original bytes survive the failure path.
 
 ## ENG-10: One module, one reason to change
 
@@ -138,7 +138,7 @@ If you cannot name it, the type is wrong.
 
 **Source:** Twelve-Factor III, VI, XI.
 
-Runtime knobs come from env (`CONFIG_DIR`, `PORT`, `PUID`, `TZ`, `FFMPEG`, `POLISHARR_BACKENDS`). Do not hard-code ubuntuserver paths in server code. The container is one process; the job runner lives in that process and must survive restart without a half-written library file.
+Runtime knobs come from env (`CONFIG_DIR`, `PORT`, `PUID`, `TZ`, `FFMPEG`, `POLISHARR_BACKENDS`). Do not hard-code ubuntuserver paths in server code. The container is one process; the job runner lives in that process and must survive restart without a half-written library file. Interrupted Keep cards recover on startup the same way interrupted jobs return to the queue.
 
 Logs are sentences with the agent named (RULE-02). No leftover `console.log` of full request bodies.
 

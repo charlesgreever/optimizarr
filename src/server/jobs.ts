@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { unlink } from "node:fs/promises";
+import { access, readdir, stat, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { Store } from "./store.ts";
-import type { HardwareInfo, Job, Settings, Suggestion } from "./types.ts";
+import type { HardwareInfo, Job, ReviewItem, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
 import { exceedsSizeCap } from "./size-budget.ts";
-import { promote } from "./promote.ts";
+import { classifyInterruptedKeep, KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
+import { promote, promotedPath, type PromoteInput, type PromoteResult } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
 
@@ -19,17 +21,21 @@ export type JobServiceOptions = {
   decrypt: (packed: string) => string;
   fetch: typeof fetch;
   reinspectChangedItem: (itemId: string, oldPath: string) => Promise<{ ok: true } | { ok: false; warning: string }>;
+  promote?: (input: PromoteInput) => Promise<PromoteResult>;
 };
 
 export class JobService {
   private running = new Set<string>();
   private cancelled = new Set<string>();
+  private keepRunning = 0;
+  private keepWaiters: Array<() => void> = [];
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly opts: JobServiceOptions) {}
 
   start(): void {
     this.opts.store.recoverInterruptedJobs();
+    void this.recoverInterruptedKeeps();
     this.timer = setInterval(() => void this.tick(), 500);
   }
 
@@ -251,10 +257,53 @@ export class JobService {
     }
   }
 
+  async recoverInterruptedKeeps(): Promise<void> {
+    for (const review of this.opts.store.listReviews()) {
+      if (review.status === "discarding") {
+        try {
+          await unlink(review.sidecarPath);
+        } catch {
+          // Sidecar may already be gone.
+        }
+        this.opts.store.deleteReview(review.id);
+        this.opts.store.addHistory(review.itemId, "discarded", 0, this.now());
+        continue;
+      }
+      if (review.status !== "keeping") continue;
+      const item = this.opts.store.getItem(review.itemId);
+      const job = this.opts.store.getJob(review.jobId);
+      const plan = job ? resolvePlan(job.plan, job.writeMode) : undefined;
+      const destPath = item ? promotedPath(item.path, plan) : review.sourcePath;
+      const destBytes = await fileSize(destPath);
+      const sourceBytesOnDisk = destPath === review.sourcePath ? destBytes : await fileSize(review.sourcePath);
+      const kind = classifyInterruptedKeep({
+        sidecarExists: await fileExists(review.sidecarPath),
+        libraryBytes: destBytes ?? sourceBytesOnDisk,
+        sourceBytes: review.source.sizeBytes ?? 0,
+        sidecarBytes: review.sidecar.sizeBytes ?? 0,
+      });
+      if (kind === "complete") {
+        await this.finalizeCompletedKeep(review, destPath);
+        continue;
+      }
+      if (kind === "sidecar_gone") {
+        this.opts.store.updateReview(review.id, { status: "pending", error: SIDECAR_GONE });
+        continue;
+      }
+      await cleanupStagedPromoteFiles(review.sourcePath);
+      if (destPath !== review.sourcePath) await cleanupStagedPromoteFiles(destPath);
+      this.opts.store.updateReview(review.id, { status: "pending", error: KEEP_INTERRUPTED });
+    }
+  }
+
   async keep(reviewId: string): Promise<{ accepted: true } | { error: string; status: number }> {
     const review = this.opts.store.getReview(reviewId);
     if (!review) return { error: "That review item is gone.", status: 404 };
     if (review.status === "keeping") return { error: "Keep is already running for this title.", status: 409 };
+    if (!(await fileExists(review.sidecarPath))) {
+      this.opts.store.updateReview(reviewId, { status: "pending", error: SIDECAR_GONE });
+      return { error: SIDECAR_GONE, status: 409 };
+    }
     this.opts.store.updateReview(reviewId, { status: "keeping" });
     void this.performKeep(reviewId);
     return { accepted: true };
@@ -268,9 +317,15 @@ export class JobService {
       this.opts.store.updateReview(reviewId, { status: "pending", error: "The library row disappeared." });
       return;
     }
+    if (!(await fileExists(review.sidecarPath))) {
+      this.opts.store.updateReview(reviewId, { status: "pending", error: SIDECAR_GONE });
+      return;
+    }
     const job = this.opts.store.getJob(review.jobId);
     const plan = job ? resolvePlan(job.plan, job.writeMode) : undefined;
-    const outcome = await this.promoteOutput(item, review.sidecarPath, review.source.sizeBytes ?? 0, review.sidecar.sizeBytes ?? 0, plan);
+    const outcome = await this.withKeepSlot(() =>
+      this.promoteOutput(item, review.sidecarPath, review.source.sizeBytes ?? 0, review.sidecar.sizeBytes ?? 0, plan),
+    );
     if (!outcome.replaced) {
       this.opts.store.updateReview(reviewId, { status: "pending", error: outcome.error });
       return;
@@ -281,6 +336,33 @@ export class JobService {
     this.opts.store.deleteReview(reviewId);
     const warning = appendWarning(outcome.warning, reinspection.ok ? null : `The new file could not be inspected: ${reinspection.warning}`);
     if (warning && job) this.opts.store.updateJob(job.id, { promoteError: warning });
+  }
+
+  private async finalizeCompletedKeep(review: ReviewItem, destPath: string): Promise<void> {
+    try {
+      await unlink(review.sidecarPath);
+    } catch {
+      // Sidecar may already have been removed after a successful replace.
+    }
+    const saved = Math.max(0, (review.source.sizeBytes ?? 0) - (review.sidecar.sizeBytes ?? 0));
+    this.opts.store.addHistory(review.itemId, "kept", saved, this.now());
+    this.opts.store.updateItemFile(review.itemId, destPath, review.sidecar.sizeBytes ?? 0);
+    await this.opts.reinspectChangedItem(review.itemId, review.sourcePath);
+    this.opts.store.deleteReview(review.id);
+  }
+
+  private async withKeepSlot<T>(work: () => Promise<T>): Promise<T> {
+    const capacity = Math.max(1, this.opts.store.getSettings().concurrency);
+    while (this.keepRunning >= capacity) {
+      await new Promise<void>((resolve) => this.keepWaiters.push(resolve));
+    }
+    this.keepRunning += 1;
+    try {
+      return await work();
+    } finally {
+      this.keepRunning -= 1;
+      this.keepWaiters.shift()?.();
+    }
   }
 
   private async promoteOutput(
@@ -300,7 +382,8 @@ export class JobService {
         url: p.url,
         token: this.opts.decrypt(p.secret ?? ""),
       }));
-    const outcome = await promote({
+    const promoteFn = this.opts.promote ?? promote;
+    const outcome = await promoteFn({
       item,
       outputPath,
       sourceSize,
@@ -372,6 +455,36 @@ async function safeUnlink(path: string): Promise<void> {
   } catch {
     // Partial output may not exist.
   }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fileSize(path: string): Promise<number | null> {
+  try {
+    return (await stat(path)).size;
+  } catch {
+    return null;
+  }
+}
+
+async function cleanupStagedPromoteFiles(libraryPath: string): Promise<void> {
+  const dir = dirname(libraryPath);
+  let names: string[] = [];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return;
+  }
+  await Promise.all(names
+    .filter((name) => name.endsWith(".opt-new") || name.endsWith(".opt-old"))
+    .map((name) => unlink(join(dir, name)).catch(() => undefined)));
 }
 
 function appendWarning(current: string | null, next: string | null): string | null {

@@ -21,7 +21,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check
-- Checks review-volume free space before work and returns interrupted jobs to the queue after restart
+- Checks review-volume free space before work. After restart, interrupted jobs return to the queue. Interrupted Keep cards return to Review so you can retry or discard them. A Keep that already replaced the library file counts as kept.
 - Can create named Arr quality profiles from the current size caps without starting a search
 
 ## Installation

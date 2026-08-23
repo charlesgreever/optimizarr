@@ -30,7 +30,7 @@ export function ReviewPage() {
         </button>
       </PageHead>
       <Help>
-        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes.
+        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes. If Polisharr restarts during Keep, the card comes back so you can try again, unless the new file is already in the library.
       </Help>
       {items.length === 0 && list.loading && <div className="empty">Loading review…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">Nothing is waiting for Keep or Discard.</div>}

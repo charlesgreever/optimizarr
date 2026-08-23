@@ -1,0 +1,246 @@
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { JobService } from "./jobs.ts";
+import { KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
+import { Store } from "./store.ts";
+import type { InspectionReport, ReviewItem } from "./types.ts";
+
+function compare(sourceBytes: number, sidecarBytes: number): Pick<ReviewItem, "source" | "sidecar"> {
+  return {
+    source: { codec: "hevc", quality: "HD", sizeBytes: sourceBytes, sizePerHourGb: 1, durationSec: 60, tracks: "1 audio / 0 subtitles" },
+    sidecar: { codec: "hevc", quality: "HD", sizeBytes: sidecarBytes, sizePerHourGb: 0.5, durationSec: 60, tracks: "1 audio / 0 subtitles" },
+  };
+}
+
+describe("interrupted Keep recovery", () => {
+  it("returns an interrupted Keep to pending when the sidecar and original are both still there", async () => {
+    const ctx = setup();
+    writeFileSync(ctx.sourcePath, "ORIGINAL!");
+    writeFileSync(ctx.sidecarPath, "SIDECAR!!!");
+    writeFileSync(join(ctx.dir, "1.opt-new"), "partial");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "keeping",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(9, 10),
+      error: null,
+    });
+
+    await ctx.jobs.recoverInterruptedKeeps();
+    const review = ctx.store.getReview("rev-1");
+    expect(review).toMatchObject({ status: "pending", error: KEEP_INTERRUPTED });
+    expect(existsSync(join(ctx.dir, "1.opt-new"))).toBe(false);
+
+    const keep = await ctx.jobs.keep("rev-1");
+    expect(keep).toEqual({ accepted: true });
+    await vi.waitFor(() => expect(ctx.store.getReview("rev-1")).toBeUndefined());
+    ctx.close();
+  });
+
+  it("finishes a Keep that already replaced the library file", async () => {
+    const ctx = setup();
+    writeFileSync(ctx.sourcePath, "SIDECAR!!!");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "keeping",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(20, 10),
+      error: null,
+    });
+
+    await ctx.jobs.recoverInterruptedKeeps();
+    expect(ctx.store.getReview("rev-1")).toBeUndefined();
+    expect(ctx.store.historyPage(0, 10).items).toEqual([
+      expect.objectContaining({ itemId: ctx.itemId, outcome: "kept", bytesSaved: 10 }),
+    ]);
+    expect(ctx.store.getItem(ctx.itemId)?.sizeBytes).toBe(10);
+    ctx.close();
+  });
+
+  it("does not claim Keep succeeded when the sidecar is gone and the original is untouched", async () => {
+    const ctx = setup();
+    writeFileSync(ctx.sourcePath, "ORIGINAL!");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "keeping",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(9, 10),
+      error: null,
+    });
+
+    await ctx.jobs.recoverInterruptedKeeps();
+    expect(ctx.store.getReview("rev-1")).toMatchObject({ status: "pending", error: SIDECAR_GONE });
+    const keep = await ctx.jobs.keep("rev-1");
+    expect(keep).toMatchObject({ error: SIDECAR_GONE, status: 409 });
+    expect(ctx.store.getReview("rev-1")?.status).toBe("pending");
+    ctx.close();
+  });
+
+  it("runs Keep selected copies one at a time when concurrency is 1", async () => {
+    const ctx = setup({ concurrency: 1 });
+    const started: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const jobs = new JobService({
+      ...ctx.base,
+      promote: async (input) => {
+        started.push(input.outputPath);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        active -= 1;
+        return { replaced: true, destPath: input.item.path, savedBytes: 1, warning: null, error: null };
+      },
+    });
+    const ids = ["rev-a", "rev-b", "rev-c"];
+    for (const [index, id] of ids.entries()) {
+      const sidecar = join(ctx.dir, `sidecar-${index}.mkv`);
+      writeFileSync(sidecar, `SIDE${index}`);
+      ctx.store.insertReview({
+        id,
+        jobId: "job-1",
+        itemId: ctx.itemId,
+        displayTitle: "Film",
+        status: "pending",
+        flagged: false,
+        flagReason: null,
+        sourcePath: ctx.sourcePath,
+        sidecarPath: sidecar,
+        ...compare(9, 6),
+        error: null,
+      });
+    }
+    writeFileSync(ctx.sourcePath, "ORIGINAL!");
+    const results = await Promise.all(ids.map((id) => jobs.keep(id)));
+    expect(results.every((result) => "accepted" in result)).toBe(true);
+    await vi.waitFor(() => expect(ids.every((id) => ctx.store.getReview(id) === undefined)).toBe(true));
+    expect(maxActive).toBe(1);
+    expect(started).toHaveLength(3);
+    jobs.stop();
+    ctx.close();
+  });
+});
+
+function setup(settings: { concurrency?: number } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "opt-keep-"));
+  const store = new Store(join(dir, "polisharr.db"));
+  const instanceId = store.upsertInstance({
+    kind: "radarr",
+    name: "Radarr",
+    url: "http://radarr",
+    secret: null,
+    enabled: true,
+  });
+  const itemId = `${instanceId}:movie:10`;
+  const sourcePath = join(dir, "movie.mkv");
+  const sidecarPath = join(dir, "sidecar.mkv");
+  store.saveSettings({ ...store.getSettings(), reviewPath: dir, concurrency: settings.concurrency ?? 1 });
+  store.upsertItem({
+    id: itemId,
+    instanceId,
+    arrId: 10,
+    arrSeriesId: null,
+    arrEpisodeFileId: null,
+    type: "movie",
+    title: "Film",
+    showTitle: null,
+    season: null,
+    episode: null,
+    episodeTitle: null,
+    path: sourcePath,
+    sizeBytes: 9,
+    quality: "HD",
+    resolution: "1080",
+    profile: "HD",
+    tags: [],
+    posterRemoteUrl: null,
+    sizeExempt: false,
+  });
+  const report: InspectionReport = {
+    sourceSig: `${sourcePath}|9`,
+    sourceMethod: "ffprobe",
+    listingState: "complete",
+    durationSec: 60,
+    sizeBytes: 9,
+    sizePerHourGb: 1,
+    videoCodec: "hevc",
+    width: 1920,
+    height: 1080,
+    bitDepth: 8,
+    hdr: "none",
+    audio: [],
+    subtitles: [],
+    hasChapters: false,
+    hasAttachments: false,
+  };
+  store.saveInspection(itemId, report);
+  store.insertJob({
+    id: "job-1",
+    itemId,
+    suggestionId: null,
+    status: "succeeded",
+    phase: "idle",
+    progress: 1,
+    error: null,
+    warning: null,
+    runNow: false,
+    createdAt: 1,
+    plan: {
+      origin: "bulk",
+      video: { kind: "copy" },
+      audio: [],
+      subtitles: [],
+      container: "mkv",
+      writeMode: "sidecar",
+      warning: null,
+      reasons: [],
+      estimatedOutputBytes: 10,
+      category: "movie1080p",
+    },
+  });
+  const base = {
+    store,
+    optimizer: async () => {
+      throw new Error("optimizer should not run");
+    },
+    hardware: async () => ({ backend: "none" as const, cuda: false, vaapi: false, av1: false, reason: null }),
+    tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+    decrypt: () => "",
+    fetch: (async () => new Response("{}")) as typeof fetch,
+    reinspectChangedItem: async () => ({ ok: true as const }),
+  };
+  const jobs = new JobService(base);
+  return {
+    dir,
+    store,
+    itemId,
+    sourcePath,
+    sidecarPath,
+    jobs,
+    base,
+    close: () => {
+      jobs.stop();
+      store.close();
+    },
+  };
+}
