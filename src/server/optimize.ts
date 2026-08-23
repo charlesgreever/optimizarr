@@ -104,14 +104,16 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
         current = remuxed;
       }
       const extras = await createAudioExtras(req, plan, workDir, current, temps);
-      if (needsMux(plan) || extras.length) {
+      const subtitleExtras = needsMux(plan) ? await createSubtitleExtras(req, plan, workDir, current, temps) : [];
+      if (needsMux(plan) || extras.length || subtitleExtras.length) {
         emit("muxing", 0.3);
         const muxed = join(workDir, `${Date.now()}-mux.mkv`);
         temps.push(muxed);
-        const trackIds = needsTrackSelection(plan)
+        const muxPlan = planWithoutExtractedSubtitles(plan, subtitleExtras);
+        const trackIds = needsTrackSelection(muxPlan)
           ? await identifyMkvmergeTrackIds(req.mkvmerge, current, req.report)
           : undefined;
-        await run(req.mkvmerge, muxPlanArgs(current, muxed, plan, extras, trackIds), {
+        await run(req.mkvmerge, muxPlanArgs(current, muxed, muxPlan, extras, trackIds, subtitleExtras), {
           successfulExitCodes: [0, 1],
           onChunk: (text) => {
             const ratio = parseMkvmergeProgress(text);
@@ -201,6 +203,40 @@ async function createAudioExtras(
   return extras;
 }
 
+async function createSubtitleExtras(
+  req: OptimizeRequest,
+  plan: ExecutablePlan,
+  workDir: string,
+  source: string,
+  temps: string[],
+): Promise<SubtitleExtra[]> {
+  const extras: SubtitleExtra[] = [];
+  for (const op of plan.subtitles) {
+    if (op.op !== "keep") continue;
+    const track = req.report.subtitles.find((item) => item.index === op.index);
+    if (!track || !isTextSubtitleCodec(track.codec)) continue;
+    req.onPhase?.("muxing", 0.22);
+    const dest = join(workDir, `${Date.now()}-sub-${op.index}.srt`);
+    temps.push(dest);
+    await run(req.ffmpeg, [
+      "-hide_banner",
+      "-nostdin",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      source,
+      "-map",
+      `0:${op.index}`,
+      "-c:s",
+      "srt",
+      dest,
+    ]);
+    extras.push({ path: dest, language: track.language || "und", index: op.index });
+  }
+  return extras;
+}
+
 function needsMux(plan: ExecutablePlan): boolean {
   return Boolean(plan.remuxInput) || plan.audio.some((op) => op.op !== "keep") || plan.subtitles.some((op) => op.op !== "keep");
 }
@@ -226,12 +262,15 @@ type MkvmergeTrackIds = {
   subtitles: ReadonlyMap<number, number>;
 };
 
+export type SubtitleExtra = { path: string; language: string; index: number };
+
 export function muxPlanArgs(
   source: string,
   dest: string,
   plan: ExecutablePlan,
   extras: string[] = [],
   trackIds?: MkvmergeTrackIds,
+  subtitleExtras: SubtitleExtra[] = [],
 ): string[] {
   const keepAudio = plan.audio.filter((op) => op.op === "keep" || op.op === "add_downmix").map((op) => op.index);
   const replaced = new Set(plan.audio.filter((op) => op.op === "replace_aac" || op.op === "replace_downmix").map((op) => op.index));
@@ -247,7 +286,20 @@ export function muxPlanArgs(
   else if (editsSubtitles) args.push("--no-subtitles");
   args.push(source);
   args.push(...extras);
+  for (const extra of subtitleExtras) {
+    if (extra.language && extra.language !== "und") args.push("--language", `0:${extra.language}`);
+    args.push(extra.path);
+  }
   return args;
+}
+
+function planWithoutExtractedSubtitles(plan: ExecutablePlan, extracted: SubtitleExtra[]): ExecutablePlan {
+  if (extracted.length === 0) return plan;
+  const indexes = new Set(extracted.map((extra) => extra.index));
+  return {
+    ...plan,
+    subtitles: plan.subtitles.map((op) => (indexes.has(op.index) ? { op: "remove" as const, index: op.index } : op)),
+  };
 }
 
 function trackId(ids: ReadonlyMap<number, number> | undefined, ffprobeIndex: number, kind: string): number {
@@ -486,8 +538,32 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
   } else {
     args.push("-b:v", String(nvencBitrate(req, video)));
   }
-  args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p", "-c:a", "copy", "-c:s", "copy", dest);
+  args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p", "-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
   return args;
+}
+
+const TEXT_SUBTITLE_CODECS = new Set([
+  "mov_text",
+  "eia_608",
+  "eia_608_closed_captions",
+  "webvtt",
+  "subrip",
+  "srt",
+  "ass",
+  "ssa",
+  "text",
+  "ttxt",
+]);
+
+export function isTextSubtitleCodec(codec: string): boolean {
+  return TEXT_SUBTITLE_CODECS.has(codec.toLowerCase().replace(/-/g, "_"));
+}
+
+export function subtitleEncodeArgs(report: InspectionReport): string[] {
+  const flags = report.subtitles.map((track) => isTextSubtitleCodec(track.codec));
+  if (flags.length === 0 || flags.every((text) => !text)) return ["-c:s", "copy"];
+  if (flags.every(Boolean)) return ["-c:s", "srt"];
+  return flags.flatMap((text, index) => ["-c:s:" + String(index), text ? "srt" : "copy"]);
 }
 
 export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"] | undefined): number {

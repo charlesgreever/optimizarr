@@ -6,6 +6,8 @@ import {
   audioAacArgs,
   encodeArgs,
   ffmpegOptimizer,
+  isTextSubtitleCodec,
+  subtitleEncodeArgs,
   formatToolError,
   isoDemuxArgs,
   isoInputAttempts,
@@ -93,7 +95,13 @@ describe("mkvmerge arguments", () => {
       const reviewDir = join(dir, "review");
       const mkvmerge = join(dir, "mkvmerge.cjs");
       const ffprobe = join(dir, "ffprobe.cjs");
+      const ffmpeg = join(dir, "ffmpeg.cjs");
       await writeFile(sourcePath, "source with captions");
+      await writeFile(ffmpeg, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "fs.writeFileSync(process.argv.at(-1), 'captions');",
+      ].join("\n"));
       await writeFile(mkvmerge, [
         "#!/usr/bin/env node",
         "const fs = require('node:fs');",
@@ -127,7 +135,7 @@ describe("mkvmerge arguments", () => {
         "  ]",
         "}));",
       ].join("\n"));
-      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755)]);
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755), chmod(ffmpeg, 0o755)]);
 
       const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
       const remux = planFromSuggestion({
@@ -164,7 +172,7 @@ describe("mkvmerge arguments", () => {
         },
         target: "hevc",
         backend: "none",
-        ffmpeg: "ffmpeg",
+        ffmpeg,
         ffprobe,
         mkvmerge,
         conservative: false,
@@ -173,6 +181,98 @@ describe("mkvmerge arguments", () => {
       expect(result.sidecarPath).toBe(join(reviewDir, "episode.mkv"));
       expect(result.output.durationSec).toBe(120);
       expect(result.output.subtitles).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("converts a kept MP4 timed-text track to SubRip before HEVC encode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "polisharr-sub-convert-"));
+    try {
+      const sourcePath = join(dir, "otter.mp4");
+      const reviewDir = join(dir, "review");
+      const mkvmerge = join(dir, "mkvmerge.cjs");
+      const ffprobe = join(dir, "ffprobe.cjs");
+      const ffmpeg = join(dir, "ffmpeg.cjs");
+      await writeFile(sourcePath, "mp4");
+      await writeFile(ffmpeg, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "const dest = args.at(-1);",
+        "if (dest.endsWith('.srt')) { fs.writeFileSync(dest, 'converted-captions'); process.exit(0); }",
+        "if (!args.includes('srt')) process.exit(2);",
+        "const input = args[args.indexOf('-i') + 1];",
+        "fs.writeFileSync(dest, 'encoded:' + fs.readFileSync(input, 'utf8'));",
+      ].join("\n"));
+      await writeFile(mkvmerge, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "if (args.includes('-J')) {",
+        "  process.stdout.write(JSON.stringify({ tracks: [{ id: 0, type: 'video' }, { id: 1, type: 'audio' }, { id: 2, type: 'subtitles' }] }));",
+        "  process.exit(0);",
+        "}",
+        "const dest = args[args.indexOf('-o') + 1];",
+        "const hasSrt = args.some((arg) => arg.endsWith('.srt'));",
+        "fs.writeFileSync(dest, hasSrt ? 'muxed-captions' : 'muxed-none');",
+      ].join("\n"));
+      await writeFile(ffprobe, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const body = fs.readFileSync(process.argv.at(-1), 'utf8');",
+        "const captions = body.includes('captions');",
+        "process.stdout.write(JSON.stringify({",
+        "  format: { duration: '1422' },",
+        "  streams: [",
+        "    { index: 0, codec_type: 'video', codec_name: body.startsWith('encoded') ? 'hevc' : 'h264', width: 1920, height: 1080, bits_per_raw_sample: '8' },",
+        "    { index: 1, codec_type: 'audio', codec_name: 'aac', channels: 2, tags: { language: 'eng' } },",
+        "    ...(captions ? [{ index: 2, codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'eng' } }] : [])",
+        "  ]",
+        "}));",
+      ].join("\n"));
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755), chmod(ffmpeg, 0o755)]);
+      const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
+      const plan = planFromSuggestion({
+        ...suggestion,
+        actions: ["remux", "transcode"],
+        keepAudio: [1],
+        stripAudio: [],
+        keepSubs: [2],
+        stripSubs: [],
+        now: { codec: "h264", quality: "WEBDL-1080p", sizeBytes: 1_300_000_000, sizePerHourGb: 3.13 },
+        after: { codec: "hevc", quality: null, sizeBytes: 424_000_000, sizePerHourGb: 1 },
+      });
+      const result = await optimizer({
+        sourcePath,
+        reviewDir,
+        plan,
+        report: {
+          sourceSig: "otter.mp4|1",
+          sourceMethod: "ffprobe",
+          listingState: "complete",
+          durationSec: 1422,
+          sizeBytes: 1_300_000_000,
+          sizePerHourGb: 3.13,
+          videoCodec: "h264",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [{ index: 1, language: "eng", channels: 2, codec: "aac", title: "", untagged: false, commentary: false }],
+          subtitles: [{ index: 2, language: "eng", codec: "mov_text", title: "", untagged: false, forced: false, sdh: false }],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "cuda",
+        ffmpeg,
+        ffprobe,
+        mkvmerge,
+        conservative: false,
+      });
+      expect(result.output.subtitles).toHaveLength(1);
+      expect(result.output.subtitles[0]?.codec).toBe("subrip");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -283,6 +383,55 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("-cq");
     expect(args).not.toContain("-b:v");
     expect(args).toContain("scale=1920:1080");
+  });
+
+  it("converts timed-text subtitles to SubRip instead of copying them", () => {
+    const report: InspectionReport = {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 120,
+      sizeBytes: 1,
+      sizePerHourGb: 1,
+      videoCodec: "h264",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [
+        { index: 2, language: "eng", codec: "mov_text", title: "", untagged: false, forced: false, sdh: false },
+      ],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    expect(isTextSubtitleCodec("mov_text")).toBe(true);
+    expect(subtitleEncodeArgs(report)).toEqual(["-c:s", "srt"]);
+    expect(subtitleEncodeArgs({
+      ...report,
+      subtitles: [{ index: 2, language: "eng", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false }],
+    })).toEqual(["-c:s", "copy"]);
+    expect(subtitleEncodeArgs({
+      ...report,
+      subtitles: [
+        { index: 2, language: "eng", codec: "mov_text", title: "", untagged: false, forced: false, sdh: false },
+        { index: 3, language: "eng", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+      ],
+    })).toEqual(["-c:s:0", "srt", "-c:s:1", "copy"]);
+    const args = encodeArgs(source, "/tmp/out.mkv", {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      suggestion,
+      report,
+      target: "hevc",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    expect(args).toContain("srt");
+    expect(args.join(" ")).not.toMatch(/-c:s copy/);
   });
 
   it("encodes only the first video stream so Blu-ray menu titles do not hit NVENC", () => {
