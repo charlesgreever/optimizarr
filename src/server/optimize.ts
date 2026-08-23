@@ -187,18 +187,20 @@ async function createAudioExtras(
   workDir: string,
   source: string,
   temps: string[],
-): Promise<string[]> {
-  const extras: string[] = [];
+): Promise<AudioExtra[]> {
+  const extras: AudioExtra[] = [];
   for (const op of plan.audio) {
     if (op.op !== "replace_aac" && op.op !== "replace_downmix" && op.op !== "add_downmix") continue;
     req.onPhase?.("creating_stereo", 0.15);
     const dest = join(workDir, `${Date.now()}-${op.op}-${op.index}.aac`);
     temps.push(dest);
+    const sourceTrack = req.report.audio.find((t) => t.index === op.index);
     const channels = op.op === "replace_aac"
-      ? req.report.audio.find((t) => t.index === op.index)?.channels ?? 2
+      ? sourceTrack?.channels ?? 2
       : op.channels;
-    await run(req.ffmpeg, audioAacArgs(source, dest, op.index, channels, req.conservative ? "128k" : "160k"));
-    extras.push(dest);
+    const language = sourceTrack?.language || "und";
+    await run(req.ffmpeg, audioAacArgs(source, dest, op.index, channels, req.conservative ? "128k" : "160k", language));
+    extras.push({ path: dest, language });
   }
   return extras;
 }
@@ -254,7 +256,7 @@ export class CancelledError extends Error {
 }
 
 export function muxArgs(source: string, dest: string, suggestion: Suggestion, stereo?: string): string[] {
-  return muxPlanArgs(source, dest, planFromSuggestion(suggestion), stereo ? [stereo] : []);
+  return muxPlanArgs(source, dest, planFromSuggestion(suggestion), stereo ? [{ path: stereo, language: "und" }] : []);
 }
 
 type MkvmergeTrackIds = {
@@ -262,13 +264,14 @@ type MkvmergeTrackIds = {
   subtitles: ReadonlyMap<number, number>;
 };
 
+export type AudioExtra = { path: string; language: string };
 export type SubtitleExtra = { path: string; language: string; index: number };
 
 export function muxPlanArgs(
   source: string,
   dest: string,
   plan: ExecutablePlan,
-  extras: string[] = [],
+  extras: AudioExtra[] = [],
   trackIds?: MkvmergeTrackIds,
   subtitleExtras: SubtitleExtra[] = [],
 ): string[] {
@@ -285,12 +288,18 @@ export function muxPlanArgs(
   if (editsSubtitles && keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
   else if (editsSubtitles) args.push("--no-subtitles");
   args.push(source);
-  args.push(...extras);
+  for (const extra of extras) {
+    taggedExtraArgs(args, extra);
+  }
   for (const extra of subtitleExtras) {
-    if (extra.language && extra.language !== "und") args.push("--language", `0:${extra.language}`);
-    args.push(extra.path);
+    taggedExtraArgs(args, extra);
   }
   return args;
+}
+
+function taggedExtraArgs(args: string[], extra: { path: string; language: string }): void {
+  if (extra.language && extra.language !== "und") args.push("--language", `0:${extra.language}`);
+  args.push(extra.path);
 }
 
 function planWithoutExtractedSubtitles(plan: ExecutablePlan, extracted: SubtitleExtra[]): ExecutablePlan {
@@ -482,8 +491,15 @@ async function remuxIso(
     : new Error("ffmpeg could not remux this disc image into a Matroska file.");
 }
 
-export function audioAacArgs(source: string, dest: string, index: number, channels: number, bitrate: string): string[] {
-  return [
+export function audioAacArgs(
+  source: string,
+  dest: string,
+  index: number,
+  channels: number,
+  bitrate: string,
+  language = "und",
+): string[] {
+  const args = [
     "-hide_banner",
     "-nostdin",
     "-loglevel",
@@ -499,8 +515,10 @@ export function audioAacArgs(source: string, dest: string, index: number, channe
     "aac",
     "-b:a",
     bitrate,
-    dest,
   ];
+  if (language && language !== "und") args.push("-metadata:s:a:0", `language=${language}`);
+  args.push(dest);
+  return args;
 }
 
 const BANNER = /^(ffmpeg version|copyright|built with|configuration:|libav)/i;

@@ -67,6 +67,16 @@ describe("mkvmerge arguments", () => {
     expect(args.join(" ")).not.toContain("mkvmerge -o");
   });
 
+  it("tags a downmix extra with the source audio language", () => {
+    const plan = planFromSuggestion({ ...suggestion, actions: ["add_stereo"], keepAudio: [1], stripAudio: [] });
+    const args = muxPlanArgs(source, "/tmp/out.mkv", plan, [{ path: "/tmp/stereo.aac", language: "eng" }]);
+    const langAt = args.indexOf("--language");
+    const stereoAt = args.indexOf("/tmp/stereo.aac");
+    expect(args[langAt + 1]).toBe("0:eng");
+    expect(langAt).toBeGreaterThan(args.indexOf(source));
+    expect(langAt).toBeLessThan(stereoAt);
+  });
+
   it("does not expose an unquoted command line when a tool fails", () => {
     const message = formatToolError("mkvmerge", {
       message: `Command failed: mkvmerge -o out.mkv ${source}`,
@@ -724,5 +734,12 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args).toContain("0:1");
     expect(args).toContain("6");
     expect(args).toContain("aac");
+    expect(args.join(" ")).not.toContain("language=");
+  });
+
+  it("writes the source language onto a downmix AAC stream", () => {
+    const args = audioAacArgs("/in.mkv", "/out.aac", 1, 2, "160k", "eng");
+    expect(args).toContain("-metadata:s:a:0");
+    expect(args).toContain("language=eng");
   });
 });
