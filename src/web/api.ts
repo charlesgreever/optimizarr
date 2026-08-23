@@ -213,8 +213,9 @@ export type InspectionReport = {
   hdr: string;
   sizeBytes: number;
   durationSec: number;
+  sizePerHourGb?: number;
   audio: Array<{ index: number; language: string; channels: number; codec: string; title: string }>;
-  subtitles: Array<{ index: number; language: string; codec: string; title: string }>;
+  subtitles: Array<{ index: number; language: string; codec: string; title: string; sdh?: boolean; forced?: boolean }>;
 };
 export type ExecutablePlan = {
   reasons: string[];
