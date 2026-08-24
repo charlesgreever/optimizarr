@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canQueueCustomPlan, titleOptimizeLocked } from "./title-plan";
+import { audioActionSelectClass, audioChannelSelectClass, canQueueCustomPlan, titleOptimizeLocked } from "./title-plan";
 
 describe("title plan gating", () => {
   it("locks unreadable and uninspected titles and waits for a previewed plan", () => {
@@ -9,5 +9,11 @@ describe("title plan gating", () => {
     expect(canQueueCustomPlan(null, [], false)).toBe(false);
     expect(canQueueCustomPlan({ video: { kind: "size" } }, [], false)).toBe(true);
     expect(canQueueCustomPlan({ video: { kind: "copy" } }, ["Do nothing"], false)).toBe(false);
+  });
+
+  it("gives the audio action select a width that fits Replace with downmix", () => {
+    expect(audioActionSelectClass).toContain("w-56");
+    expect(audioActionSelectClass).toContain("h-10");
+    expect(audioChannelSelectClass).toContain("w-24");
   });
 });

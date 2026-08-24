@@ -5,7 +5,7 @@ Polisharr is a companion container for Radarr and Sonarr. It inspects the same l
 This tree is a greenfield rewrite. Do not import the previous application code.
 
 **PRD:** [docs/v2 prd.md](docs/v2%20prd.md) (v2). The rewrite PRD is [docs/prd.md](docs/prd.md).
-**Plan:** [plans/v2-implementation-plan.md](plans/v2-implementation-plan.md). Review-gap work: [plans/review-gap-remediation.md](plans/review-gap-remediation.md).
+**Plan:** [plans/v2-implementation-plan.md](plans/v2-implementation-plan.md). Review-gap work: [plans/review-gap-remediation.md](plans/review-gap-remediation.md). Home and Settings restyle: [plans/home-settings-title-ui.md](plans/home-settings-title-ui.md).
 **Engineering standard:** [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md)
 **Prose standard:** [CODING_STANDARDS.md](CODING_STANDARDS.md)
 
@@ -19,7 +19,8 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Can suggest converting MP4 files to MKV before a hardware encode, or as remux-only work
 - Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions
 - Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality. The title page shows file name and path. Queue stays off until the plan differs from the source. AV1 appears only when the GPU can encode it.
-- Home shows files optimized, space saved, a Status line (running title, waiting jobs, or Idle), and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
+- Home shows a Status strip, large files-optimized and space-saved tiles, and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
+- Settings uses stacked labels and everyday size-cap names. Title-page audio actions keep a fixed-width dropdown so Keep and Replace with downmix do not jump.
 - Series headers show episode total, how many are healthy, and how many still have suggestions
 - Suggestion and Errors titles open the same detail page as Movies and Series
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.

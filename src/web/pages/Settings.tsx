@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, type Exclusion, type FirstRun, type Hardware, type SettingsPayload } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { EncodeSettings } from "../components/EncodeSettings";
 import { SuggestionDefaultsSettings } from "../components/SuggestionDefaultsSettings";
+import { FIELD_CONTROL, sizeCapLabel } from "../settings-copy";
 
 export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onChange: () => void }) {
   const [data, setData] = useState<SettingsPayload | null>(null);
@@ -58,35 +59,32 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           {!firstRun.hasArr && " Connect an enabled Radarr or Sonarr."}
         </div>
       )}
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Language and review</h2>
-        <label className="block text-sm">
-          Preferred language
-          <input className="ml-2" value={data.preferredLanguage} onChange={(e) => setData({ ...data, preferredLanguage: e.target.value })} />
-        </label>
+        <Field label="Preferred language">
+          <input className={FIELD_CONTROL} value={data.preferredLanguage} onChange={(e) => setData({ ...data, preferredLanguage: e.target.value })} />
+        </Field>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={data.languageConfirmed} onChange={(e) => setData({ ...data, languageConfirmed: e.target.checked })} />
           I confirm this language before any track cleanup
         </label>
-        <label className="block text-sm">
-          Review folder
-          <input className="mt-1 w-full" value={data.reviewPath} onChange={(e) => setData({ ...data, reviewPath: e.target.value })} />
-        </label>
+        <Field label="Review folder">
+          <input className={FIELD_CONTROL} value={data.reviewPath} onChange={(e) => setData({ ...data, reviewPath: e.target.value })} />
+        </Field>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={data.localAuthBypass} onChange={(e) => setData({ ...data, localAuthBypass: e.target.checked })} />
           Allow local addresses without a password
         </label>
-        <label className="block text-sm">
-          Write finished files
-          <select className="ml-2" value={data.writeMode ?? "sidecar"} onChange={(e) => {
+        <Field label="Write finished files">
+          <select className={FIELD_CONTROL} value={data.writeMode ?? "sidecar"} onChange={(e) => {
             const value = e.target.value;
             if (value === "sidecar" || value === "direct") setData({ ...data, writeMode: value });
           }}>
             <option value="sidecar">Sidecar for Review (default)</option>
             <option value="direct">Direct write after integrity check</option>
           </select>
-        </label>
-        <p className="help">Direct write replaces the library file only after the new file passes an integrity check. Arr refresh failures stay as a warning.</p>
+        </Field>
+        <p className="help m-0">Direct write replaces the library file only after the new file passes an integrity check. Arr refresh failures stay as a warning.</p>
         <button
           className="btn"
           type="button"
@@ -95,17 +93,15 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           Save settings
         </button>
       </div>
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Account</h2>
-        <p className="help">Change the sign-in name and password. Polisharr signs you in again after a password change.</p>
-        <label className="block text-sm">
-          Username
-          <input className="mt-1 w-full" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-        </label>
-        <label className="block text-sm">
-          New password
-          <input className="mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-        </label>
+        <p className="help m-0">Change the sign-in name and password. Polisharr signs you in again after a password change.</p>
+        <Field label="Username">
+          <input className={FIELD_CONTROL} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+        </Field>
+        <Field label="New password">
+          <input className={FIELD_CONTROL} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+        </Field>
         <button
           className="btn"
           type="button"
@@ -119,14 +115,15 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           Save username and password
         </button>
       </div>
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Size caps (GB per hour)</h2>
-        {Object.entries(data.sizeCaps).map(([key, value]) => (
-          <label key={key} className="mr-4 text-sm">
-            {key}
-            <input className="ml-2 w-20" type="number" step="0.1" value={value} onChange={(e) => setData({ ...data, sizeCaps: { ...data.sizeCaps, [key]: Number(e.target.value) } })} />
-          </label>
-        ))}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {Object.entries(data.sizeCaps).map(([key, value]) => (
+            <Field key={key} label={sizeCapLabel(key)}>
+              <input className="h-10 w-28" type="number" step="0.1" value={value} onChange={(e) => setData({ ...data, sizeCaps: { ...data.sizeCaps, [key]: Number(e.target.value) } })} />
+            </Field>
+          ))}
+        </div>
         <SuggestionDefaultsSettings
           value={data.suggestionDefaults}
           onChange={(suggestionDefaults) => setData({ ...data, suggestionDefaults })}
@@ -143,7 +140,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
             checked={data.profileAutoAssign}
             onChange={(event) => setData({ ...data, profileAutoAssign: event.target.checked })}
           />
-          Assign an Polisharr profile after an eligible video transcode
+          Assign a Polisharr profile after an eligible video transcode
         </label>
         <button className="btn" type="button" onClick={() => void api.syncProfiles().then((r) => setMsg(r.results.map((x) => `${x.created.length} created, ${x.updated.length} updated`).join(" · ") || "Profiles synced.")).catch((e: Error) => setMsg(e.message))}>
           Sync quality profiles
@@ -157,20 +154,27 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         onChange={(patch) => setData({ ...data, ...patch })}
         onSave={save}
       />
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Suggestion exclusions</h2>
-        <p className="help">An exclusion hides matching files from Suggestions. It does not delete files or cancel queued work.</p>
-        <div className="flex flex-wrap gap-2">
-          <select value={exclusion.kind} onChange={(event) => {
-            const kind = event.target.value;
-            if (kind === "path" || kind === "profile" || kind === "tag" || kind === "title") {
-              setExclusion({ ...exclusion, kind });
-            }
-          }}>
-            <option value="path">Path starts with</option><option value="profile">Quality profile</option><option value="tag">Tag id</option><option value="title">Title</option>
-          </select>
-          <input value={exclusion.value} onChange={(event) => setExclusion({ ...exclusion, value: event.target.value })} placeholder="Value to exclude" />
-          <button className="btn" type="button" disabled={!exclusion.value.trim()} onClick={() => void api.addExclusion(exclusion.kind, exclusion.value).then((result) => {
+        <p className="help m-0">An exclusion hides matching files from Suggestions. It does not delete files or cancel queued work.</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
+          <Field label="Kind">
+            <select className={FIELD_CONTROL} value={exclusion.kind} onChange={(event) => {
+              const kind = event.target.value;
+              if (kind === "path" || kind === "profile" || kind === "tag" || kind === "title") {
+                setExclusion({ ...exclusion, kind });
+              }
+            }}>
+              <option value="path">Path starts with</option>
+              <option value="profile">Quality profile</option>
+              <option value="tag">Tag id</option>
+              <option value="title">Title</option>
+            </select>
+          </Field>
+          <Field label="Value">
+            <input className={FIELD_CONTROL} value={exclusion.value} onChange={(event) => setExclusion({ ...exclusion, value: event.target.value })} placeholder="Value to exclude" />
+          </Field>
+          <button className="btn h-10" type="button" disabled={!exclusion.value.trim()} onClick={() => void api.addExclusion(exclusion.kind, exclusion.value).then((result) => {
             setExclusions(result.exclusions);
             setExclusion({ ...exclusion, value: "" });
           }).catch((error: Error) => setMsg(error.message))}>Add exclusion</button>
@@ -182,23 +186,31 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           </li>)}
         </ul>
       </div>
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Connections</h2>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <select value={inst.kind} onChange={(e) => {
-            const kind = e.target.value;
-            if (kind === "radarr" || kind === "sonarr" || kind === "plex" || kind === "jellyfin") {
-              setInst({ ...inst, kind });
-            }
-          }}>
-            <option value="radarr">Radarr</option>
-            <option value="sonarr">Sonarr</option>
-            <option value="plex">Plex</option>
-            <option value="jellyfin">Jellyfin</option>
-          </select>
-          <input placeholder="Name" value={inst.name} onChange={(e) => setInst({ ...inst, name: e.target.value })} />
-          <input placeholder="URL" value={inst.url} onChange={(e) => setInst({ ...inst, url: e.target.value })} />
-          <input placeholder="API key or token" value={inst.apiKey} onChange={(e) => setInst({ ...inst, apiKey: e.target.value })} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Kind">
+            <select className={FIELD_CONTROL} value={inst.kind} onChange={(e) => {
+              const kind = e.target.value;
+              if (kind === "radarr" || kind === "sonarr" || kind === "plex" || kind === "jellyfin") {
+                setInst({ ...inst, kind });
+              }
+            }}>
+              <option value="radarr">Radarr</option>
+              <option value="sonarr">Sonarr</option>
+              <option value="plex">Plex</option>
+              <option value="jellyfin">Jellyfin</option>
+            </select>
+          </Field>
+          <Field label="Name">
+            <input className={FIELD_CONTROL} placeholder="Name" value={inst.name} onChange={(e) => setInst({ ...inst, name: e.target.value })} />
+          </Field>
+          <Field label="URL">
+            <input className={FIELD_CONTROL} placeholder="URL" value={inst.url} onChange={(e) => setInst({ ...inst, url: e.target.value })} />
+          </Field>
+          <Field label="API key or token">
+            <input className={FIELD_CONTROL} placeholder="API key or token" value={inst.apiKey} onChange={(e) => setInst({ ...inst, apiKey: e.target.value })} />
+          </Field>
         </div>
         <button
           className="btn"
@@ -222,11 +234,14 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </button>
         <ul className="space-y-2 text-sm">
           {data.instances.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 px-3 py-2">
-              <span>
-                {row.name} · {row.kind} · {row.url} · {row.enabled ? "enabled" : "paused"} · {row.hasApiKey || row.hasToken ? "key saved" : "no key"}
-              </span>
-              <span className="flex gap-2">
+            <li key={row.id} className="space-y-2 rounded-xl border border-white/10 px-3 py-3">
+              <div className="min-w-0">
+                <div className="font-medium text-ink">{row.name}</div>
+                <div className="truncate text-xs text-muted">
+                  {row.kind} · {row.url} · {row.enabled ? "enabled" : "paused"} · {row.hasApiKey || row.hasToken ? "key saved" : "no key"}
+                </div>
+              </div>
+              <span className="flex flex-wrap gap-2">
                 <button
                   className="btn-secondary"
                   type="button"
@@ -256,7 +271,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </ul>
         <RefreshLibrary />
       </div>
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Radarr and Sonarr webhooks</h2>
         <p className="help">
           Polisharr can learn about a finished download as soon as Radarr or Sonarr imports it, instead of waiting for the next 15-minute sync. This does not start an encode.
@@ -268,9 +283,12 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           On the Arr Docker network use <code>http://polisharr:7373/api/hooks/arr</code>. In Connect, enable On Import, On Upgrade, and On Rename. Paste the token as header <code>X-Api-Key</code>, or as the Connect password. A query <code>?apikey=</code> works if the form only has a URL; that puts the token in access logs.
         </p>
         {webhookToken ? (
-          <p className="text-sm">
-            Token (shown once): <code>{webhookToken}</code>
-          </p>
+          <SecretOnce
+            label="Token (shown once)"
+            value={webhookToken}
+            onCopied={() => setMsg("Webhook token copied.")}
+            onFailed={() => setMsg("Copy failed. Select the token and copy it yourself.")}
+          />
         ) : (
           <p className="help">{data.hasWebhookToken ? "A token is saved. Generate a new one to replace it." : "No token yet. Generate one before you add the Connect webhook."}</p>
         )}
@@ -288,15 +306,18 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           {data.hasWebhookToken ? "Rotate webhook token" : "Generate webhook token"}
         </button>
       </div>
-      <div className="glass space-y-3 p-4">
+      <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Homepage widget</h2>
         <p className="help">
           Homepage can poll Polisharr for running title, queued, review, suggestions, and errors. The key is shown once.
         </p>
         {widgetKey ? (
-          <p className="text-sm">
-            Key (shown once): <code>{widgetKey}</code>
-          </p>
+          <SecretOnce
+            label="Key (shown once)"
+            value={widgetKey}
+            onCopied={() => setMsg("Widget key copied.")}
+            onFailed={() => setMsg("Copy failed. Select the key and copy it yourself.")}
+          />
         ) : (
           <p className="help">{data.hasWidgetKey ? "A widget key is saved. Generate a new one to replace it." : "No widget key yet. Generate one before you add the Homepage tile."}</p>
         )}
@@ -316,5 +337,42 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       </div>
       {msg && <p className="ok text-sm">{msg}</p>}
     </section>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1.5 text-sm">
+      <span className="font-medium text-slate-300">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SecretOnce({
+  label,
+  value,
+  onCopied,
+  onFailed,
+}: {
+  label: string;
+  value: string;
+  onCopied: () => void;
+  onFailed: () => void;
+}) {
+  return (
+    <div className="space-y-1.5 text-sm">
+      <div className="font-medium text-slate-300">{label}</div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <code className="min-w-0 flex-1 break-all rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-ink">{value}</code>
+        <button
+          className="btn-secondary h-10 shrink-0"
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(value).then(onCopied).catch(onFailed)}
+        >
+          Copy
+        </button>
+      </div>
+    </div>
   );
 }

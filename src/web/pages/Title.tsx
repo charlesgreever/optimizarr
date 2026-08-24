@@ -4,7 +4,7 @@ import { api, formatSize, type ExecutablePlan, type InspectionReport, type Libra
 import { Help, PageHead } from "../components/Shell";
 import { TitleFacts } from "../components/TitleFacts";
 import { Pill } from "../components/ui";
-import { canQueueCustomPlan, titleOptimizeLocked } from "../title-plan";
+import { audioActionSelectClass, audioChannelSelectClass, canQueueCustomPlan, titleOptimizeLocked } from "../title-plan";
 import { channelLabel, fileNameFromPath, usefulTrackTitle } from "../title-display";
 
 type AudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";
@@ -168,17 +168,21 @@ export function TitlePage() {
             {report?.audio.map((track) => {
               const title = usefulTrackTitle(track.title, fileName);
               return (
-                <div key={track.index} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.04] px-3 py-2">
+                <div key={track.index} className="flex flex-col gap-3 rounded-lg bg-white/[0.04] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <Pill>{track.language || "und"}</Pill>
                     <Pill>{track.codec}</Pill>
                     <Pill>{channelLabel(track.channels)}</Pill>
                     {title && <span className="max-w-64 truncate text-xs text-muted">{title}</span>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <select
+                      className={audioActionSelectClass}
                       value={audio[track.index]?.action ?? "keep"}
-                      onChange={(e) => setAudio({ ...audio, [track.index]: { action: e.target.value as AudioAction, channels: audio[track.index]?.channels ?? 2 } })}
+                      onChange={(e) => setAudio({
+                        ...audio,
+                        [track.index]: { action: parseAudioAction(e.target.value), channels: audio[track.index]?.channels ?? 2 },
+                      })}
                     >
                       <option value="keep">Keep</option>
                       <option value="remove">Remove</option>
@@ -188,6 +192,7 @@ export function TitlePage() {
                     </select>
                     {(audio[track.index]?.action === "replace_downmix" || audio[track.index]?.action === "add_downmix") && (
                       <select
+                        className={audioChannelSelectClass}
                         value={audio[track.index]?.channels ?? 2}
                         onChange={(e) => setAudio({
                           ...audio,
@@ -272,6 +277,13 @@ function Section({ title, help, children }: { title: string; help?: string; chil
       {children}
     </section>
   );
+}
+
+function parseAudioAction(value: string): AudioAction {
+  if (value === "keep" || value === "remove" || value === "replace_aac" || value === "replace_downmix" || value === "add_downmix") {
+    return value;
+  }
+  return "keep";
 }
 
 function ModeChoice({ name, checked, onChange, label }: { name: string; checked: boolean; onChange: () => void; label: string }) {

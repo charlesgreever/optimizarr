@@ -1,4 +1,5 @@
 import type { SettingsPayload } from "../api";
+import { FIELD_CONTROL } from "../settings-copy";
 
 type EncodeSettingsData = Pick<
   SettingsPayload,
@@ -22,9 +23,9 @@ export function EncodeSettings({
     <div className="glass space-y-3 p-4">
       <h2 className="font-semibold">Encode</h2>
       <p className="help">Detected hardware: {hardwareLabel}</p>
-      <label className="block text-sm">
-        Target
-        <select className="ml-2" value={av1Available ? data.videoTarget : "hevc"} onChange={(event) => {
+      <label className="block space-y-1.5 text-sm">
+        <span className="font-medium text-slate-300">Target</span>
+        <select className={FIELD_CONTROL} value={av1Available ? data.videoTarget : "hevc"} onChange={(event) => {
           const target = event.target.value;
           if (target === "hevc" || (target === "av1" && av1Available)) onChange({ videoTarget: target });
         }}>
@@ -32,10 +33,10 @@ export function EncodeSettings({
           {av1Available && <option value="av1">AV1</option>}
         </select>
       </label>
-      <label className="block text-sm">
-        Concurrent jobs
+      <label className="block space-y-1.5 text-sm">
+        <span className="font-medium text-slate-300">Concurrent jobs</span>
         <input
-          className="ml-2 w-16"
+          className="h-10 w-24"
           type="number"
           min={1}
           value={data.concurrency}
@@ -58,10 +59,15 @@ export function EncodeSettings({
         />
         Hold jobs outside off-peak
       </label>
-      <div className="text-sm">
-        <input value={data.offPeakStart} onChange={(event) => onChange({ offPeakStart: event.target.value })} />
-        <span className="mx-2">to</span>
-        <input value={data.offPeakEnd} onChange={(event) => onChange({ offPeakEnd: event.target.value })} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block space-y-1.5 text-sm">
+          <span className="font-medium text-slate-300">Off-peak start</span>
+          <input className={FIELD_CONTROL} value={data.offPeakStart} onChange={(event) => onChange({ offPeakStart: event.target.value })} />
+        </label>
+        <label className="block space-y-1.5 text-sm">
+          <span className="font-medium text-slate-300">Off-peak end</span>
+          <input className={FIELD_CONTROL} value={data.offPeakEnd} onChange={(event) => onChange({ offPeakEnd: event.target.value })} />
+        </label>
       </div>
       <button className="btn" type="button" onClick={onSave}>Save encode settings</button>
     </div>

@@ -9,6 +9,9 @@ export function titleOptimizeLocked(item: {
   return false;
 }
 
+export const audioActionSelectClass = "h-10 w-56 max-w-full shrink-0";
+export const audioChannelSelectClass = "h-10 w-24 shrink-0";
+
 export function canQueueCustomPlan(
   plan: { video?: { kind?: string } } | null,
   errors: string[],
