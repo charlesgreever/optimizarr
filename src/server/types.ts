@@ -199,6 +199,8 @@ export type FileError = {
   fileName: string;
   displayTitle: string;
   reason: string;
+  type?: "movie" | "episode";
+  href?: string;
 };
 
 export type Job = {

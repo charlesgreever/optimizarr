@@ -317,6 +317,23 @@ describe("public HTTP behavior", () => {
       await ctx.app.app.request("/api/suggestions?type=episode", { headers })
     ).json()) as { items: Array<{ href?: string }>; total: number };
     expect(episodeSuggestions).toMatchObject({ total: 1, items: [{ href: "/series/episodes/episode-101-1" }] });
+
+    ctx.store.setFileError("/shows/101/1.mkv", "episode-101-1", "Episode is unreadable.");
+    ctx.store.setFileError("/orphan.mkv", null, "No library row.");
+    const errors = (await (await ctx.app.app.request("/api/errors?limit=10", { headers })).json()) as {
+      items: Array<{ path: string; href?: string; itemId: string | null }>;
+    };
+    expect(errors.items.find((row) => row.path === "/movies/2.mkv")).toMatchObject({
+      itemId: "movie-2",
+      href: "/movies/movie-2",
+    });
+    expect(errors.items.find((row) => row.path === "/shows/101/1.mkv")).toMatchObject({
+      itemId: "episode-101-1",
+      href: "/series/episodes/episode-101-1",
+    });
+    const orphan = errors.items.find((row) => row.path === "/orphan.mkv");
+    expect(orphan).toMatchObject({ itemId: null });
+    expect(orphan).not.toHaveProperty("href");
   });
 
   it("bounds every work-list response and exposes continuation metadata", async () => {

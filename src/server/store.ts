@@ -540,7 +540,7 @@ export class Store {
         displayTitle: joinedDisplayTitle(row, suggestion.itemId),
         instanceName: row.item_instance_name == null ? undefined : String(row.item_instance_name),
         type: row.item_type === "episode" ? "episode" : row.item_type === "movie" ? "movie" : undefined,
-        href: row.item_type === "episode" ? `/series/episodes/${suggestion.itemId}` : `/movies/${suggestion.itemId}`,
+        href: itemHref(row.item_type, suggestion.itemId),
         quality: row.item_quality == null ? undefined : String(row.item_quality),
         hasPoster: Boolean(row.item_poster_bytes || row.item_poster_remote),
       };
@@ -576,12 +576,15 @@ export class Store {
     }>;
     return rows.map((r) => {
       const item = r.item_id ? this.getItem(r.item_id) : undefined;
+      const fileName = r.path.split("/").pop() || r.path;
       return {
         itemId: r.item_id,
         path: r.path,
-        fileName: r.path.split("/").pop() || r.path,
-        displayTitle: item ? `${item.title}` : r.path.split("/").pop() || r.path,
+        fileName,
+        displayTitle: item ? `${item.title}` : fileName,
         reason: r.reason,
+        type: item?.type,
+        href: item ? itemHref(item.type, item.id) : undefined,
       };
     });
   }
@@ -595,13 +598,20 @@ export class Store {
        FROM file_errors e LEFT JOIN library_items i ON i.id = e.item_id
        ORDER BY e.path LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
-    return page(rows.map((row) => ({
-      itemId: row.item_id == null ? null : String(row.item_id),
-      path: String(row.path),
-      fileName: String(row.path).split("/").pop() || String(row.path),
-      displayTitle: joinedDisplayTitle(row, String(row.path).split("/").pop() || String(row.path)),
-      reason: String(row.reason),
-    })), total, offset, limit);
+    return page(rows.map((row) => {
+      const itemId = row.item_id == null ? null : String(row.item_id);
+      const fileName = String(row.path).split("/").pop() || String(row.path);
+      const type = row.item_type === "episode" ? "episode" as const : row.item_type === "movie" ? "movie" as const : undefined;
+      return {
+        itemId,
+        path: String(row.path),
+        fileName,
+        displayTitle: joinedDisplayTitle(row, fileName),
+        reason: String(row.reason),
+        type,
+        href: itemId == null ? undefined : itemHref(row.item_type, itemId),
+      };
+    }), total, offset, limit);
   }
 
   setInspectState(state: { walking: boolean; pending: number; inspected: number; failed: number }): void {
@@ -1036,6 +1046,10 @@ function stringList(value: unknown): string[] {
 function page<T>(items: T[], total: number, offset: number, limit: number): Page<T> {
   const consumed = offset + items.length;
   return { items, total, nextOffset: consumed < total && items.length === limit ? consumed : null };
+}
+
+function itemHref(itemType: unknown, itemId: string): string {
+  return itemType === "episode" ? `/series/episodes/${itemId}` : `/movies/${itemId}`;
 }
 
 function joinedDisplayTitle(row: Record<string, unknown>, fallback: string): string {

@@ -205,7 +205,15 @@ export type HomePayload = {
   recent: HistoryRow[];
   status: string;
 };
-export type FileError = { itemId: string | null; path: string; fileName: string; displayTitle: string; reason: string };
+export type FileError = {
+  itemId: string | null;
+  path: string;
+  fileName: string;
+  displayTitle: string;
+  reason: string;
+  type?: "movie" | "episode";
+  href?: string;
+};
 export type InspectState = { walking: boolean; pending: number; inspected: number; failed: number };
 export type SearchHit = { itemId: string; type: "movie" | "episode"; displayTitle: string; instanceName: string; href: string };
 export type InspectionReport = {

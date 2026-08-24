@@ -20,7 +20,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions
 - Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality. The title page shows file name and path.
 - Series headers show episode total, how many are healthy, and how many still have suggestions
-- Suggestion titles open the same detail page as Movies and Series
+- Suggestion and Errors titles open the same detail page as Movies and Series
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check
