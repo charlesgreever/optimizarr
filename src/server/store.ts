@@ -730,7 +730,14 @@ export class Store {
        FROM jobs j LEFT JOIN library_items i ON i.id = j.item_id
        WHERE j.queue_visible = 1 ORDER BY j.position ASC LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
-    return page(rows.map((row) => ({ ...mapJob(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit);
+    return page(rows.map((row) => {
+      const itemId = String(row.item_id);
+      return {
+        ...mapJob(row),
+        displayTitle: joinedDisplayTitle(row, itemId),
+        href: row.item_type == null ? undefined : itemHref(row.item_type, itemId),
+      };
+    }), total, offset, limit);
   }
 
   getJob(id: string): (Job & { plan: JobPlan }) | undefined {

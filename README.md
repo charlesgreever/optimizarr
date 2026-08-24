@@ -23,7 +23,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Home shows a Status strip, large files-optimized and space-saved tiles, and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
 - Settings uses stacked labels and everyday size-cap names. Title-page audio actions keep a fixed-width dropdown so Keep and Replace with downmix do not jump.
 - Series headers show episode total, how many are healthy, and how many still have suggestions
-- Suggestion and Errors titles open the same detail page as Movies and Series
+- Suggestion, Errors, and Queue titles open the same detail page as Movies and Series
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in. mkvmerge and ffmpeg run with a UTF-8 locale so titles such as 烧烤 are not truncated.
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check

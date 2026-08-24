@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, type JobRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
@@ -41,7 +42,7 @@ export function QueuePage() {
   return (
     <section>
       <PageHead title="Queue" />
-      <Help>Queue is approved work that has not finished. Progress during a remux or transcode is elapsed media time, updated about once a second. Pause, resume, and reorder waiting jobs. Cancel never replaces the library file. Sidecar waits in Review; direct write replaces the library file after an integrity check.</Help>
+      <Help>Queue is approved work that has not finished. Open a title for the same media page as Movies and Series. Progress during a remux or transcode is elapsed media time, updated about once a second. Pause, resume, and reorder waiting jobs. Cancel never replaces the library file. Sidecar waits in Review; direct write replaces the library file after an integrity check.</Help>
       <div className="mt-3 flex flex-wrap gap-2">
         {active.length > 0 && (
           <button className="btn-secondary" type="button" disabled={busy} onClick={() => void mutate(api.cancelAll)}>
@@ -73,7 +74,15 @@ export function QueuePage() {
             <tbody>
               {items.map((job) => (
                 <tr key={job.id}>
-                  <td>{job.displayTitle}</td>
+                  <td className="min-w-44">
+                    {job.href ? (
+                      <Link className="font-medium text-ink hover:text-accent" to={job.href}>
+                        {job.displayTitle}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-ink">{job.displayTitle}</span>
+                    )}
+                  </td>
                   <td>{job.status}</td>
                   <td>{planLabel(job)}</td>
                   <td>{phaseLabel(job.phase, job.status)}</td>

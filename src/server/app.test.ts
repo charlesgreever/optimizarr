@@ -437,6 +437,31 @@ describe("public HTTP behavior", () => {
       expect(second, path).toMatchObject({ nextOffset: null, total: 3 });
     }
 
+    const queued = (await (await ctx.app.app.request("/api/jobs?limit=2", { headers })).json()) as {
+      items: Array<{ id?: string; href?: string }>;
+    };
+    expect(queued.items[0]).toMatchObject({ href: "/movies/list-item-1" });
+    ctx.store.insertJob({
+      id: "orphan-job",
+      itemId: "missing-item",
+      suggestionId: null,
+      status: "failed",
+      phase: "idle",
+      progress: 0,
+      error: "gone",
+      warning: null,
+      runNow: false,
+      position: 99,
+      plan: {},
+      createdAt: 99,
+    });
+    const withOrphan = (await (await ctx.app.app.request("/api/jobs?offset=3&limit=2", { headers })).json()) as {
+      items: Array<{ id?: string; href?: string }>;
+    };
+    const orphanJob = withOrphan.items.find((row) => row.id === "orphan-job");
+    expect(orphanJob).toBeTruthy();
+    expect(orphanJob).not.toHaveProperty("href");
+
     const matching = (await (
       await ctx.app.app.request("/api/suggestions?q=Film%203&limit=2", { headers })
     ).json()) as { items: Array<{ displayTitle: string }>; nextOffset: number | null; total: number };

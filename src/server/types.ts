@@ -212,6 +212,7 @@ export type Job = {
   itemId: string;
   suggestionId: string | null;
   displayTitle: string;
+  href?: string;
   status: JobStatus;
   phase: JobPhase;
   progress: number;

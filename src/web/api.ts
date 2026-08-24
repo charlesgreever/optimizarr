@@ -212,6 +212,7 @@ export type Exclusion = { id: string; kind: "path" | "profile" | "tag" | "title"
 export type JobRow = {
   id: string;
   displayTitle: string;
+  href?: string;
   status: "queued" | "held" | "paused" | "running" | "succeeded" | "failed" | "cancelled";
   phase: "queued" | "held" | "paused" | "copying" | "muxing" | "creating_stereo" | "transcoding" | "finishing" | "idle";
   progress: number;
