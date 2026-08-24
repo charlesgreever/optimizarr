@@ -1,3 +1,5 @@
+import { isMediaFilePath } from "./inspect.ts";
+
 export type ArrMovie = {
   id: number;
   title: string;
@@ -44,7 +46,7 @@ export function parseRadarrMovies(payload: unknown): ArrMovie[] {
     const row = asRecord(raw);
     const file = movieFileOf(row);
     const path = str(file?.path, "");
-    if (!path) return [];
+    if (!path || !isMediaFilePath(path)) return [];
     const quality = qualityName(file ?? {});
     return [{
       id: num(row.id),
@@ -80,7 +82,7 @@ export function parseSonarrEpisodes(payload: unknown, seriesTitle: string, poste
     .map((raw) => {
       const row = asRecord(raw);
       const file = asRecord(row.episodeFile);
-      if (!file.path) return null;
+      if (!file.path || !isMediaFilePath(str(file.path, ""))) return null;
       const quality = qualityName(file);
       return {
         id: num(row.id),

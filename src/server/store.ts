@@ -319,6 +319,7 @@ export class Store {
   }
 
   upsertItem(item: Omit<LibraryItem, "hasPoster" | "instanceName"> & { posterBytes?: Buffer | null }): string {
+    const previous = this.getItem(item.id);
     this.db
       .prepare(
         `INSERT INTO library_items (id, instance_id, arr_id, arr_series_id, arr_episode_file_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
@@ -336,6 +337,10 @@ export class Store {
         sizeExempt: item.sizeExempt ? 1 : 0,
         posterBytes: item.posterBytes ?? null,
       });
+    if (previous && previous.path !== item.path) {
+      this.clearFileError(previous.path);
+      this.clearFileErrorsForItem(item.id);
+    }
     return item.id;
   }
 
@@ -589,7 +594,9 @@ export class Store {
   }
 
   listErrors(): FileError[] {
-    const rows = this.db.prepare("SELECT path, item_id, reason FROM file_errors").all() as Array<{
+    const rows = this.db.prepare(
+      `SELECT path, item_id, reason FROM file_errors e WHERE ${currentFileErrorSql("e")}`,
+    ).all() as Array<{
       path: string;
       item_id: string | null;
       reason: string;
@@ -610,12 +617,13 @@ export class Store {
   }
 
   errorPage(offset: number, limit: number): Page<FileError> {
-    const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM file_errors").get() as { n: number }).n);
+    const total = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM file_errors e WHERE ${currentFileErrorSql("e")}`).get() as { n: number }).n);
     const rows = this.db.prepare(
       `SELECT e.path, e.item_id, e.reason, i.type AS item_type, i.title AS item_title,
               i.show_title AS item_show_title, i.season AS item_season, i.episode AS item_episode,
               i.episode_title AS item_episode_title
        FROM file_errors e LEFT JOIN library_items i ON i.id = e.item_id
+       WHERE ${currentFileErrorSql("e")}
        ORDER BY e.path LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
     return page(rows.map((row) => {
@@ -892,7 +900,7 @@ export class Store {
          (SELECT COUNT(*) FROM suggestions WHERE dismissed = 0) AS suggestions,
          (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status IN ('queued', 'held')) AS queued,
          (SELECT COUNT(*) FROM reviews) AS review,
-         (SELECT COUNT(*) FROM file_errors) AS errors,
+         (SELECT COUNT(*) FROM file_errors e WHERE ${currentFileErrorSql("e")}) AS errors,
          (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status = 'failed') AS failed`,
     ).get() as Record<string, number>;
     const row = this.db.prepare(
@@ -1078,6 +1086,10 @@ function stringList(value: unknown): string[] {
 function page<T>(items: T[], total: number, offset: number, limit: number): Page<T> {
   const consumed = offset + items.length;
   return { items, total, nextOffset: consumed < total && items.length === limit ? consumed : null };
+}
+
+function currentFileErrorSql(alias: string): string {
+  return `(${alias}.item_id IS NULL OR EXISTS (SELECT 1 FROM library_items i WHERE i.id = ${alias}.item_id AND i.path = ${alias}.path))`;
 }
 
 function itemHref(itemType: unknown, itemId: string): string {

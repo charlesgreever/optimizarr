@@ -288,6 +288,10 @@ export function isIsoPath(path: string): boolean {
   return path.toLowerCase().endsWith(".iso");
 }
 
+export function isMediaFilePath(path: string): boolean {
+  return /\.(mkv|mp4|m4v|avi|mov|wmv|ts|m2ts|mts|iso|mk3d|webm)$/i.test(path);
+}
+
 export function trackEditingAvailable(report: InspectionReport): boolean {
   return report.listingState === "complete";
 }

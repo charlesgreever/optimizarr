@@ -1,7 +1,7 @@
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { InspectionReport, LibraryItem } from "./types.ts";
-import { isIsoPath, isoInspectionLooksStale, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
+import { isIsoPath, isMediaFilePath, isoInspectionLooksStale, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
 import { isoInputAttempts, toolLocaleEnv } from "./optimize.ts";
 
 export type InspectionRunnerOptions = {
@@ -157,6 +157,7 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
 
   function inspectStillOpen(item: LibraryItem): boolean {
     if (!item.path) return false;
+    if (!isMediaFilePath(item.path)) return false;
     if (isoInspectionLooksStale(opts.store.getInspection(item.id), item.path)) return true;
     if (opts.store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
     return !opts.store.listErrors().some((error) => error.path === item.path);
@@ -186,6 +187,8 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
 
 async function pathAccess(path: string): Promise<"ok" | "missing" | "denied"> {
   try {
+    const info = await stat(path);
+    if (info.isDirectory()) return "missing";
     await access(path);
     return "ok";
   } catch (error) {

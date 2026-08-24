@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -271,6 +271,59 @@ describe("inspection runner", () => {
     await runner.inspectPending();
     expect(store.listErrors()).toEqual([]);
     expect(store.getInspection(isoId)?.listingState).toBe("iso_unlisted");
+    store.close();
+  });
+
+  it("does not ffprobe a movie folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-inspect-dir-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: "packed",
+      enabled: true,
+    });
+    const folder = join(dir, "John Wick Chapter 3 - Parabellum (2019)");
+    mkdirSync(folder);
+    const itemId = `${instanceId}:movie:241`;
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 241,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "John Wick: Chapter 3 - Parabellum",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: folder,
+      sizeBytes: 0,
+      quality: "",
+      resolution: "",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    let probed = 0;
+    const runner = createInspectionRunner({
+      store,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      probe: async () => {
+        probed += 1;
+        throw new Error("ffprobe must not run on a folder.");
+      },
+      recomputeSuggestion: () => undefined,
+    });
+
+    await runner.inspectPending();
+    expect(probed).toBe(0);
+    expect(store.listErrors()).toEqual([]);
+    expect(runner.leftoverCount()).toBe(0);
     store.close();
   });
 });

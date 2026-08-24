@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   featureDurationSec,
   isIsoPath,
+  isMediaFilePath,
   isoInspectionLooksStale,
   isoListingLooksUsable,
   longestBlurayPlaylist,
@@ -71,6 +72,8 @@ describe("parseFfprobe", () => {
     expect(isIsoPath("/mnt/nas/disc.iso")).toBe(true);
     expect(isIsoPath("/mnt/nas/DISC.ISO")).toBe(true);
     expect(isIsoPath("/mnt/nas/movie.mkv")).toBe(false);
+    expect(isMediaFilePath("/mnt/nas/Movies/John Wick Chapter 3 - Parabellum (2019)")).toBe(false);
+    expect(isMediaFilePath("/mnt/nas/Movies/Rogue One A Star Wars Story (2016)/Rogue One.mkv")).toBe(true);
     const failed = unlistedIsoReport("/mnt/nas/Broken.iso", 8_000_000_000);
     expect(failed.sourceMethod).toBe("iso_ffmpeg");
     expect(failed.listingState).toBe("iso_unlisted");

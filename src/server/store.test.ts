@@ -198,9 +198,74 @@ describe("store schema migration", () => {
     });
     store.setFileError("/mnt/nas/Cars 3 [CODEFLiX].iso", itemId, "ffprobe failed.");
     expect(store.librarySnapshot(itemId)?.error).toBeNull();
+    expect(store.listErrors().some((row) => row.path.includes("CODEFLiX"))).toBe(false);
+    expect(store.workSummary().errors).toBe(0);
     store.setFileError("/mnt/nas/Cars 3 [FGT].iso", itemId, "This path is not readable inside the container.");
     expect(store.librarySnapshot(itemId)?.error).toMatch(/not readable/);
+    expect(store.workSummary().errors).toBe(1);
     store.clearFileErrorsForItem(itemId);
     expect(store.librarySnapshot(itemId)?.error).toBeNull();
+  });
+
+  it("drops a folder ffprobe error after the title path becomes the media file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-folder-error-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    stores.push(store);
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: null,
+      enabled: true,
+    });
+    const itemId = `${instanceId}:movie:241`;
+    const folder = "/mnt/nas/Movies/John Wick Chapter 3 - Parabellum (2019)";
+    const file = `${folder}/John Wick Chapter 3.mkv`;
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 241,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "John Wick: Chapter 3 - Parabellum",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: folder,
+      sizeBytes: 0,
+      quality: "",
+      resolution: "",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    store.setFileError(folder, itemId, "Command failed: ffprobe -v quiet -print_format json -show_format -show_streams " + folder);
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 241,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "John Wick: Chapter 3 - Parabellum",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: file,
+      sizeBytes: 74_279_424_501,
+      quality: "Bluray-2160p",
+      resolution: "2160",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    expect(store.listErrors()).toEqual([]);
+    expect(store.errorPage(0, 20).items).toEqual([]);
+    expect(store.workSummary().errors).toBe(0);
   });
 });

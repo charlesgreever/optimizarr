@@ -49,6 +49,18 @@ describe("Arr identity", () => {
     expect(movies[0]?.path).toBe("/mnt/nas/Kids Movies/Cars 3.mkv");
   });
 
+  it("skips a Radarr movieFile path that is a folder instead of a media file", () => {
+    const movies = parseRadarrMovies([
+      {
+        id: 241,
+        title: "John Wick: Chapter 3 - Parabellum",
+        hasFile: true,
+        movieFile: { path: "/mnt/nas/Movies/John Wick Chapter 3 - Parabellum (2019)", size: 0 },
+      },
+    ]);
+    expect(movies).toEqual([]);
+  });
+
   it("prefers the Arr-hosted poster path over an external remote URL", () => {
     const movies = parseRadarrMovies([{
       id: 1,
