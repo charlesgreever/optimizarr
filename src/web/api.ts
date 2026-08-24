@@ -34,6 +34,7 @@ export const api = {
     item: LibraryRow;
     hardware: Hardware;
     settings: { writeMode: string; videoTarget: string; preferredLanguage?: string };
+    languageId?: { available?: boolean };
   }>(`/api/library/items/${id}`),
   previewPlan: async (id: string, draft: Record<string, unknown>) => {
     const res = await fetch(`/api/library/items/${id}/plan`, {
@@ -47,6 +48,22 @@ export const api = {
     req(`/api/library/items/${id}/queue`, { method: "POST", body: JSON.stringify({ draft, runNow }) }),
   searchPreferred: (id: string) =>
     req(`/api/library/items/${id}/search-preferred`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  detectLanguage: (id: string, trackIndex: number, startSec?: number) =>
+    req<{
+      ok?: boolean;
+      language?: string;
+      languageName?: string;
+      probability?: number;
+      startSec?: number;
+      suggestedNextSec?: number;
+      durationSec?: number;
+      reason?: string;
+    }>(`/api/library/items/${id}/detect-language`, { method: "POST", body: JSON.stringify({ trackIndex, startSec }) }),
+  applyLanguage: (id: string, trackIndex: number, language: string, probability: number) =>
+    req<{ ok?: boolean; language?: string; languageName?: string; item?: LibraryRow }>(
+      `/api/library/items/${id}/apply-language`,
+      { method: "POST", body: JSON.stringify({ trackIndex, language, probability }) },
+    ),
   syncProfiles: () => req<{ results: Array<{ created: string[]; updated: string[]; failed: string[] }> }>("/api/settings/profiles/sync", { method: "POST" }),
   inspect: () => req<InspectState>("/api/inspect/status"),
   errors: (offset = 0, limit = 50) => req<LibraryPage<FileError>>(`/api/errors?offset=${offset}&limit=${limit}`),

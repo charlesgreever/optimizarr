@@ -18,7 +18,8 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
 - Can suggest converting MP4 files to MKV before a hardware encode, or as remux-only work
 - Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions
-- Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality. The title page shows file name and path. Queue stays off until the plan differs from the source. AV1 appears only when the GPU can encode it.
+- Lets you queue a custom plan from a title page: track edits, remux, size mode, or encoder quality. The title page shows file name and path. Queue stays off until the plan differs from the source. AV1 appears only when the GPU can encode it. Untagged audio can **Identify language** from a 45-second clip when `WHISPER_LID` is set. A weak sample stays untagged and offers another start time. The library file does not change until Keep.
+- Optional language identification: set `WHISPER_LID` to a command that takes a WAV path and prints `{"language":"en","probability":0.94}`. faster-whisper `detect_language` on CUDA is the usual household recipe. If the command is missing, the title page does not offer the action.
 - Home shows a Status strip, large files-optimized and space-saved tiles, and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
 - Settings uses stacked labels and everyday size-cap names. Title-page audio actions keep a fixed-width dropdown so Keep and Replace with downmix do not jump.
 - Series headers show episode total, how many are healthy, and how many still have suggestions

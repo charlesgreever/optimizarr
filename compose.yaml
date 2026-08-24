@@ -12,6 +12,8 @@ services:
       CONFIG_DIR: /config
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      # Optional. Command that reads a 16 kHz mono WAV and prints {"language":"en","probability":0.94}
+      # WHISPER_LID: /usr/local/bin/whisper-lid
     volumes:
       - /home/cgreever/appdata/arr/optimizarr/config:/config
       - /mnt/nas:/mnt/nas

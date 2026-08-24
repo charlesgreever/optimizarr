@@ -22,3 +22,24 @@ export function canQueueCustomPlan(
 ): boolean {
   return Boolean(plan) && errors.length === 0 && !locked;
 }
+
+export function canIdentifyLanguage(track: { language?: string; untagged?: boolean; channels?: number } | undefined, available: boolean, locked: boolean): boolean {
+  if (!available || locked || !track) return false;
+  if ((track.channels ?? 0) <= 0) return false;
+  return track.untagged === true || track.language === "und";
+}
+
+export function formatClipClock(sec: number): string {
+  const total = Math.max(0, Math.floor(sec));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+export function parseClipClock(value: string): number | null {
+  const trimmed = value.trim();
+  const clock = trimmed.match(/^(\d+):(\d{1,2})$/);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  return Math.floor(Number(trimmed));
+}

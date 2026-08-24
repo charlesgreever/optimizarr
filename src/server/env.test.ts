@@ -18,4 +18,10 @@ describe("env", () => {
     expect(env.widgetKeyEnv).toBe("k");
     expect(env.trustProxy).toBe(true);
   });
+
+  it("reads an optional language-identification command", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-env-"));
+    expect(loadEnv({ CONFIG_DIR: dir }).whisperLid).toBeNull();
+    expect(loadEnv({ CONFIG_DIR: dir, WHISPER_LID: "/usr/local/bin/whisper-lid" }).whisperLid).toBe("/usr/local/bin/whisper-lid");
+  });
 });

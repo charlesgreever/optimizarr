@@ -2,9 +2,11 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import argon2 from "argon2";
 import type { Env } from "./env.ts";
 import { Store } from "./store.ts";
@@ -20,7 +22,14 @@ import { buildSuggestion } from "./suggest.ts";
 import { deleteArrFileAndSearch, soleNonPreferredAudio } from "./arr-search.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService } from "./jobs.ts";
-import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
+import { ffmpegOptimizer, isoRemuxInputs, toolLocaleEnv, type Optimizer } from "./optimize.ts";
+import { isIsoPath } from "./inspect.ts";
+import {
+  applyLanguageToReport,
+  detectLanguageClip,
+  languageDisplayName,
+  LID_MIN_PROBABILITY,
+} from "./language-id.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
@@ -32,6 +41,7 @@ import { LibrarySync, pathsOverlap } from "./library-sync.ts";
 import { parseArrWebhook, presentedWebhookToken, webhookTokenMatches } from "./arr-webhook.ts";
 import { parseSuggestionFilters } from "./suggestion-filters.ts";
 
+const execFileAsync = promisify(execFile);
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
 const GENERIC_LOGIN = "Username or password is wrong.";
 
@@ -47,6 +57,8 @@ export type AppOptions = {
   readable?: (path: string) => Promise<boolean>;
   clientAddress?: (context: Context) => string | undefined;
   syncIntervalMs?: number;
+  extractLanguageClip?: (args: string[]) => Promise<void>;
+  runLanguageLid?: (clipPath: string) => Promise<string>;
 };
 
 export function createApp(opts: AppOptions) {
@@ -468,6 +480,7 @@ export function createApp(opts: AppOptions) {
         videoTarget: store.getSettings().videoTarget,
         preferredLanguage: store.getSettings().preferredLanguage,
       },
+      languageId: { available: Boolean(opts.runLanguageLid || opts.env.whisperLid) },
     });
   });
 
@@ -541,6 +554,78 @@ export function createApp(opts: AppOptions) {
     store.saveSuggestion(item.id, null);
     store.deleteLibraryItem(item.id);
     return c.json({ ok: true });
+  });
+
+  const extractLanguageClip = opts.extractLanguageClip ?? (async (args: string[]) => {
+    await execFileAsync(opts.env.ffmpeg, args, { timeout: 120_000, env: toolLocaleEnv() });
+  });
+  const runLanguageLid = opts.runLanguageLid ?? (async (clipPath: string) => {
+    if (!opts.env.whisperLid) throw new Error("Language identification is not installed.");
+    const { stdout } = await execFileAsync(opts.env.whisperLid, [clipPath], {
+      timeout: 120_000,
+      maxBuffer: 64 * 1024,
+      env: toolLocaleEnv(),
+    });
+    return stdout;
+  });
+  const whisperAvailable = Boolean(opts.runLanguageLid || opts.env.whisperLid);
+
+  app.post("/api/library/items/:id/detect-language", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ trackIndex?: number; startSec?: number }>().catch(() => ({} as { trackIndex?: number; startSec?: number }));
+    const trackIndex = body.trackIndex;
+    if (typeof trackIndex !== "number" || !Number.isSafeInteger(trackIndex)) {
+      return c.json({ error: "Pick an audio track to identify." }, 400);
+    }
+    const input = isIsoPath(item.path)
+      ? isoRemuxInputs(item.path, report)[0] ?? ["-i", item.path]
+      : ["-i", item.path];
+    const result = await detectLanguageClip({
+      report,
+      trackIndex,
+      startSec: typeof body.startSec === "number" ? body.startSec : undefined,
+      input,
+      whisperAvailable,
+      extract: extractLanguageClip,
+      runLid: runLanguageLid,
+    });
+    if (!result.ok) {
+      if (result.status === 200) return c.json(result);
+      const status = result.status === 501 ? 501 : 502;
+      return c.json({ error: result.reason, ...result }, status);
+    }
+    return c.json(result);
+  });
+
+  app.post("/api/library/items/:id/apply-language", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ trackIndex?: number; language?: string; probability?: number }>().catch(
+      () => ({} as { trackIndex?: number; language?: string; probability?: number }),
+    );
+    const trackIndex = body.trackIndex;
+    if (typeof trackIndex !== "number" || !Number.isSafeInteger(trackIndex) || typeof body.language !== "string") {
+      return c.json({ error: "Confirm the language for this soundtrack." }, 400);
+    }
+    if (typeof body.probability !== "number" || body.probability < LID_MIN_PROBABILITY) {
+      return c.json({ error: "That sample was not confident enough to save." }, 400);
+    }
+    const next = applyLanguageToReport(report, trackIndex, body.language);
+    if ("error" in next) return c.json({ error: next.error }, 400);
+    store.saveInspection(item.id, next);
+    recomputeSuggestion(item.id);
+    const language = next.audio.find((track) => track.index === trackIndex)?.language ?? body.language;
+    return c.json({
+      ok: true,
+      language,
+      languageName: languageDisplayName(language),
+      item: library.item(item.id, true),
+    });
   });
 
   app.post("/api/library/series/:instanceId/:seriesId/optimize", async (c) => {

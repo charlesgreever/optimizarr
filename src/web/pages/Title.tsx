@@ -4,7 +4,15 @@ import { api, formatSize, type ExecutablePlan, type InspectionReport, type Libra
 import { Help, PageHead } from "../components/Shell";
 import { TitleFacts } from "../components/TitleFacts";
 import { Pill } from "../components/ui";
-import { audioActionSelectClass, audioChannelSelectClass, canQueueCustomPlan, titleOptimizeLocked } from "../title-plan";
+import {
+  audioActionSelectClass,
+  audioChannelSelectClass,
+  canIdentifyLanguage,
+  canQueueCustomPlan,
+  formatClipClock,
+  parseClipClock,
+  titleOptimizeLocked,
+} from "../title-plan";
 import { channelLabel, fileNameFromPath, usefulTrackTitle } from "../title-display";
 
 type AudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";
@@ -26,6 +34,19 @@ export function TitlePage() {
   const [writeMode, setWriteMode] = useState<"default" | "sidecar" | "direct">("default");
   const [audio, setAudio] = useState<Record<number, { action: AudioAction; channels?: number }>>({});
   const [subs, setSubs] = useState<Record<number, "keep" | "remove">>({});
+  const [languageIdAvailable, setLanguageIdAvailable] = useState(false);
+  const [lid, setLid] = useState<{
+    trackIndex: number;
+    listening: boolean;
+    ok: boolean | null;
+    language?: string;
+    languageName?: string;
+    probability?: number;
+    startSec?: number;
+    suggestedNextSec?: number;
+    reason?: string;
+    timeInput: string;
+  } | null>(null);
 
   const report = item?.report as InspectionReport | null | undefined;
   const is4k = (item?.resolution === "2160") || (report?.height ?? 0) >= 2160 || (report?.width ?? 0) >= 3840;
@@ -39,6 +60,7 @@ export function TitlePage() {
       setAv1(r.hardware.av1);
       setWriteDefault(r.settings.writeMode);
       if (r.settings.preferredLanguage) setPreferredLanguage(r.settings.preferredLanguage);
+      setLanguageIdAvailable(Boolean(r.languageId?.available));
       const nextAudio: Record<number, { action: AudioAction; channels?: number }> = {};
       const nextSubs: Record<number, "keep" | "remove"> = {};
       for (const t of r.item.report?.audio ?? []) nextAudio[t.index] = { action: "keep" };
@@ -71,6 +93,61 @@ export function TitlePage() {
     return () => clearTimeout(t);
   }, [draft, id, item]);
 
+  async function listenForLanguage(trackIndex: number, startSec?: number) {
+    setLid({
+      trackIndex,
+      listening: true,
+      ok: null,
+      timeInput: formatClipClock(startSec ?? 90),
+    });
+    try {
+      const result = await api.detectLanguage(id, trackIndex, startSec);
+      if (result.ok && result.language) {
+        setLid({
+          trackIndex,
+          listening: false,
+          ok: true,
+          language: result.language,
+          languageName: result.languageName,
+          probability: result.probability,
+          startSec: result.startSec,
+          suggestedNextSec: result.suggestedNextSec,
+          timeInput: formatClipClock(result.suggestedNextSec ?? (result.startSec ?? 0) + 600),
+        });
+        return;
+      }
+      setLid({
+        trackIndex,
+        listening: false,
+        ok: false,
+        reason: result.reason,
+        startSec: result.startSec,
+        suggestedNextSec: result.suggestedNextSec,
+        timeInput: formatClipClock(result.suggestedNextSec ?? 600),
+      });
+    } catch (error) {
+      setLid({
+        trackIndex,
+        listening: false,
+        ok: false,
+        reason: error instanceof Error ? error.message : "Language identification failed.",
+        timeInput: formatClipClock(startSec ?? 90),
+      });
+    }
+  }
+
+  async function useDetectedLanguage(trackIndex: number) {
+    if (!lid?.language || lid.probability == null) return;
+    try {
+      const result = await api.applyLanguage(id, trackIndex, lid.language, lid.probability);
+      if (result.item) setItem(result.item);
+      setLid(null);
+      setMsg(`Saved ${result.languageName ?? lid.languageName} on this soundtrack.`);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not save that language.");
+    }
+  }
+
   if (!item) return <p className="help">{msg || "Loading title…"}</p>;
 
   const locked = titleOptimizeLocked(item);
@@ -92,6 +169,7 @@ export function TitlePage() {
         A sidecar is the new file waiting in Review until you Keep it. Direct write replaces the library file after an integrity check.
         Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
         Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
+        Identify language listens to a 45-second clip. It does not transcribe the movie or change the library file until you Keep a sidecar.
       </Help>
       {(locked || item.error) && (
         <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>
@@ -212,7 +290,60 @@ export function TitlePage() {
                         <option value={2}>stereo</option>
                       </select>
                     )}
+                    {canIdentifyLanguage(track, languageIdAvailable, locked) && (
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={lid?.listening === true}
+                        onClick={() => void listenForLanguage(track.index, lid?.trackIndex === track.index ? parseClipClock(lid.timeInput) ?? lid.suggestedNextSec : undefined)}
+                      >
+                        {lid?.listening && lid.trackIndex === track.index ? "Listening…" : "Identify language"}
+                      </button>
+                    )}
                   </div>
+                  {lid && lid.trackIndex === track.index && !lid.listening && (
+                    <div className="w-full basis-full space-y-2 text-sm text-slate-300">
+                      {lid.ok && lid.languageName && (
+                        <p className="m-0">This clip sounds like {lid.languageName} ({Math.round((lid.probability ?? 0) * 100)}%).</p>
+                      )}
+                      {lid.ok === false && (
+                        <p className="m-0">{lid.reason ?? "No speech in this sample."} Started at {formatClipClock(lid.startSec ?? 0)}.</p>
+                      )}
+                      {lid.ok === false && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            className="h-10 w-24 rounded-md bg-white/10 px-2"
+                            value={lid.timeInput}
+                            onChange={(e) => setLid({ ...lid, timeInput: e.target.value })}
+                            aria-label="Start time"
+                          />
+                          {([30, 600, Math.floor((report?.durationSec ?? 0) / 2), Math.floor((report?.durationSec ?? 0) * 2 / 3)] as const).map((sec) => (
+                            <button
+                              key={sec}
+                              className="btn-secondary"
+                              type="button"
+                              onClick={() => setLid({ ...lid, timeInput: formatClipClock(sec) })}
+                            >
+                              {formatClipClock(sec)}
+                            </button>
+                          ))}
+                          <button className="btn-secondary" type="button" onClick={() => void listenForLanguage(track.index, parseClipClock(lid.timeInput) ?? lid.suggestedNextSec)}>
+                            Listen again
+                          </button>
+                        </div>
+                      )}
+                      {lid.ok && lid.language && (
+                        <div className="flex flex-wrap gap-2">
+                          <button className="btn" type="button" onClick={() => void useDetectedLanguage(track.index)}>
+                            {`Use ${lid.languageName}`}
+                          </button>
+                          <button className="btn-secondary" type="button" onClick={() => setLid({ ...lid, ok: false, reason: "Try another time in the file.", timeInput: formatClipClock(lid.suggestedNextSec ?? (lid.startSec ?? 0) + 600) })}>
+                            Try another time
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { audioActionSelectClass, audioChannelSelectClass, canQueueCustomPlan, titleOptimizeLocked } from "./title-plan";
+import {
+  audioActionSelectClass,
+  audioChannelSelectClass,
+  canIdentifyLanguage,
+  canQueueCustomPlan,
+  formatClipClock,
+  parseClipClock,
+  titleOptimizeLocked,
+} from "./title-plan";
 
 describe("title plan gating", () => {
   it("locks unreadable and uninspected titles and waits for a previewed plan", () => {
@@ -21,5 +29,14 @@ describe("title plan gating", () => {
     expect(audioActionSelectClass).toContain("w-56");
     expect(audioActionSelectClass).toContain("h-10");
     expect(audioChannelSelectClass).toContain("w-24");
+  });
+
+  it("offers language identification only for untagged audio when the listener is installed", () => {
+    expect(canIdentifyLanguage({ language: "und", untagged: true, channels: 6 }, true, false)).toBe(true);
+    expect(canIdentifyLanguage({ language: "eng", untagged: false, channels: 6 }, true, false)).toBe(false);
+    expect(canIdentifyLanguage({ language: "und", untagged: true, channels: 6 }, false, false)).toBe(false);
+    expect(formatClipClock(90)).toBe("1:30");
+    expect(parseClipClock("10:00")).toBe(600);
+    expect(parseClipClock("90")).toBe(90);
   });
 });

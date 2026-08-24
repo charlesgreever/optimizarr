@@ -92,6 +92,11 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 54c. As a library owner, I want a confirmed title-page action when a file’s only audio track is not my preferred language, so that Polisharr can ask Radarr or Sonarr to delete that file and search again.
 54d. As a library owner, I want that Arr search to require a confirm that names the app and says the current file will be removed, so that a click cannot silently delete a library file.
 54e. As a library owner, I want an optional Settings toggle so Suggestions can list those wrong-language-only titles, so that I can work a pile of them without opening each title page. The toggle does not run the search until I confirm.
+54f. As a library owner, I want to ask the title page to identify an untagged audio track by listening to a short clip, so that I can tag `und` dialogue without transcribing the movie.
+54g. As a library owner, I want a failed clip (no speech or low confidence) to stay `und` and offer another start time in the file, so that opening logos or silence do not become English.
+54h. As a library owner, I want to confirm the detected language before Polisharr stores it on the inspection, so that a commentary track is not silently retagged.
+54i. As a library owner, I want identify-language to leave the library file unchanged, so that only Keep (or a later remux sidecar) writes tags onto disk.
+54j. As an operator, I want language identification to be optional at install (a `WHISPER_LID` command). If it is missing, the title page says so and does not pretend to listen.
 55. As a library owner, I want inspect to never run ffprobe on a `.iso` path (any case), so that disc images do not fail or hang the walker.
 56. As a library owner, I want inspect to list ISO streams with ffmpeg into the same inspection report shape as MKV, so that bulk and custom share one document.
 57. As a library owner, I want a readable ISO that ffmpeg listed to get bulk suggestions (size, tracks, stereo) from that report, so that disc images are not skipped only because ffprobe failed.

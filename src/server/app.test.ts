@@ -1536,4 +1536,88 @@ describe("public HTTP behavior", () => {
     expect(calls.some((call) => call.startsWith("DELETE ") && call.includes("/moviefile/77"))).toBe(true);
     expect(calls.some((call) => call.startsWith("POST ") && call.includes("/command"))).toBe(true);
   });
+
+  it("identifies an untagged soundtrack and saves the language without rewriting the file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-lid-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const sourcePath = join(dir, "film.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      extractLanguageClip: async () => undefined,
+      runLanguageLid: async () => JSON.stringify({ language: "en", probability: 0.94 }),
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    expect((await created.app.request("/api/library/items/x/detect-language", { method: "POST", body: "{}" })).status).toBe(401);
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    const itemId = `${instanceId}:movie:10`;
+    created.store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 10,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: sourcePath,
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    created.store.saveInspection(itemId, {
+      sourceSig: `${sourcePath}|8`,
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 7200,
+      isoPlaylist: null,
+      sizeBytes: 8,
+      sizePerHourGb: 1,
+      videoCodec: "h264",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [{ index: 1, language: "und", channels: 6, codec: "dts", title: "", untagged: true, commentary: false }],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    const title = (await (await created.app.request(`/api/library/items/${itemId}`, { headers })).json()) as { languageId?: { available?: boolean } };
+    expect(title.languageId?.available).toBe(true);
+    const detected = await created.app.request(`/api/library/items/${itemId}/detect-language`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ trackIndex: 1 }),
+    });
+    const detectedBody = (await detected.json()) as { ok?: boolean; language?: string; probability?: number };
+    expect(detected.status).toBe(200);
+    expect(detectedBody).toMatchObject({ ok: true, language: "eng" });
+    expect(created.store.getInspection(itemId)?.audio[0]?.language).toBe("und");
+    const applied = await created.app.request(`/api/library/items/${itemId}/apply-language`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ trackIndex: 1, language: "eng", probability: detectedBody.probability }),
+    });
+    expect(applied.status).toBe(200);
+    expect(created.store.getInspection(itemId)?.audio[0]).toMatchObject({ language: "eng", untagged: false });
+    expect(readFileSync(sourcePath, "utf8")).toBe("ORIGINAL");
+  });
 });
