@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatSize, type ReviewRow } from "../api";
+import { api, formatDuration, formatGbHour, formatSize, type ReviewRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
 import { usePagedList } from "../use-paged-list";
@@ -7,6 +7,11 @@ import { usePagedList } from "../use-paged-list";
 export function keepAllConfirmCopy(count: number): string {
   const noun = count === 1 ? "file" : "files";
   return `Keep all ${count} ${noun}? This replaces each library file with its new copy.`;
+}
+
+export function keepStartedCopy(accepted: number, skipped: number): string {
+  if (skipped === 0) return `Keep started for ${accepted}.`;
+  return `Keep started for ${accepted}; skipped ${skipped}.`;
 }
 
 export function ReviewPage() {
@@ -38,7 +43,7 @@ export function ReviewPage() {
             type="button"
             disabled={chosen.length === 0}
             onClick={() => void api.keepSelected(chosen.map((i) => i.id)).then((r) => {
-              setMsg(`Keep started for ${(r as { accepted: number }).accepted}.`);
+              setMsg(keepStartedCopy(r.accepted, r.skipped));
               setSelected({});
               return list.reload();
             })}
@@ -56,7 +61,7 @@ export function ReviewPage() {
         </div>
       </PageHead>
       <Help>
-        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes. If Polisharr restarts during Keep, the card comes back so you can try again, unless the new file is already in the library. Keep all promotes every waiting sidecar after you confirm.
+        Review compares the original and the sidecar: size, codec, duration, tracks, and GB per hour. Keep replaces the library file. Discard throws the sidecar away. Encode smaller queues a tighter size target after a miss. The original stays until Keep finishes. If Polisharr restarts during Keep, the card comes back so you can try again, unless the new file is already in the library. Keep all promotes every waiting sidecar after you confirm.
       </Help>
       {confirmAll && (
         <div className="glass mt-4 space-y-3 p-5" role="dialog" aria-labelledby="keep-all-title" aria-modal="true">
@@ -69,7 +74,7 @@ export function ReviewPage() {
               onClick={() => {
                 setConfirmAll(false);
                 void api.keepAll().then((result) => {
-                  setMsg(`Keep started for ${result.accepted}.`);
+                  setMsg(keepStartedCopy(result.accepted, result.skipped));
                   setSelected({});
                   return list.reload();
                 }).catch((error: Error) => setMsg(error.message));
@@ -101,8 +106,8 @@ export function ReviewPage() {
                   {item.flagged && <div className="text-sm text-amber-300">{item.flagReason}</div>}
                   {item.error && <div className="text-sm text-rose-400">{item.error}</div>}
                   <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-                    <div>Now: {item.source.codec} · {formatSize(item.source.sizeBytes)} · {item.source.tracks}</div>
-                    <div>Sidecar: {item.sidecar.codec} · {formatSize(item.sidecar.sizeBytes)} · {item.sidecar.tracks}</div>
+                    <div>Now: {item.source.codec} · {formatSize(item.source.sizeBytes)} · {formatDuration(item.source.durationSec)} · {formatGbHour(item.source.sizePerHourGb)} · {item.source.tracks}</div>
+                    <div>Sidecar: {item.sidecar.codec} · {formatSize(item.sidecar.sizeBytes)} · {formatDuration(item.sidecar.durationSec)} · {formatGbHour(item.sidecar.sizePerHourGb)} · {item.sidecar.tracks}</div>
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button className="btn" type="button" disabled={item.status !== "pending"} onClick={() => void api.keep(item.id).then(list.reload)}>
@@ -111,6 +116,18 @@ export function ReviewPage() {
                     <button className="btn-secondary danger" type="button" disabled={item.status !== "pending"} onClick={() => void api.discard(item.id).then(list.reload)}>
                       Discard
                     </button>
+                    {item.flagged && item.status === "pending" && (
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => void api.requeueFlagged(item.id).then(() => {
+                          setMsg("Queued a smaller encode.");
+                          return list.reload();
+                        }).catch((error: Error) => setMsg(error.message))}
+                      >
+                        Encode smaller
+                      </button>
+                    )}
                   </div>
                 </div>
               </label>

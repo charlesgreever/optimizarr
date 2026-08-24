@@ -744,6 +744,20 @@ describe("public HTTP behavior", () => {
     expect(calls.some((call) => call.includes("qualityprofile"))).toBe(false);
   });
 
+  it("rejects writing integrations without a session", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "secret-key", enabled: true }),
+    });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain("secret-key");
+    const listed = await ctx.app.app.request("/api/integrations");
+    expect(listed.status).toBe(401);
+  });
+
   it("rejects enqueue without a session after first-run is complete", async () => {
     const ctx = await setup();
     apps.push(ctx);
@@ -894,6 +908,42 @@ describe("public HTTP behavior", () => {
     const res = await ctx.app.app.request("/api/settings/widget-key", { method: "POST" });
     expect(res.status).toBe(401);
     expect(JSON.stringify(await res.json())).not.toMatch(/[a-f0-9]{32}/);
+  });
+
+  it("mints a widget key once and exposes hasWidgetKey on settings", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    const minted = (await (await ctx.app.app.request("/api/settings/widget-key", { method: "POST", headers })).json()) as { key: string };
+    expect(minted.key).toMatch(/^[a-f0-9]{48}$/);
+    const settings = (await (await ctx.app.app.request("/api/settings", { headers })).json()) as { hasWidgetKey: boolean; username: string };
+    expect(settings).toMatchObject({ hasWidgetKey: true, username: "ada" });
+    expect(JSON.stringify(settings)).not.toContain(minted.key);
+  });
+
+  it("returns a bounded job log for an authed operator", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    ctx.store.insertJob({
+      id: "job-log",
+      itemId: "movie-1",
+      suggestionId: null,
+      status: "failed",
+      phase: "idle",
+      progress: 0,
+      error: "Hardware encode is unavailable.",
+      warning: null,
+      runNow: false,
+      createdAt: 1,
+      plan: {},
+    });
+    ctx.store.appendJobLog("job-log", "ffmpeg: nack\n");
+    const logs = (await (await ctx.app.app.request("/api/jobs/job-log/logs", { headers })).json()) as { log: string };
+    expect(logs.log).toContain("ffmpeg: nack");
+    expect((await ctx.app.app.request("/api/jobs/job-log/logs")).status).toBe(401);
   });
 
   it("requires a widget key on a public address", async () => {

@@ -51,19 +51,11 @@ describe("store schema migration", () => {
     const store = new Store(path);
     stores.push(store);
     store.saveSettings({
+      ...store.getSettings(),
       preferredLanguage: "eng",
       languageConfirmed: true,
       reviewPath: "/review",
-      sizeCaps: { movie1080p: 2.5, movie4kSdr: 6, movie4kHdr: 8, tv1080p: 1, tv4k: 4 },
-      videoTarget: "hevc",
-      concurrency: 1,
-      conservativeMode: false,
-      offPeakEnabled: false,
-      offPeakStart: "01:00",
-      offPeakEnd: "07:00",
-      localAuthBypass: false,
-      inspectConcurrency: 1,
-    } as never);
+    });
     const reopened = new Store(path);
     stores.push(reopened);
     expect(reopened.getSettings().writeMode).toBe("sidecar");

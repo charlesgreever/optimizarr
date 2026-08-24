@@ -23,6 +23,7 @@ export type OptimizeRequest = {
   mkvmerge: string;
   conservative: boolean;
   onPhase?: (phase: "muxing" | "creating_stereo" | "transcoding" | "finishing", progress: number) => void;
+  onLog?: (text: string) => void;
   isCancelled?: () => boolean;
 };
 
@@ -117,6 +118,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
           : undefined;
         await run(req.mkvmerge, muxPlanArgs(current, muxed, muxPlan, extras, trackIds, subtitleExtras), {
           successfulExitCodes: [0, 1],
+          onLog: req.onLog,
           onChunk: (text) => {
             const ratio = parseMkvmergeProgress(text);
             if (ratio != null) emit("muxing", scaleProgress(0.3, 0.42, ratio));
@@ -128,7 +130,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
       if (planHasVideoTranscode(plan)) {
         if (req.isCancelled?.()) throw new CancelledError();
         emit("transcoding", 0.45);
-        const encodeReport = await probeOutput(req.ffprobe, current).catch(() => req.report);
+        const encodeReport = await probeOutput(req.ffprobe, current);
         const encoded = join(workDir, `${Date.now()}-enc.mkv`);
         temps.push(encoded);
         const encodePlan = plan.video.kind === "copy"
@@ -141,6 +143,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
             : req.report;
         const durationSec = Math.max(durationReport.durationSec, 1);
         await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }), {
+          onLog: req.onLog,
           onChunk: (text) => {
             const sec = parseFfmpegProgress(text);
             if (sec != null) emit("transcoding", scaleProgress(0.45, 0.92, sec / durationSec));
@@ -313,7 +316,7 @@ function planWithoutExtractedSubtitles(plan: ExecutablePlan, extracted: Subtitle
   };
 }
 
-function trackId(ids: ReadonlyMap<number, number> | undefined, ffprobeIndex: number, kind: string): number {
+function trackId(ids: ReadonlyMap<number, number> | undefined, ffprobeIndex: number, kind: "audio" | "subtitle"): number {
   if (!ids) return ffprobeIndex;
   const id = ids.get(ffprobeIndex);
   if (id == null) throw new Error(`mkvmerge could not match the planned ${kind} track.`);
@@ -653,7 +656,7 @@ function progressEmitter(
 async function run(
   bin: string,
   args: string[],
-  opts?: { onChunk?: (text: string) => void; isCancelled?: () => boolean; successfulExitCodes?: readonly number[] },
+  opts?: { onChunk?: (text: string) => void; onLog?: (text: string) => void; isCancelled?: () => boolean; successfulExitCodes?: readonly number[] },
 ): Promise<void> {
   if (!opts?.onChunk && !opts?.isCancelled) {
     try {
@@ -674,10 +677,13 @@ async function run(
     child.stdout.on("data", (buf: Buffer) => {
       const text = buf.toString("utf8");
       stdout = (stdout + text).slice(-2_000_000);
+      opts.onLog?.(text);
       opts.onChunk?.(text);
     });
     child.stderr.on("data", (buf: Buffer) => {
-      stderr = (stderr + buf.toString("utf8")).slice(-2_000_000);
+      const text = buf.toString("utf8");
+      stderr = (stderr + text).slice(-2_000_000);
+      opts.onLog?.(text);
     });
     child.on("error", (error) => {
       clearInterval(onCancel);

@@ -4,6 +4,7 @@ import { api, formatSize, type ExecutablePlan, type InspectionReport, type Libra
 import { Help, PageHead } from "../components/Shell";
 import { TitleFacts } from "../components/TitleFacts";
 import { Pill } from "../components/ui";
+import { canQueueCustomPlan, titleOptimizeLocked } from "../title-plan";
 import { channelLabel, fileNameFromPath, usefulTrackTitle } from "../title-display";
 
 type AudioAction = "keep" | "remove" | "replace_aac" | "replace_downmix" | "add_downmix";
@@ -70,12 +71,23 @@ export function TitlePage() {
 
   if (!item) return <p className="help">{msg || "Loading title…"}</p>;
 
+  const locked = titleOptimizeLocked(item);
+  const queueReady = canQueueCustomPlan(plan, errors, locked);
+
   return (
     <section className="space-y-5">
       <PageHead title={item.displayTitle}>
         <Link className="btn-secondary" to={item.type === "movie" ? "/movies" : "/series"}>Back</Link>
       </PageHead>
-      <Help>Custom work is optional. Bulk suggestions still exist. A do-nothing plan cannot be queued.</Help>
+      <Help>
+        Custom work is optional. Bulk suggestions still exist. Queue stays off until the plan differs from the source.
+        A sidecar is the new file waiting in Review until you Keep it. Direct write replaces the library file after an integrity check.
+        Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
+        Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
+      </Help>
+      {locked && (
+        <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>
+      )}
       <TitleFacts item={item} />
       {!listed && iso && (
         <p className="help">Streams could not be listed. You can still remux this disc image to Matroska.</p>
@@ -88,6 +100,7 @@ export function TitlePage() {
           <button
             className="btn mt-1"
             type="button"
+            disabled={locked}
             onClick={() => void api.queue({ itemId: item.id }).then(() => setMsg("Bulk plan queued.")).catch((e: Error) => setMsg(e.message))}
           >
             Queue suggested work
@@ -96,6 +109,7 @@ export function TitlePage() {
       )}
       <div className="grid gap-5 lg:grid-cols-2">
         <Section title="Video">
+          <fieldset disabled={locked} className="space-y-3 border-0 p-0">
           <div className="grid gap-2 sm:grid-cols-3">
             <ModeChoice name="video-mode" checked={videoMode === "copy"} onChange={() => setVideoMode("copy")} label="Copy / remux" />
             <ModeChoice name="video-mode" checked={videoMode === "size"} onChange={() => setVideoMode("size")} label="Target file size" />
@@ -117,14 +131,14 @@ export function TitlePage() {
             <div className="space-y-3">
               <label className="block text-sm">
                 <span className="mb-1 block font-medium text-slate-300">Codec</span>
-                <select value={codec} onChange={(e) => setCodec(e.target.value as "hevc" | "av1")}>
+                <select value={av1 ? codec : "hevc"} onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "hevc" || (value === "av1" && av1)) setCodec(value);
+                }}>
                   <option value="hevc">HEVC</option>
-                  <option value="av1">AV1</option>
+                  {av1 && <option value="av1">AV1</option>}
                 </select>
               </label>
-              {!av1 && codec === "av1" && (
-                <p className="help m-0">ffmpeg on this host has not listed an AV1 hardware encoder. Queue will fail until it does.</p>
-              )}
               {is4k && (
                 <label className="flex items-center gap-2 text-sm">
                   <input className="accent-accent" type="checkbox" checked={downscale} onChange={(e) => setDownscale(e.target.checked)} />
@@ -133,9 +147,13 @@ export function TitlePage() {
               )}
             </div>
           )}
+          </fieldset>
         </Section>
         <Section title="Write mode" help={`House default is ${writeDefault}. Direct write replaces the library file after an integrity check.`}>
-          <select value={writeMode} onChange={(e) => setWriteMode(e.target.value as "default" | "sidecar" | "direct")}>
+          <select value={writeMode} disabled={locked} onChange={(e) => {
+            const value = e.target.value;
+            if (value === "default" || value === "sidecar" || value === "direct") setWriteMode(value);
+          }}>
             <option value="default">Use house default</option>
             <option value="sidecar">Sidecar for Review</option>
             <option value="direct">Direct write</option>
@@ -143,6 +161,7 @@ export function TitlePage() {
         </Section>
       </div>
       <Section title="Audio">
+        <fieldset disabled={locked} className="space-y-2 border-0 p-0">
         {!listed && <p className="help m-0">Track edits stay hidden until streams can be listed.</p>}
         {listed && (
           <div className="space-y-2">
@@ -185,6 +204,7 @@ export function TitlePage() {
             })}
           </div>
         )}
+        </fieldset>
       </Section>
       <Section title="Subtitles">
         {listed && report?.subtitles.length ? (
@@ -233,7 +253,7 @@ export function TitlePage() {
         <button
           className="btn"
           type="button"
-          disabled={Boolean(errors.length)}
+          disabled={!queueReady}
           onClick={() => void api.queueCustom(id, draft).then(() => setMsg("Custom plan queued.")).catch((e: Error) => setMsg(e.message))}
         >
           Queue this plan

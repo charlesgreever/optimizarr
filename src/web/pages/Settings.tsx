@@ -9,12 +9,23 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
   const [data, setData] = useState<SettingsPayload | null>(null);
   const [hw, setHw] = useState<Hardware | null>(null);
   const [msg, setMsg] = useState("");
-  const [inst, setInst] = useState({ kind: "radarr", name: "", url: "", apiKey: "" });
+  const [inst, setInst] = useState<{ kind: "radarr" | "sonarr" | "plex" | "jellyfin"; name: string; url: string; apiKey: string }>({
+    kind: "radarr",
+    name: "",
+    url: "",
+    apiKey: "",
+  });
   const [exclusions, setExclusions] = useState<Exclusion[]>([]);
   const [exclusion, setExclusion] = useState<{ kind: Exclusion["kind"]; value: string }>({ kind: "path", value: "" });
   const [webhookToken, setWebhookToken] = useState<string | null>(null);
+  const [widgetKey, setWidgetKey] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
-  const load = () => void api.settings().then(setData);
+  const load = () => void api.settings().then((payload) => {
+    setData(payload);
+    setUsername(payload.username ?? "");
+  });
   useEffect(() => {
     load();
     void api.hardware().then(setHw);
@@ -67,7 +78,10 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </label>
         <label className="block text-sm">
           Write finished files
-          <select className="ml-2" value={data.writeMode ?? "sidecar"} onChange={(e) => setData({ ...data, writeMode: e.target.value as "sidecar" | "direct" })}>
+          <select className="ml-2" value={data.writeMode ?? "sidecar"} onChange={(e) => {
+            const value = e.target.value;
+            if (value === "sidecar" || value === "direct") setData({ ...data, writeMode: value });
+          }}>
             <option value="sidecar">Sidecar for Review (default)</option>
             <option value="direct">Direct write after integrity check</option>
           </select>
@@ -79,6 +93,30 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           onClick={save}
         >
           Save settings
+        </button>
+      </div>
+      <div className="glass space-y-3 p-4">
+        <h2 className="font-semibold">Account</h2>
+        <p className="help">Change the sign-in name and password. Polisharr signs you in again after a password change.</p>
+        <label className="block text-sm">
+          Username
+          <input className="mt-1 w-full" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+        </label>
+        <label className="block text-sm">
+          New password
+          <input className="mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+        </label>
+        <button
+          className="btn"
+          type="button"
+          disabled={!username.trim() || password.length < 8}
+          onClick={() => void api.changePassword(username.trim(), password).then(() => {
+            setPassword("");
+            setMsg("Username and password saved.");
+            onChange();
+          }).catch((e: Error) => setMsg(e.message))}
+        >
+          Save username and password
         </button>
       </div>
       <div className="glass space-y-3 p-4">
@@ -115,6 +153,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       <EncodeSettings
         data={data}
         hardwareLabel={hw ? `${hw.backend}${hw.av1 ? ", AV1 encoder listed" : ", AV1 encoder not listed"}` : "checking…"}
+        av1Available={Boolean(hw?.av1)}
         onChange={(patch) => setData({ ...data, ...patch })}
         onSave={save}
       />
@@ -146,7 +185,12 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       <div className="glass space-y-3 p-4">
         <h2 className="font-semibold">Connections</h2>
         <div className="grid gap-2 sm:grid-cols-2">
-          <select value={inst.kind} onChange={(e) => setInst({ ...inst, kind: e.target.value })}>
+          <select value={inst.kind} onChange={(e) => {
+            const kind = e.target.value;
+            if (kind === "radarr" || kind === "sonarr" || kind === "plex" || kind === "jellyfin") {
+              setInst({ ...inst, kind });
+            }
+          }}>
             <option value="radarr">Radarr</option>
             <option value="sonarr">Sonarr</option>
             <option value="plex">Plex</option>
@@ -180,9 +224,26 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           {data.instances.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 px-3 py-2">
               <span>
-                {row.name} · {row.kind} · {row.url} · {row.hasApiKey || row.hasToken ? "key saved" : "no key"}
+                {row.name} · {row.kind} · {row.url} · {row.enabled ? "enabled" : "paused"} · {row.hasApiKey || row.hasToken ? "key saved" : "no key"}
               </span>
               <span className="flex gap-2">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => void api.saveInstance({
+                    id: row.id,
+                    kind: row.kind,
+                    name: row.name,
+                    url: row.url,
+                    enabled: !row.enabled,
+                  }).then(() => {
+                    load();
+                    onChange();
+                    setMsg(row.enabled ? `${row.name} paused.` : `${row.name} enabled.`);
+                  }).catch((e: Error) => setMsg(e.message))}
+                >
+                  {row.enabled ? "Pause" : "Enable"}
+                </button>
                 <button className="btn-secondary" type="button" onClick={() => void api.testInstance(row.id).then((r) => setMsg(r.ok ? `${row.name} is reachable.` : r.message || "Test failed."))}>
                   Test
                 </button>
@@ -225,6 +286,32 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
           }
         >
           {data.hasWebhookToken ? "Rotate webhook token" : "Generate webhook token"}
+        </button>
+      </div>
+      <div className="glass space-y-3 p-4">
+        <h2 className="font-semibold">Homepage widget</h2>
+        <p className="help">
+          Homepage can poll Polisharr for running title, queued, review, suggestions, and errors. The key is shown once.
+        </p>
+        {widgetKey ? (
+          <p className="text-sm">
+            Key (shown once): <code>{widgetKey}</code>
+          </p>
+        ) : (
+          <p className="help">{data.hasWidgetKey ? "A widget key is saved. Generate a new one to replace it." : "No widget key yet. Generate one before you add the Homepage tile."}</p>
+        )}
+        <button
+          className="btn"
+          type="button"
+          onClick={() =>
+            void api.mintWidgetKey().then((result) => {
+              setWidgetKey(result.key);
+              load();
+              setMsg("Widget key generated. Copy it now; Polisharr will not show it again.");
+            }).catch((e: Error) => setMsg(e.message))
+          }
+        >
+          {data.hasWidgetKey ? "Rotate widget key" : "Generate widget key"}
         </button>
       </div>
       {msg && <p className="ok text-sm">{msg}</p>}

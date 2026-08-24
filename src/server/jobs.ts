@@ -6,7 +6,7 @@ import type { HardwareInfo, Job, ReviewItem, Settings, Suggestion } from "./type
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
-import { exceedsSizeCap } from "./size-budget.ts";
+import { aggressiveTargetBytes, missedOutputTarget } from "./size-budget.ts";
 import { classifyInterruptedKeep, KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
 import { promote, promotedPath, type PromoteInput, type PromoteResult } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
@@ -192,6 +192,7 @@ export class JobService {
         onPhase: (phase, progress) => {
           if (!this.cancelled.has(id)) this.opts.store.updateJob(id, { phase, progress });
         },
+        onLog: (text) => this.opts.store.appendJobLog(id, text),
         isCancelled: () => this.cancelled.has(id),
       });
       if (this.cancelled.has(id)) {
@@ -212,16 +213,22 @@ export class JobService {
         this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
         return;
       }
-      const overCap = exceedsSizeCap(result.output.sizePerHourGb, settings.sizeCaps[plan.category]);
-      const larger = result.output.sizeBytes > report.sizeBytes;
+      const targetBytes = plan.video.kind === "size" ? plan.video.targetBytes : null;
+      const flagged = missedOutputTarget({
+        outputBytes: result.output.sizeBytes,
+        sourceBytes: report.sizeBytes,
+        outputSizePerHourGb: result.output.sizePerHourGb,
+        categoryCap: settings.sizeCaps[plan.category],
+        targetBytes,
+      });
       this.opts.store.insertReview({
         id: randomUUID(),
         jobId: id,
         itemId: item.id,
         displayTitle: displayTitle(item),
         status: "pending",
-        flagged: overCap || larger,
-        flagReason: overCap || larger ? "The sidecar missed the size target or is larger than the original." : null,
+        flagged,
+        flagReason: flagged ? "The sidecar missed the size target or is larger than the original." : null,
         sourcePath: item.path,
         sidecarPath: result.sidecarPath,
         source: {
@@ -243,7 +250,7 @@ export class JobService {
         error: null,
       });
       this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1 });
-      if (overCap || larger) this.opts.store.addHistory(item.id, "flagged", 0, this.now());
+      if (flagged) this.opts.store.addHistory(item.id, "flagged", 0, this.now());
     } catch (error) {
       if (error instanceof CancelledError || this.cancelled.has(id)) {
         this.opts.store.updateJob(id, { status: "cancelled", error: "Cancelled." });
@@ -429,6 +436,45 @@ export class JobService {
       if (extra) outcome.warning = outcome.warning ? `${outcome.warning} ${extra}` : extra;
     }
     return outcome;
+  }
+
+  async requeueFlagged(reviewId: string): Promise<{ id: string } | { error: string; status: number }> {
+    const review = this.opts.store.getReview(reviewId);
+    if (!review) return { error: "That review item is gone.", status: 404 };
+    if (review.status !== "pending") return { error: "Only a waiting sidecar can be encoded smaller.", status: 409 };
+    if (!review.flagged) return { error: "Only a flagged sidecar can be encoded smaller.", status: 409 };
+    const job = this.opts.store.getJob(review.jobId);
+    const item = this.opts.store.getItem(review.itemId);
+    if (!item) return { error: "That title is not in the library.", status: 404 };
+    const previous = job ? resolvePlan(job.plan, job.writeMode) : undefined;
+    const previousTarget = previous?.video.kind === "size"
+      ? previous.video.targetBytes
+      : review.sidecar.sizeBytes ?? 0;
+    const targetBytes = aggressiveTargetBytes(previousTarget);
+    const codec = previous?.video.kind === "size" || previous?.video.kind === "quality"
+      ? previous.video.codec
+      : this.opts.store.getSettings().videoTarget;
+    const downscale1080p = previous?.video.kind === "size" || previous?.video.kind === "quality"
+      ? previous.video.downscale1080p
+      : false;
+    const bitDepth = previous?.video.kind === "size" || previous?.video.kind === "quality"
+      ? previous.video.bitDepth
+      : 8;
+    const discarded = await this.discard(reviewId);
+    if ("error" in discarded) return discarded;
+    return this.enqueueCustom(item.id, {
+      origin: "custom",
+      video: { kind: "size", codec, targetBytes, downscale1080p, bitDepth },
+      audio: previous?.audio ?? [],
+      subtitles: previous?.subtitles ?? [],
+      container: "mkv",
+      remuxInput: previous?.remuxInput,
+      writeMode: "sidecar",
+      warning: previous?.warning ?? null,
+      reasons: ["Smaller encode after a missed size target."],
+      estimatedOutputBytes: targetBytes,
+      category: previous?.category ?? "movie1080p",
+    });
   }
 
   async discard(reviewId: string): Promise<{ accepted: true } | { error: string; status: number }> {

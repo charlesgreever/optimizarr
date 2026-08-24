@@ -1,8 +1,7 @@
 import { copyFile, rename, unlink } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { notifyPlayers, refreshArr } from "./notify.ts";
-import { planHasVideoTranscode } from "./types.ts";
-import type { ExecutablePlan, LibraryItem } from "./types.ts";
+import type { ArrKind, ExecutablePlan, LibraryItem, PlayerKind } from "./types.ts";
 
 export type PromoteInput = {
   item: LibraryItem;
@@ -12,7 +11,7 @@ export type PromoteInput = {
   plan?: ExecutablePlan;
   decrypt: (packed: string) => string;
   fetch: typeof fetch;
-  instance?: { kind: string; url: string; secret: string | null } | null;
+  instance?: { kind: ArrKind | PlayerKind | string; url: string; secret: string | null } | null;
   players: Array<{ kind: "plex" | "jellyfin"; url: string; token: string }>;
 };
 
@@ -77,7 +76,6 @@ export async function promote(input: PromoteInput): Promise<PromoteResult> {
   }
   const playerErrors = await notifyPlayers(input.players, input.fetch);
   if (playerErrors.length) warning = warning ? `${warning} ${playerErrors.join(" ")}` : playerErrors.join(" ");
-  void planHasVideoTranscode;
   return {
     replaced: true,
     destPath,

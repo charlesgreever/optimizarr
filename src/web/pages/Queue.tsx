@@ -9,8 +9,21 @@ export function QueuePage() {
   const items = list.items;
   const [mutationError, setMutationError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [logs, setLogs] = useState<Record<string, string>>({});
   const active = items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused");
   const finished = items.filter((job) => job.status === "succeeded" || job.status === "failed" || job.status === "cancelled");
+  const waitingIds = items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "paused").map((job) => job.id);
+
+  async function moveJob(id: string, delta: number) {
+    const index = waitingIds.indexOf(id);
+    const next = index + delta;
+    if (index < 0 || next < 0 || next >= waitingIds.length) return;
+    const ids = [...waitingIds];
+    const [moved] = ids.splice(index, 1);
+    if (!moved) return;
+    ids.splice(next, 0, moved);
+    await mutate(() => api.reorderJobs(ids));
+  }
 
   async function mutate(action: () => Promise<unknown>) {
     setBusy(true);
@@ -28,7 +41,7 @@ export function QueuePage() {
   return (
     <section>
       <PageHead title="Queue" />
-      <Help>Queue is approved work that has not finished. Progress during a remux or transcode is elapsed media time, updated about once a second. Cancel never replaces the library file.</Help>
+      <Help>Queue is approved work that has not finished. Progress during a remux or transcode is elapsed media time, updated about once a second. Pause, resume, and reorder waiting jobs. Cancel never replaces the library file. Sidecar waits in Review; direct write replaces the library file after an integrity check.</Help>
       <div className="mt-3 flex flex-wrap gap-2">
         {active.length > 0 && (
           <button className="btn-secondary" type="button" disabled={busy} onClick={() => void mutate(api.cancelAll)}>
@@ -51,6 +64,7 @@ export function QueuePage() {
               <tr>
                 <th>Title</th>
                 <th>Status</th>
+                <th>Plan</th>
                 <th>Phase</th>
                 <th>Progress</th>
                 <th></th>
@@ -61,6 +75,7 @@ export function QueuePage() {
                 <tr key={job.id}>
                   <td>{job.displayTitle}</td>
                   <td>{job.status}</td>
+                  <td>{planLabel(job)}</td>
                   <td>{phaseLabel(job.phase, job.status)}</td>
                   <td>
                     {job.status === "running" ? (
@@ -73,6 +88,26 @@ export function QueuePage() {
                     )}
                   </td>
                   <td>
+                    {(job.status === "queued" || job.status === "held") && (
+                      <button className="btn-secondary ml-1" type="button" onClick={() => void mutate(() => api.pauseJob(job.id))}>
+                        Pause
+                      </button>
+                    )}
+                    {job.status === "paused" && (
+                      <button className="btn ml-1" type="button" onClick={() => void mutate(() => api.resumeJob(job.id))}>
+                        Resume
+                      </button>
+                    )}
+                    {(job.status === "queued" || job.status === "held" || job.status === "paused") && (
+                      <>
+                        <button className="btn-secondary ml-1" type="button" disabled={waitingIds.indexOf(job.id) <= 0} onClick={() => void moveJob(job.id, -1)}>
+                          Up
+                        </button>
+                        <button className="btn-secondary ml-1" type="button" disabled={waitingIds.indexOf(job.id) === waitingIds.length - 1} onClick={() => void moveJob(job.id, 1)}>
+                          Down
+                        </button>
+                      </>
+                    )}
                     {(job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "paused") && (
                       <button className="btn-secondary" type="button" onClick={() => void api.cancel(job.id).then(list.reload)}>
                         Cancel
@@ -83,6 +118,9 @@ export function QueuePage() {
                         Run now
                       </button>
                     )}
+                    <button className="btn-secondary ml-1" type="button" onClick={() => void api.jobLogs(job.id).then((result) => setLogs((current) => ({ ...current, [job.id]: result.log || "(empty)" })))}>
+                      Logs
+                    </button>
                     {(job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") && (
                       <button className="btn-secondary ml-1" type="button" disabled={busy} onClick={() => void mutate(() => api.removeJob(job.id))}>
                         Remove
@@ -91,6 +129,7 @@ export function QueuePage() {
                     {job.error && <div className="text-xs text-rose-400">{job.error}</div>}
                     {job.warning && <div className="text-xs text-amber-300">{job.warning}</div>}
                     {job.promoteError && <div className="text-xs text-amber-300">{job.promoteError}</div>}
+                    {logs[job.id] != null && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-slate-400">{logs[job.id]}</pre>}
                   </td>
                 </tr>
               ))}
@@ -101,6 +140,13 @@ export function QueuePage() {
       <PagedListControls loading={list.loading} error={list.error} nextOffset={list.nextOffset} noun="jobs" onLoadMore={list.loadMore} onRetry={list.reload} />
     </section>
   );
+}
+
+function planLabel(job: JobRow): string {
+  const mode = job.plan?.video?.kind;
+  const write = job.writeMode ?? job.plan?.writeMode ?? "sidecar";
+  const aim = mode === "size" ? "target size" : mode === "quality" ? "encoder quality" : "copy / remux";
+  return `${aim} · ${write === "direct" ? "direct write" : "sidecar"}`;
 }
 
 function phaseLabel(phase: string, status: string): string {

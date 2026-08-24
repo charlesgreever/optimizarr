@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { copiedAudioBitrateBps, exceedsSizeCap, typicalAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
+import { aggressiveTargetBytes, copiedAudioBitrateBps, exceedsSizeCap, missedOutputTarget, typicalAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
 import type { InspectionReport } from "./types.ts";
 
 describe("size budget", () => {
+  it("flags a custom size-mode output against the typed target, not only GB/hour", () => {
+    expect(missedOutputTarget({
+      outputBytes: 6 * 1024 ** 3,
+      sourceBytes: 10 * 1024 ** 3,
+      outputSizePerHourGb: 6,
+      categoryCap: 8,
+      targetBytes: 4 * 1024 ** 3,
+    })).toBe(true);
+    expect(missedOutputTarget({
+      outputBytes: 4.1 * 1024 ** 3,
+      sourceBytes: 10 * 1024 ** 3,
+      outputSizePerHourGb: 4.1,
+      categoryCap: 8,
+      targetBytes: 4 * 1024 ** 3,
+    })).toBe(false);
+    expect(aggressiveTargetBytes(5_000)).toBe(4_000);
+  });
+
   it("treats a file a little over the cap as still within the cap", () => {
     expect(exceedsSizeCap(8.2, 8)).toBe(false);
     expect(exceedsSizeCap(8.5, 8)).toBe(true);

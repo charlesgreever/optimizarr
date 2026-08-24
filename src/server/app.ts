@@ -96,7 +96,7 @@ export function createApp(opts: AppOptions) {
   }
 
   async function currentUser(c: Context) {
-    const sid = getCookie(c as never, "polisharr");
+    const sid = getCookie(c, "polisharr");
     if (sid) {
       const session = store.getSession(sid, opts.clock?.() ?? Date.now());
       if (session) return { userId: session.userId, sessionId: sid };
@@ -182,6 +182,7 @@ export function createApp(opts: AppOptions) {
 
   app.use("/api/settings", authed);
   app.use("/api/settings/*", authed);
+  app.use("/api/integrations", authed);
   app.use("/api/integrations/*", authed);
   app.use("/api/library/*", authed);
   app.use("/api/inspect/*", authed);
@@ -217,6 +218,8 @@ export function createApp(opts: AppOptions) {
     return c.json({
       ...settings,
       hasWebhookToken: Boolean(store.webhookTokenHash()),
+      hasWidgetKey: Boolean(store.widgetKeyHash()),
+      username: store.onlyUser()?.username ?? "",
       instances: publicInstances(),
       firstRun: firstRunState(),
       profilePreviews: profilePreviews(settings.sizeCaps),
@@ -645,6 +648,19 @@ export function createApp(opts: AppOptions) {
     return c.json({ ok: true });
   });
 
+  app.post("/api/jobs/:id/resume", (c) => {
+    const job = store.getJob(c.req.param("id"));
+    if (!job || job.status !== "paused") return c.json({ error: "Only paused jobs can resume." }, 409);
+    store.updateJob(job.id, { status: "queued", phase: "queued" });
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/jobs/:id/logs", (c) => {
+    const log = store.jobLog(c.req.param("id"));
+    if (log == null) return c.json({ error: "That job does not exist." }, 404);
+    return c.json({ log });
+  });
+
   app.get("/api/review", (c) => {
     const { offset, limit } = pageRequest(c.req.query("offset"), c.req.query("limit"));
     return c.json(store.reviewPage(offset, limit));
@@ -683,6 +699,14 @@ export function createApp(opts: AppOptions) {
     const result = await jobs.discard(c.req.param("id"));
     if ("error" in result) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
     return c.json({ ok: true }, 202);
+  });
+
+  app.post("/api/review/:id/requeue", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const result = await jobs.requeueFlagged(c.req.param("id"));
+    if ("error" in result) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
+    return c.json({ ok: true, id: result.id });
   });
 
   app.get("/api/history", (c) => {

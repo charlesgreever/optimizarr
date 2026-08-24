@@ -16,7 +16,7 @@ export function HomePage() {
         <RefreshLibrary onDone={() => void api.home().then(setData)} />
       </PageHead>
       <Help>
-        Home is the landing page after sign-in. Files optimized and space saved only count after you Keep a sidecar. A sidecar is the new file waiting in Review; Keep replaces the library file with it.
+        Home is the landing page after sign-in. Files optimized and space saved count after you Keep a sidecar or after a successful direct write. Status is the running title, how many jobs are waiting, or Idle. A sidecar is the new file waiting in Review; Keep replaces the library file with it.
       </Help>
       <div className="metrics">
         <Stat label="Files optimized" value={String(data.filesOptimized)} />

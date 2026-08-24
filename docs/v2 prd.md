@@ -42,6 +42,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 14. As a library owner, I want Series to show collapsed headers first and load an episode table when I expand a show, so that a large library becomes usable without transferring and rendering every episode.
 15. As a library owner, I want collapse state to survive an in-page refresh on Series, so that Reload does not explode every show again.
 16. As a library owner, I want Queue, Force, Stereo, and Exempt to stay on the table row in this iteration, so that bulk actions do not move to the title page yet.
+16a. As a library owner, I want the title page to queue the automatic suggestion as well as a custom plan, so that I can approve the bulk plan without returning to the table.
 
 ### Title page and custom plans
 

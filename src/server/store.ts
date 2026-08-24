@@ -184,6 +184,7 @@ export class Store {
     this.ensureColumn("jobs", "write_mode", "TEXT NOT NULL DEFAULT 'sidecar'");
     this.ensureColumn("jobs", "promote_error", "TEXT");
     this.ensureColumn("jobs", "queue_visible", "INTEGER NOT NULL DEFAULT 1");
+    this.ensureColumn("jobs", "log", "TEXT");
     this.ensureColumn("library_items", "arr_series_id", "INTEGER");
     this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
     this.db.prepare("DELETE FROM settings WHERE key = 'github_token'").run();
@@ -676,6 +677,18 @@ export class Store {
         patch.promoteError === undefined ? current.promote_error : patch.promoteError,
         id,
       );
+  }
+
+  appendJobLog(id: string, chunk: string): void {
+    const row = this.db.prepare("SELECT log FROM jobs WHERE id = ?").get(id) as { log: string | null } | undefined;
+    if (!row) return;
+    const next = `${row.log ?? ""}${chunk}`.slice(-32_768);
+    this.db.prepare("UPDATE jobs SET log = ? WHERE id = ?").run(next, id);
+  }
+
+  jobLog(id: string): string | null {
+    const row = this.db.prepare("SELECT log FROM jobs WHERE id = ?").get(id) as { log: string | null } | undefined;
+    return row ? (row.log ?? "") : null;
   }
 
   listJobs(): Array<Job & { plan: JobPlan }> {

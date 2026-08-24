@@ -8,11 +8,13 @@ type EncodeSettingsData = Pick<
 export function EncodeSettings({
   data,
   hardwareLabel,
+  av1Available = true,
   onChange,
   onSave,
 }: {
   data: EncodeSettingsData;
   hardwareLabel: string;
+  av1Available?: boolean;
   onChange: (patch: Partial<EncodeSettingsData>) => void;
   onSave: () => void;
 }) {
@@ -22,12 +24,12 @@ export function EncodeSettings({
       <p className="help">Detected hardware: {hardwareLabel}</p>
       <label className="block text-sm">
         Target
-        <select className="ml-2" value={data.videoTarget} onChange={(event) => {
+        <select className="ml-2" value={av1Available ? data.videoTarget : "hevc"} onChange={(event) => {
           const target = event.target.value;
-          if (target === "hevc" || target === "av1") onChange({ videoTarget: target });
+          if (target === "hevc" || (target === "av1" && av1Available)) onChange({ videoTarget: target });
         }}>
           <option value="hevc">HEVC</option>
-          <option value="av1">AV1</option>
+          {av1Available && <option value="av1">AV1</option>}
         </select>
       </label>
       <label className="block text-sm">

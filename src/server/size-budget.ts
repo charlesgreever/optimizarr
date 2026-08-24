@@ -11,6 +11,24 @@ export function exceedsSizeCap(sizePerHourGb: number, cap: number): boolean {
   return sizePerHourGb > cap * (1 + SIZE_CAP_TOLERANCE);
 }
 
+export function missedOutputTarget(opts: {
+  outputBytes: number;
+  sourceBytes: number;
+  outputSizePerHourGb: number;
+  categoryCap: number;
+  targetBytes?: number | null;
+}): boolean {
+  if (opts.outputBytes > opts.sourceBytes) return true;
+  if (opts.targetBytes != null && opts.targetBytes > 0) {
+    return opts.outputBytes > opts.targetBytes * (1 + SIZE_CAP_TOLERANCE);
+  }
+  return exceedsSizeCap(opts.outputSizePerHourGb, opts.categoryCap);
+}
+
+export function aggressiveTargetBytes(previousTargetBytes: number): number {
+  return Math.max(1, Math.round(previousTargetBytes * 0.8));
+}
+
 export function typicalAudioBitrateBps(track: { codec: string; channels: number; title?: string }): number {
   const codec = `${track.codec} ${track.title ?? ""}`.toLowerCase();
   const channels = Math.max(1, track.channels || 2);

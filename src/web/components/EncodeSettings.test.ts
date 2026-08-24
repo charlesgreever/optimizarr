@@ -21,5 +21,24 @@ describe("encode settings", () => {
 
     expect(html).toContain("Concurrent jobs");
     expect(html).toContain("Save encode settings");
+    expect(html).toContain("AV1");
+  });
+
+  it("hides AV1 when hardware cannot encode it", () => {
+    const html = renderToStaticMarkup(createElement(EncodeSettings, {
+      data: {
+        videoTarget: "hevc",
+        concurrency: 1,
+        conservativeMode: false,
+        offPeakEnabled: false,
+        offPeakStart: "22:00",
+        offPeakEnd: "06:00",
+      },
+      hardwareLabel: "CUDA",
+      av1Available: false,
+      onChange: vi.fn(),
+      onSave: vi.fn(),
+    }));
+    expect(html).not.toContain("AV1");
   });
 });

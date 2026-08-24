@@ -26,7 +26,3 @@ export function decryptSecret(key: Buffer, packed: string): string {
   decipher.setAuthTag(Buffer.from(tagHex, "hex"));
   return Buffer.concat([decipher.update(Buffer.from(dataHex, "hex")), decipher.final()]).toString("utf8");
 }
-
-export function publicSecretFlag(value: string | null | undefined): boolean {
-  return Boolean(value && value.length > 0);
-}

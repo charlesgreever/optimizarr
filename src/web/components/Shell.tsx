@@ -1,6 +1,7 @@
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
+import { inspectBannerView } from "../inspect-banner";
 import { buildReportIssueUrl, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
@@ -20,6 +21,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [inspect, setInspect] = useState<InspectState | null>(null);
+  const [dismissedFailed, setDismissedFailed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,6 +31,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     }, 280);
     return () => clearTimeout(t);
   }, [q]);
+
+  useEffect(() => {
+    void api.refresh().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let stop = false;
@@ -48,7 +54,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const inspecting = Boolean(inspect && (inspect.walking || inspect.pending > 0));
+  const banner = inspectBannerView(inspect, dismissedFailed);
+  const inspecting = banner.inspecting;
 
   return (
     <div className="shell">
@@ -103,8 +110,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
         {inspecting && (
           <div className="inspect-banner">
-            Movie and series lists are ready. Inspecting leftover files. {inspect?.pending} left.
-            {inspect && inspect.failed > 0 ? ` ${inspect.failed} files could not be read.` : ""}
+            Movie and series lists are ready. Inspecting leftover files. {banner.pending} left.
+            {banner.failed > 0 ? ` ${banner.failed} files could not be read.` : ""}
+          </div>
+        )}
+        {banner.showFailed && (
+          <div className="inspect-banner flex flex-wrap items-center justify-between gap-2">
+            <span>
+              {banner.failed} files could not be probed.{" "}
+              <Link className="font-medium text-ink hover:text-accent" to="/errors">Open Errors</Link>
+            </span>
+            <button className="btn-secondary" type="button" onClick={() => setDismissedFailed(true)}>
+              Dismiss
+            </button>
           </div>
         )}
         <div className="page">{children}</div>

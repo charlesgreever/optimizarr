@@ -17,6 +17,9 @@ export const api = {
   settings: () => req<SettingsPayload>("/api/settings"),
   saveSettings: (body: Record<string, unknown>) => req("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   mintWebhookToken: () => req<{ token: string; url: string }>("/api/settings/webhook-token", { method: "POST" }),
+  mintWidgetKey: () => req<{ key: string }>("/api/settings/widget-key", { method: "POST" }),
+  changePassword: (username: string, password: string) =>
+    req("/api/auth/password", { method: "POST", body: JSON.stringify({ username, password }) }),
   hardware: () => req<Hardware>("/api/hardware"),
   saveInstance: (body: Record<string, unknown>) => req("/api/integrations", { method: "POST", body: JSON.stringify(body) }),
   testInstance: (id: string) => req<{ ok: boolean; message?: string }>(`/api/integrations/${id}/test`, { method: "POST" }),
@@ -58,11 +61,16 @@ export const api = {
   removeJob: (id: string) => req(`/api/jobs/${id}`, { method: "DELETE" }),
   clearFinishedJobs: () => req<{ ok: true; removed: number }>("/api/jobs/finished", { method: "DELETE" }),
   runNow: (id: string) => req(`/api/jobs/${id}/run-now`, { method: "POST" }),
+  pauseJob: (id: string) => req(`/api/jobs/${id}/pause`, { method: "POST" }),
+  resumeJob: (id: string) => req(`/api/jobs/${id}/resume`, { method: "POST" }),
+  reorderJobs: (ids: string[]) => req("/api/jobs/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
+  jobLogs: (id: string) => req<{ log: string }>(`/api/jobs/${id}/logs`),
   review: (offset = 0, limit = 50) => req<LibraryPage<ReviewRow>>(`/api/review?offset=${offset}&limit=${limit}`),
   keep: (id: string) => req(`/api/review/${id}/keep`, { method: "POST" }),
-  keepSelected: (ids: string[]) => req("/api/review/keep-selected", { method: "POST", body: JSON.stringify({ ids }) }),
+  keepSelected: (ids: string[]) => req<{ accepted: number; skipped: number }>("/api/review/keep-selected", { method: "POST", body: JSON.stringify({ ids }) }),
   keepAll: () => req<{ accepted: number; skipped: number }>("/api/review/keep-all", { method: "POST" }),
   discard: (id: string) => req(`/api/review/${id}/discard`, { method: "POST" }),
+  requeueFlagged: (id: string) => req<{ ok: true; id: string }>(`/api/review/${id}/requeue`, { method: "POST" }),
   history: (offset = 0, limit = 50) => req<LibraryPage<HistoryRow>>(`/api/history?offset=${offset}&limit=${limit}`),
   home: () => req<HomePayload>("/api/home"),
   search: (q: string) => req<{ items: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),
@@ -115,6 +123,8 @@ export type SettingsPayload = {
   writeMode: "sidecar" | "direct";
   profileAutoAssign: boolean;
   hasWebhookToken?: boolean;
+  hasWidgetKey?: boolean;
+  username?: string;
   instances: Array<{ id: string; kind: "radarr" | "sonarr" | "plex" | "jellyfin"; name: string; url: string; enabled: boolean; hasApiKey?: boolean; hasToken?: boolean }>;
   firstRun: FirstRun;
   profilePreviews?: Array<{ category: string; name: string; gbPerHour: number; mbPerMin: number }>;
@@ -183,6 +193,8 @@ export type JobRow = {
   error: string | null;
   warning: string | null;
   promoteError: string | null;
+  writeMode?: "sidecar" | "direct";
+  plan?: { video?: { kind?: "copy" | "size" | "quality" }; reasons?: string[]; writeMode?: "sidecar" | "direct" };
 };
 export type ReviewRow = {
   id: string;
@@ -205,6 +217,9 @@ export type HomePayload = {
   recent: HistoryRow[];
   status: string;
 };
+
+export type ListingState = "complete" | "iso_unlisted";
+export type SourceMethod = "ffprobe" | "iso_ffmpeg";
 export type FileError = {
   itemId: string | null;
   path: string;
@@ -217,8 +232,8 @@ export type FileError = {
 export type InspectState = { walking: boolean; pending: number; inspected: number; failed: number };
 export type SearchHit = { itemId: string; type: "movie" | "episode"; displayTitle: string; instanceName: string; href: string };
 export type InspectionReport = {
-  listingState: string;
-  sourceMethod: string;
+  listingState: ListingState | string;
+  sourceMethod: SourceMethod | string;
   videoCodec: string;
   width: number;
   height: number;
@@ -234,7 +249,7 @@ export type ExecutablePlan = {
   reasons: string[];
   warning: string | null;
   estimatedOutputBytes: number | null;
-  video: { kind: string };
+  video: { kind: "copy" | "size" | "quality" };
 };
 
 export function formatSize(bytes: number | null | undefined): string {
@@ -242,4 +257,20 @@ export function formatSize(bytes: number | null | undefined): string {
   const gb = bytes / 1024 ** 3;
   if (gb >= 1) return `${gb.toFixed(2)} GB`;
   return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+}
+
+export function formatDuration(sec: number | null | undefined): string {
+  if (sec == null || sec <= 0) return "—";
+  const total = Math.round(sec);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+export function formatGbHour(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${value.toFixed(2)} GB/hr`;
 }
