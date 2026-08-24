@@ -203,12 +203,18 @@ export function longestBlurayPlaylist(listing: string): { id: number; durationSe
   return parseBlurayPlaylists(listing).sort((a, b) => b.durationSec - a.durationSec)[0];
 }
 
-const MAX_FEATURE_SEC = 8 * 3600;
+export const MAX_FEATURE_SEC = 8 * 3600;
 
 export function featureDurationSec(listedDuration: number, playlistDuration: number): number {
   if (listedDuration > MAX_FEATURE_SEC && playlistDuration > 0) return playlistDuration;
   if (listedDuration > MAX_FEATURE_SEC) return 0;
   return Math.max(listedDuration, playlistDuration);
+}
+
+export function isoInspectionLooksStale(report: InspectionReport | undefined, path: string): boolean {
+  if (!isIsoPath(path)) return false;
+  if (!report) return true;
+  return report.sourceMethod !== "iso_ffmpeg";
 }
 
 export function isoListingLooksUsable(listing: string): boolean {

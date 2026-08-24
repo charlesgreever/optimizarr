@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, readdir, stat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Store } from "./store.ts";
-import type { HardwareInfo, Job, ReviewItem, Settings, Suggestion } from "./types.ts";
+import type { HardwareInfo, InspectionReport, Job, ReviewItem, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
 import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
@@ -11,6 +11,7 @@ import { classifyInterruptedKeep, KEEP_INTERRUPTED, SIDECAR_GONE } from "./revie
 import { promote, promotedPath, type PromoteInput, type PromoteResult } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
+import { isoInspectionLooksStale } from "./inspect.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -21,6 +22,7 @@ export type JobServiceOptions = {
   decrypt: (packed: string) => string;
   fetch: typeof fetch;
   reinspectChangedItem: (itemId: string, oldPath: string) => Promise<{ ok: true } | { ok: false; warning: string }>;
+  inspectOne?: (itemId: string) => Promise<{ ok: true; report: InspectionReport } | { ok: false; warning: string }>;
   promote?: (input: PromoteInput) => Promise<PromoteResult>;
 };
 
@@ -166,7 +168,11 @@ export class JobService {
     const job = this.opts.store.getJob(id);
     if (!job) return;
     const item = this.opts.store.getItem(job.itemId);
-    const report = this.opts.store.getInspection(job.itemId);
+    let report = this.opts.store.getInspection(job.itemId);
+    if (item && this.opts.inspectOne && isoInspectionLooksStale(report, item.path)) {
+      const relist = await this.opts.inspectOne(item.id);
+      if (relist.ok) report = relist.report;
+    }
     if (!item || !report) {
       this.opts.store.updateJob(id, { status: "failed", error: "This title has no completed inspection." });
       return;

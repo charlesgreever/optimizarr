@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { InspectionReport, LibraryItem } from "./types.ts";
-import { isIsoPath, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
+import { isIsoPath, isoInspectionLooksStale, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
 import { isoInputAttempts, toolLocaleEnv } from "./optimize.ts";
 
 export type InspectionRunnerOptions = {
@@ -152,8 +152,9 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
 
   function inspectStillOpen(item: LibraryItem): boolean {
     if (!item.path) return false;
+    if (isoInspectionLooksStale(opts.store.getInspection(item.id), item.path)) return true;
     if (opts.store.getInspectionSig(item.id) === `${item.path}|${item.sizeBytes}`) return false;
-    return !opts.store.listErrors().some((error) => error.itemId === item.id);
+    return !opts.store.listErrors().some((error) => error.path === item.path);
   }
 
   function leftoverCount(): number {
@@ -169,7 +170,13 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
     });
   }
 
-  return { inspectPending, reinspectChangedItem, leftoverCount };
+  async function inspectOne(itemId: string): Promise<ReinspectionResult> {
+    const item = opts.store.getItem(itemId);
+    if (!item) return { ok: false, warning: "The title is no longer in the library." };
+    return inspectItem(item);
+  }
+
+  return { inspectPending, inspectOne, reinspectChangedItem, leftoverCount };
 }
 
 async function isReadable(path: string): Promise<boolean> {
@@ -196,14 +203,12 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
-  let lastText = "";
   let usable = "";
   for (const input of isoInputAttempts(path)) {
     const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
     try {
       const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512, env: toolLocaleEnv() });
       const text = `${stderr}\n${stdout}`;
-      lastText = text;
       if (isoListingLooksUsable(text)) {
         usable = text;
         break;
@@ -211,7 +216,6 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
     } catch (error) {
       const err = error as { stdout?: string; stderr?: string };
       const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
-      lastText = text;
       if (isoListingLooksUsable(text)) {
         usable = text;
         break;
@@ -219,6 +223,5 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
     }
   }
   if (usable) return usable;
-  if (lastText.includes("Stream #")) return lastText;
   throw new Error("ffmpeg could not list streams on this disc image.");
 }

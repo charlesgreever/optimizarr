@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { copyFile, mkdir, stat, statfs, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { isIsoPath, parseFfprobe } from "./inspect.ts";
+import { isIsoPath, MAX_FEATURE_SEC, parseFfprobe } from "./inspect.ts";
 import type { ExecutablePlan, InspectionReport, Suggestion, WriteMode } from "./types.ts";
 import { planHasVideoTranscode } from "./types.ts";
 import { copiedAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
@@ -399,28 +399,31 @@ export function isoInputAttempts(source: string): string[][] {
   const blurayFmt = ["-f", "bluray", "-i", source];
   const plain = ["-i", source];
   const playlists = [0, 1].map((n) => ["-playlist", String(n), "-i", `bluray:${source}`]);
-  if (isBlurayIso(source)) return [bluray, ...playlists, blurayFmt, plain];
+  // A raw `-i disc.iso` on BR-DISK is often misread as a lone AC3 stream and has no video to map.
+  if (isBlurayIso(source)) return [bluray, ...playlists, blurayFmt];
   return [plain, bluray, ...playlists];
 }
 
 export function isoRemuxIsShort(expectedSec: number, actualSec: number): boolean {
   if (!(actualSec > 1)) return true;
   if (actualSec < 60) return true;
-  return expectedSec > 120 && actualSec < expectedSec * 0.5;
+  // A raw ISO probe can report millions of seconds of dummy AC3. Do not reject a feature-length remux against that.
+  if (!(expectedSec > 120) || expectedSec > MAX_FEATURE_SEC) return false;
+  return actualSec < expectedSec * 0.5;
 }
 
 export function isoCopyMaps(report?: InspectionReport): string[] {
   const audio = (report?.audio ?? []).filter((track) => track.channels > 0);
   const subs = report?.subtitles ?? [];
   if ((report?.width ?? 0) >= 16 && audio.length > 0) {
-    const maps = ["-map", "0:v:0"];
-    for (const track of audio) maps.push("-map", `0:${track.index}`);
-    for (const track of subs) maps.push("-map", `0:${track.index}`);
+    const maps = ["-map", "0:v:0?"];
+    for (const track of audio) maps.push("-map", `0:${track.index}?`);
+    for (const track of subs) maps.push("-map", `0:${track.index}?`);
     return maps;
   }
-  // Dummy 0-channel AC3 on some Blu-rays makes Matroska reject the header ("sample rate not set").
-  // Mapping every stream (`-map 0`) still demuxes those AC3 PIDs and ffmpeg can die on "error decoding the audio block".
-  return ["-map", "0:v:0", "-map", "0:a"];
+  // A raw `-i disc.iso` is often misread as a lone AC3 stream. Optional maps let that attempt
+  // fail closed without "0:v:0 matches no streams", then the bluray: input can copy the feature.
+  return ["-map", "0:v:0?", "-map", "0:a:0?", "-map", "0:a?"];
 }
 
 export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, report?: InspectionReport): string[] {
@@ -438,8 +441,8 @@ export function isoRemuxInputs(source: string, report?: InspectionReport): strin
 export function isoMapVariants(report?: InspectionReport): string[][] {
   return [
     isoCopyMaps(report),
-    ["-map", "0:v:0", "-map", "0:a"],
-    ["-map", "0:v:0", "-map", "0:a:0"],
+    ["-map", "0:v:0?", "-map", "0:a:0?"],
+    ["-map", "0:v:0?", "-map", "0:a?"],
   ];
 }
 

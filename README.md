@@ -14,7 +14,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Syncs movies from Radarr and episodes from Sonarr over their APIs
 - Refreshes Arr libraries at startup, every 15 minutes, on request, and when Radarr or Sonarr posts a webhook after import
 - Opens the network path each Arr reports
-- Inspects MKV with ffprobe and ISO disc images with ffmpeg. Blu-ray remux copies the feature video and usable audio, ignores dummy AC3 decode errors, and skips audio-only menu listings.
+- Inspects MKV with ffprobe and ISO disc images with ffmpeg. Blu-ray remux copies the feature video and usable audio, ignores dummy AC3 decode errors, and skips audio-only menu listings. A BR-DISK image is opened with the bluray protocol, not as a raw file. A stale ISO listing (the file treated as a lone AC3 stream) is listed again before the next remux.
 - Flags files over the GB-per-hour cap, extra languages, and missing AAC stereo
 - Can suggest converting MP4 files to MKV before a hardware encode, or as remux-only work
 - Filters Suggestions by media facts or warning state and manages path, profile, tag, and title exclusions

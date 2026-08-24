@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   featureDurationSec,
   isIsoPath,
+  isoInspectionLooksStale,
   isoListingLooksUsable,
   longestBlurayPlaylist,
   parseFfprobe,
@@ -134,5 +135,25 @@ describe("parseFfprobe", () => {
     expect(featureDurationSec(parseListedDuration(listing), 0)).toBe(0);
     const withPlaylist = `${listing}\n[bluray @ 0x1] playlist 00008.mpls (1:42:11)`;
     expect(parseFfmpegListing("/mnt/nas/Cars 3.iso", 40_000_000_000, withPlaylist).durationSec).toBeCloseTo(1 * 3600 + 42 * 60 + 11, 0);
+  });
+
+  it("treats an ISO that was probed as a raw AC3 file as a stale listing", () => {
+    const path = "/mnt/nas/Kids Movies/Cars 3 (2017)/Cars 3 (2017)[BR-DISK].iso";
+    const dummy = parseFfprobe(path, 43_148_705_792, {
+      format: { duration: "10787176.448" },
+      streams: [{ codec_type: "audio", codec_name: "ac3", channels: 2, index: 0 }],
+    });
+    expect(dummy.sourceMethod).toBe("ffprobe");
+    expect(isoInspectionLooksStale(dummy, path)).toBe(true);
+    expect(isoInspectionLooksStale(undefined, path)).toBe(true);
+    const listed = parseFfmpegListing(path, 43_148_705_792, [
+      "[bluray @ 0x1] playlist 00805.mpls (1:42:25)",
+      "  Stream #0:0: Video: h264, 1920x1080",
+      "  Stream #0:1(eng): Audio: dts, 48000 Hz, 7.1",
+    ].join("\n"));
+    expect(listed.sourceMethod).toBe("iso_ffmpeg");
+    expect(listed.isoPlaylist).toBe(805);
+    expect(isoInspectionLooksStale(listed, path)).toBe(false);
+    expect(isoInspectionLooksStale(listed, "/mnt/nas/Cars 3.mkv")).toBe(false);
   });
 });

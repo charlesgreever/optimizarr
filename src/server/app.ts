@@ -71,6 +71,7 @@ export function createApp(opts: AppOptions) {
     decrypt: (packed) => decryptSecret(secret, packed),
     fetch: httpFetch,
     reinspectChangedItem: inspections.reinspectChangedItem,
+    inspectOne: inspections.inspectOne,
   });
   jobs.start();
   const sync = new LibrarySync({

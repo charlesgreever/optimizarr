@@ -9,6 +9,7 @@ import {
   isTextSubtitleCodec,
   subtitleEncodeArgs,
   formatToolError,
+  isoCopyMaps,
   isoDemuxArgs,
   isoInputAttempts,
   isoRemuxArgs,
@@ -819,12 +820,13 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args[args.indexOf("-playlist") + 1]).toBe("0");
     expect(args).toContain("bluray:/mnt/nas/Catching Fire.iso");
     expect(args).toContain("-map");
-    expect(args).toContain("0:v:0");
-    expect(args).toContain("0:1");
+    expect(args).toContain("0:v:0?");
+    expect(args).toContain("0:1?");
     expect(args).not.toContain("-0:10");
     expect(args).toContain("-max_error_rate");
     expect(isoRemuxIsShort(8776, 10.01)).toBe(true);
     expect(isoRemuxIsShort(8776, 8700)).toBe(false);
+    expect(isoRemuxIsShort(10_787_176.448, 6145)).toBe(false);
   });
 
   it("uses the bluray protocol for BR-DISK images", () => {
@@ -835,14 +837,32 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args.join(" ")).not.toContain("-f bluray");
   });
 
-  it("tries bluray protocol then playlists before a raw ISO file", () => {
+  it("tries bluray protocol then playlists and never opens a BR-DISK as a raw file", () => {
     const path =
       "/mnt/nas/Movies/The Hunger Games (2012)/The Hunger Games (2012) {imdb-tt1392170}[BR-DISK][bit][]-F13.iso";
     const attempts = isoInputAttempts(path);
     expect(attempts[0]).toEqual(["-i", `bluray:${path}`]);
     expect(attempts.some((args) => args.includes("-playlist") && args.includes("0"))).toBe(true);
     expect(attempts.some((args) => args.includes("-playlist") && args.includes("1"))).toBe(true);
-    expect(attempts.at(-1)).toEqual(["-i", path]);
+    expect(attempts.some((args) => args.length === 2 && args[0] === "-i" && args[1] === path)).toBe(false);
+    expect(isoCopyMaps({
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 10_787_176,
+      isoPlaylist: null,
+      sizeBytes: 1,
+      sizePerHourGb: 0,
+      videoCodec: "unknown",
+      width: 0,
+      height: 0,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [{ index: 0, language: "und", channels: 2, codec: "ac3", title: "", untagged: true, commentary: false }],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    })).toEqual(["-map", "0:v:0?", "-map", "0:a:0?", "-map", "0:a?"]);
   });
 
   it("remuxes an ISO to Matroska before a video encode", () => {
