@@ -6,6 +6,12 @@ describe("title plan gating", () => {
     expect(titleOptimizeLocked({ mediaState: "unreadable", error: "Path is unreadable." })).toBe(true);
     expect(titleOptimizeLocked({ mediaState: "waiting", inspected: false })).toBe(true);
     expect(titleOptimizeLocked({ mediaState: "inspected", inspected: true, error: null })).toBe(false);
+    expect(titleOptimizeLocked({
+      mediaState: "unreadable",
+      inspected: true,
+      error: "ffprobe failed.",
+      path: "/mnt/nas/Cars 3.iso",
+    })).toBe(false);
     expect(canQueueCustomPlan(null, [], false)).toBe(false);
     expect(canQueueCustomPlan({ video: { kind: "size" } }, [], false)).toBe(true);
     expect(canQueueCustomPlan({ video: { kind: "copy" } }, ["Do nothing"], false)).toBe(false);

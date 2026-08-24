@@ -85,13 +85,14 @@ export function TitlePage() {
         Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
         Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
       </Help>
-      {locked && (
+      {(locked || item.error) && (
         <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>
       )}
-      <TitleFacts item={item} />
-      {!listed && iso && (
-        <p className="help">Streams could not be listed. You can still remux this disc image to Matroska.</p>
+      {iso && !listed && !item.error && (
+        <p className="help">Streams could not be listed yet. You can still remux this disc image to Matroska, or pick a size or quality encode.</p>
       )}
+      <TitleFacts item={item} />
+
       {item.suggestion && (
         <Section title="Automatic suggestion">
           <ul className="space-y-1 text-sm leading-5 text-slate-300">

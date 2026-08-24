@@ -110,6 +110,7 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
               : await defaultProbe(opts.ffprobe, item.path),
           );
       opts.store.saveInspection(item.id, report);
+      opts.store.clearFileErrorsForItem(item.id);
       opts.store.clearFileError(item.path);
       opts.recomputeSuggestion(item.id);
       return { ok: true, report };
@@ -117,6 +118,7 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
       if (isIsoPath(item.path)) {
         const report = unlistedIsoReport(item.path, item.sizeBytes);
         opts.store.saveInspection(item.id, report);
+        opts.store.clearFileErrorsForItem(item.id);
         opts.store.clearFileError(item.path);
         opts.recomputeSuggestion(item.id);
         return { ok: true, report };

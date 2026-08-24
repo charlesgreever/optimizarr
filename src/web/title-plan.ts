@@ -2,7 +2,10 @@ export function titleOptimizeLocked(item: {
   mediaState?: "waiting" | "unreadable" | "inspected";
   inspected?: boolean;
   error?: string | null;
+  path?: string;
 }): boolean {
+  const iso = (item.path ?? "").toLowerCase().endsWith(".iso");
+  if (iso) return false;
   if (item.mediaState === "unreadable" || item.mediaState === "waiting") return true;
   if (item.error) return true;
   if (item.inspected === false) return true;

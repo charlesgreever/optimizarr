@@ -160,4 +160,45 @@ describe("store schema migration", () => {
       status: "queued", phase: "queued", progress: 0, error: "Recovered after Polisharr restarted.",
     });
   });
+
+  it("does not mark a title unreadable from a file error on an old path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-stale-error-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    stores.push(store);
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: null,
+      enabled: true,
+    });
+    const itemId = `${instanceId}:movie:438`;
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 438,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Cars 3",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/Cars 3 [FGT].iso",
+      sizeBytes: 40_000_000_000,
+      quality: "BR-DISK",
+      resolution: "2160",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    store.setFileError("/mnt/nas/Cars 3 [CODEFLiX].iso", itemId, "ffprobe failed.");
+    expect(store.librarySnapshot(itemId)?.error).toBeNull();
+    store.setFileError("/mnt/nas/Cars 3 [FGT].iso", itemId, "This path is not readable inside the container.");
+    expect(store.librarySnapshot(itemId)?.error).toMatch(/not readable/);
+    store.clearFileErrorsForItem(itemId);
+    expect(store.librarySnapshot(itemId)?.error).toBeNull();
+  });
 });

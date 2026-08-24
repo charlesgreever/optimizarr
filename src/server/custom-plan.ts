@@ -112,7 +112,8 @@ function buildVideo(
     errors.push({ field: "video.downscale1080p", message: "4K to 1080p is only available for a 4K source." });
   }
   if (draft.mode === "size") {
-    if (!(draft.targetBytes > 0) || draft.targetBytes < 1_000_000 || draft.targetBytes > report.sizeBytes * 4) {
+    const sourceBytes = Math.max(report.sizeBytes, item.sizeBytes, 1);
+    if (!(draft.targetBytes > 0) || draft.targetBytes < 1_000_000 || draft.targetBytes > sourceBytes * 4) {
       errors.push({ field: "video.targetBytes", message: "Enter a target file size greater than 1 MB and not wildly larger than the source." });
     }
     return { kind: "size", codec, targetBytes: draft.targetBytes, downscale1080p: downscale, bitDepth: report.bitDepth };

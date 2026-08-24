@@ -382,8 +382,7 @@ export class Store {
     const rows = this.db.prepare(
       `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,
               sug.payload AS suggestion_payload,
-              (SELECT err.reason FROM file_errors err WHERE err.item_id = i.id
-               ORDER BY CASE WHEN err.path = i.path THEN 0 ELSE 1 END, err.path LIMIT 1) AS error_reason
+              (SELECT err.reason FROM file_errors err WHERE err.path = i.path LIMIT 1) AS error_reason
        FROM library_items i
        JOIN instances inst ON inst.id = i.instance_id
        LEFT JOIN inspections ins ON ins.item_id = i.id
@@ -402,8 +401,7 @@ export class Store {
     const row = this.db.prepare(
       `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,
               sug.payload AS suggestion_payload,
-              (SELECT err.reason FROM file_errors err WHERE err.item_id = i.id
-               ORDER BY CASE WHEN err.path = i.path THEN 0 ELSE 1 END, err.path LIMIT 1) AS error_reason
+              (SELECT err.reason FROM file_errors err WHERE err.path = i.path LIMIT 1) AS error_reason
        FROM library_items i
        JOIN instances inst ON inst.id = i.instance_id
        LEFT JOIN inspections ins ON ins.item_id = i.id
@@ -422,7 +420,7 @@ export class Store {
                   ) THEN 1 ELSE 0 END) AS suggestion_count,
               SUM(CASE WHEN EXISTS (SELECT 1 FROM inspections ins WHERE ins.item_id = i.id)
                     AND NOT EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
-                    AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.item_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.path = i.path)
                   THEN 1 ELSE 0 END) AS healthy_count
        FROM library_items i
        JOIN instances inst ON inst.id = i.instance_id
@@ -567,6 +565,10 @@ export class Store {
 
   clearFileError(path: string): void {
     this.db.prepare("DELETE FROM file_errors WHERE path = ?").run(path);
+  }
+
+  clearFileErrorsForItem(itemId: string): void {
+    this.db.prepare("DELETE FROM file_errors WHERE item_id = ?").run(itemId);
   }
 
   listErrors(): FileError[] {

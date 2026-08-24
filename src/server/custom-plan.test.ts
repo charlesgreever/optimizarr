@@ -91,6 +91,14 @@ describe("custom plan validation", () => {
     if (!result.ok) expect(result.errors.some((e) => e.field === "audio")).toBe(true);
   });
 
+  it("uses the Arr file size when inspect has no size yet", () => {
+    const result = check(
+      { video: { mode: "size", targetBytes: 4 * 1024 ** 3 } },
+      { report: report({ sizeBytes: 0 }) },
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it("treats ISO remux with video copy as real work and forces Matroska", () => {
     const result = check({ remuxToMkv: true }, { item: { ...movie, path: "/mnt/nas/disc.iso" } });
     expect(result.ok).toBe(true);
