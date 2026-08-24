@@ -39,6 +39,8 @@ export type SeriesSummaryRecord = {
   arrSeriesId: number;
   showTitle: string;
   episodeCount: number;
+  healthyCount: number;
+  suggestionCount: number;
 };
 
 export type StoredInstance = {
@@ -413,7 +415,14 @@ export class Store {
   seriesPage(offset: number, limit: number): { rows: SeriesSummaryRecord[]; total: number } {
     const rows = this.db.prepare(
       `SELECT i.instance_id, inst.name AS instance_name, i.arr_series_id, i.show_title,
-              COUNT(*) AS episode_count
+              COUNT(*) AS episode_count,
+              SUM(CASE WHEN EXISTS (
+                    SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0
+                  ) THEN 1 ELSE 0 END) AS suggestion_count,
+              SUM(CASE WHEN EXISTS (SELECT 1 FROM inspections ins WHERE ins.item_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
+                    AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.item_id = i.id)
+                  THEN 1 ELSE 0 END) AS healthy_count
        FROM library_items i
        JOIN instances inst ON inst.id = i.instance_id
        WHERE i.type = 'episode' AND i.arr_series_id IS NOT NULL
@@ -435,6 +444,8 @@ export class Store {
         arrSeriesId: Number(row.arr_series_id),
         showTitle: String(row.show_title ?? "Untitled series"),
         episodeCount: Number(row.episode_count),
+        healthyCount: Number(row.healthy_count),
+        suggestionCount: Number(row.suggestion_count),
       })),
       total,
     };
@@ -529,6 +540,7 @@ export class Store {
         displayTitle: joinedDisplayTitle(row, suggestion.itemId),
         instanceName: row.item_instance_name == null ? undefined : String(row.item_instance_name),
         type: row.item_type === "episode" ? "episode" : row.item_type === "movie" ? "movie" : undefined,
+        href: row.item_type === "episode" ? `/series/episodes/${suggestion.itemId}` : `/movies/${suggestion.itemId}`,
         quality: row.item_quality == null ? undefined : String(row.item_quality),
         hasPoster: Boolean(row.item_poster_bytes || row.item_poster_remote),
       };

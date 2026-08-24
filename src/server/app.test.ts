@@ -173,6 +173,56 @@ describe("public HTTP behavior", () => {
         });
       }
     }
+    ctx.store.saveInspection("episode-101-1", {
+      sourceSig: "/shows/101/1.mkv|1000",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 1800,
+      sizeBytes: 1_000,
+      sizePerHourGb: 2,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    ctx.store.saveInspection("episode-101-2", {
+      sourceSig: "/shows/101/2.mkv|2000",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 1800,
+      sizeBytes: 2_000,
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    ctx.store.saveSuggestion("episode-101-1", {
+      id: "suggestion-ep-1",
+      itemId: "episode-101-1",
+      actions: ["transcode"],
+      reasons: ["Over the size cap."],
+      warning: null,
+      category: "tv1080p",
+      estimatedSavingsBytes: 500,
+      now: { codec: "hevc", quality: "WEBDL-1080p", sizeBytes: 1_000, sizePerHourGb: 2 },
+      after: { codec: "hevc", quality: "WEBDL-1080p", sizeBytes: 500, sizePerHourGb: 1 },
+      dismissed: false,
+      keepAudio: [],
+      stripAudio: [],
+      keepSubs: [],
+      stripSubs: [],
+    });
 
     const movies = (await (await ctx.app.app.request("/api/library/movies?limit=2", { headers })).json()) as {
       items: Array<Record<string, unknown>>;
@@ -235,7 +285,13 @@ describe("public HTTP behavior", () => {
     };
     expect(series).toMatchObject({ nextOffset: 1, total: 2 });
     expect(series.items).toHaveLength(1);
-    expect(series.items[0]).toMatchObject({ instanceId: "sonarr-a", arrSeriesId: 101, episodeCount: 2 });
+    expect(series.items[0]).toMatchObject({
+      instanceId: "sonarr-a",
+      arrSeriesId: 101,
+      episodeCount: 2,
+      healthyCount: 1,
+      suggestionCount: 1,
+    });
     expect(series.items[0]).not.toHaveProperty("path");
 
     const episodes = (await (
@@ -248,6 +304,7 @@ describe("public HTTP behavior", () => {
       await ctx.app.app.request("/api/suggestions?type=movie", { headers })
     ).json()) as { items: Array<{ now: { tracks: string[] }; after: { tracks: string[] } }>; total: number };
     expect(movieSuggestions.total).toBe(1);
+    expect(movieSuggestions.items[0]).toMatchObject({ href: "/movies/movie-1" });
     expect(movieSuggestions.items[0]?.now.tracks).toEqual([
       "Audio: eng truehd 7.1",
       "Subtitle: eng pgs Forced SDH",
@@ -256,8 +313,10 @@ describe("public HTTP behavior", () => {
       "Audio: eng truehd 7.1",
       "Subtitle: eng pgs Forced SDH",
     ]);
-    const episodeSuggestions = await ctx.app.app.request("/api/suggestions?type=episode", { headers });
-    expect(await episodeSuggestions.json()).toMatchObject({ items: [], total: 0 });
+    const episodeSuggestions = (await (
+      await ctx.app.app.request("/api/suggestions?type=episode", { headers })
+    ).json()) as { items: Array<{ href?: string }>; total: number };
+    expect(episodeSuggestions).toMatchObject({ total: 1, items: [{ href: "/series/episodes/episode-101-1" }] });
   });
 
   it("bounds every work-list response and exposes continuation metadata", async () => {

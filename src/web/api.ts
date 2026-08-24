@@ -86,6 +86,8 @@ export type SeriesSummary = {
   arrSeriesId: number;
   showTitle: string;
   episodeCount: number;
+  healthyCount: number;
+  suggestionCount: number;
 };
 
 export type FirstRun = { hasAdmin: boolean; languageConfirmed: boolean; hasReviewPath: boolean; hasArr: boolean; complete: boolean };
@@ -153,6 +155,8 @@ export type SuggestionRow = {
   itemId: string;
   displayTitle: string;
   instanceName?: string;
+  type?: "movie" | "episode";
+  href?: string;
   reasons: string[];
   warning: string | null;
   estimatedSavingsBytes: number | null;

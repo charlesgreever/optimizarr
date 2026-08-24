@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, type SuggestionFilters, type SuggestionRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
@@ -33,7 +33,7 @@ export function SuggestionsPage() {
     <section>
       <PageHead title="Suggestions" />
       <Help>
-        Suggestions is the work list: only titles that still need something. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
+        Suggestions is the work list: only titles that still need something. Open a title for custom work. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
       </Help>
       <div className="glass mt-5 space-y-3 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -114,7 +114,12 @@ export function SuggestionsPage() {
                     />
                   </td>
                   <td className="min-w-44">
-                    <div className="font-medium text-ink">{item.displayTitle}</div>
+                    <Link
+                      className="font-medium text-ink hover:text-accent"
+                      to={item.href || (item.type === "episode" ? `/series/episodes/${item.itemId}` : `/movies/${item.itemId}`)}
+                    >
+                      {item.displayTitle}
+                    </Link>
                     <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
                   </td>
                   <td className="max-w-sm">

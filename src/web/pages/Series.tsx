@@ -4,6 +4,7 @@ import { api, type LibraryRow, type SeriesSummary } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
+import { Pill } from "../components/ui";
 import { mergePage, needsFocusedPage } from "../library-pages";
 
 export function SeriesPage() {
@@ -73,7 +74,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={refreshed} />
       </PageHead>
-      <Help>Series loads show headers first. Expand one show to load its episodes. Optimize all episodes queues that show without expanding it.</Help>
+      <Help>Series loads show headers first. Expand one show to load its episodes. Each header shows how many episodes are healthy and how many still have suggestions. Optimize all episodes queues that show without expanding it.</Help>
       {summaries.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
@@ -186,7 +187,13 @@ function SeriesGroup({
           <span className="series-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
           <span>
             <span className="series-title">{summary.showTitle}</span>
-            <span className="series-meta">{summary.instanceName} · {summary.episodeCount} episodes</span>
+            <span className="series-meta">
+              <span>{summary.instanceName} · {summary.episodeCount} episodes</span>
+              <span className="mt-1 flex flex-wrap gap-1">
+                <Pill tone="good">{summary.healthyCount} healthy</Pill>
+                <Pill tone={summary.suggestionCount > 0 ? "accent" : "neutral"}>{summary.suggestionCount} suggestions</Pill>
+              </span>
+            </span>
           </span>
         </button>
         <button className="btn-secondary" type="button" onClick={toggle}>
