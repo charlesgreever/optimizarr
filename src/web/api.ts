@@ -124,7 +124,14 @@ export const api = {
   deleteExclusion: (id: string) => req<{ exclusions: Exclusion[] }>(`/api/exclusions/${id}`, { method: "DELETE" }),
 };
 
-export type LibraryPage<T> = { items: T[]; nextOffset: number | null; total: number; pendingCount?: number };
+export type LibraryPage<T> = {
+  items: T[];
+  nextOffset: number | null;
+  total: number;
+  pendingCount?: number;
+  healthyCount?: number;
+  suggestionCount?: number;
+};
 export type SeriesSummary = {
   id: string;
   key: string;

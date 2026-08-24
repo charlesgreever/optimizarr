@@ -6,13 +6,16 @@ export type Page<T> = {
   items: T[];
   nextOffset: number | null;
   total: number;
+  healthyCount?: number;
+  suggestionCount?: number;
 };
 
 export function createLibraryReadModel(store: Store) {
   return {
     movies(offset: number, limit: number, sort: "title" | "size" | "quality" = "title") {
       const page = store.libraryPage({ type: "movie", offset, limit, sort });
-      return presentPage(page, offset, limit);
+      const health = store.movieHealth();
+      return { ...presentPage(page, offset, limit), healthyCount: health.healthyCount, suggestionCount: health.suggestionCount };
     },
     series(offset: number, limit: number) {
       const page = store.seriesPage(offset, limit);

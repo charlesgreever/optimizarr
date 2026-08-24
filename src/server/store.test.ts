@@ -268,4 +268,82 @@ describe("store schema migration", () => {
     expect(store.errorPage(0, 20).items).toEqual([]);
     expect(store.workSummary().errors).toBe(0);
   });
+
+  it("counts healthy movies and open suggestions for the Movies header", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-movie-health-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    stores.push(store);
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: null,
+      enabled: true,
+    });
+    const movie = (id: string, arrId: number, path: string) =>
+      store.upsertItem({
+        id,
+        instanceId,
+        arrId,
+        arrSeriesId: null,
+        arrEpisodeFileId: null,
+        type: "movie",
+        title: id,
+        showTitle: null,
+        season: null,
+        episode: null,
+        episodeTitle: null,
+        path,
+        sizeBytes: 1,
+        quality: "HD",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+    movie("healthy", 1, "/movies/healthy.mkv");
+    movie("suggested", 2, "/movies/suggested.mkv");
+    movie("unread", 3, "/movies/unread.mkv");
+    movie("unreadable", 4, "/movies/unreadable.mkv");
+    const inspection = {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe" as const,
+      listingState: "complete" as const,
+      durationSec: 3600,
+      isoPlaylist: null,
+      sizeBytes: 1,
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none" as const,
+      audio: [],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    store.saveInspection("healthy", { ...inspection, sourceSig: "/movies/healthy.mkv|1" });
+    store.saveInspection("suggested", { ...inspection, sourceSig: "/movies/suggested.mkv|1" });
+    store.saveInspection("unreadable", { ...inspection, sourceSig: "/movies/unreadable.mkv|1" });
+    store.saveSuggestion("suggested", {
+      id: "sug-1",
+      itemId: "suggested",
+      actions: ["transcode"],
+      reasons: ["Over the size cap."],
+      warning: null,
+      category: "movie1080p",
+      estimatedSavingsBytes: 1,
+      now: { codec: "h264", quality: "HD", sizeBytes: 1, sizePerHourGb: 1 },
+      after: { codec: "hevc", quality: "HD", sizeBytes: 1, sizePerHourGb: 1 },
+      dismissed: false,
+      keepAudio: [],
+      stripAudio: [],
+      keepSubs: [],
+      stripSubs: [],
+    });
+    store.setFileError("/movies/unreadable.mkv", "unreadable", "Path is unreadable.");
+    expect(store.movieHealth()).toEqual({ total: 4, healthyCount: 1, suggestionCount: 1 });
+  });
 });

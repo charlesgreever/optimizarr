@@ -4,6 +4,7 @@ import { api, type LibraryRow } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
+import { Pill } from "../components/ui";
 import { mergePage } from "../library-pages";
 
 export function MoviesPage() {
@@ -12,6 +13,9 @@ export function MoviesPage() {
   const [error, setError] = useState("");
   const [nextOffset, setNextOffset] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [healthyCount, setHealthyCount] = useState(0);
+  const [suggestionCount, setSuggestionCount] = useState(0);
   const loadingRef = useRef(false);
   const activeSortRef = useRef(sort);
   const currentSortRef = useRef(sort);
@@ -32,6 +36,9 @@ export function MoviesPage() {
       const page = await api.movies(offset, 50, requestedSort);
       setItems((current) => reset ? page.items : mergePage(current, page.items));
       setNextOffset(page.nextOffset);
+      setTotal(page.total);
+      setHealthyCount(page.healthyCount ?? 0);
+      setSuggestionCount(page.suggestionCount ?? 0);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Movies could not be loaded.");
     } finally {
@@ -57,7 +64,14 @@ export function MoviesPage() {
       <PageHead title="Movies">
         <RefreshLibrary onDone={() => void load(true)} />
       </PageHead>
-      <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion.</Help>
+      <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion. The header counts every movie, not just this page.</Help>
+      {total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+          <span>{total} movies</span>
+          <Pill tone="good">{healthyCount} healthy</Pill>
+          <Pill tone={suggestionCount > 0 ? "accent" : "neutral"}>{suggestionCount} suggestions</Pill>
+        </div>
+      )}
       {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
       {items.length === 0 ? (
         <div className="empty">

@@ -47,6 +47,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 23. As a library owner, I want each inspection to become suggestions I can approve, so that nothing destructive happens until I say so.
 24. As a library owner, I want later Arr upgrades to be re-inspected, so that a new remux gets suggestions again.
 25. As a library owner, I want to browse movies in an Arr-like library view, so that the app feels familiar.
+25a. As a library owner, I want the Movies page to show how many titles there are, how many are healthy, and how many still have suggestions, so that I can scan the Radarr library the same way I scan a series header.
 26. As a library owner, I want to browse series and episodes in an Arr-like view, so that TV is not a second-class list of files.
 27. As a library owner, I want library pages to be a sortable column-and-row table with the poster on the row, so that I can scan and sort a large library faster than with cards.
 28. As a library owner, I want each row to show current codec, bit depth, resolution, HDR type, quality, size, size-per-hour, audio, and subtitles, so that I can see why it was flagged.

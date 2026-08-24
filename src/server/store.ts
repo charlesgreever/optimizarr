@@ -419,6 +419,24 @@ export class Store {
     return { rows: rows.map(mapLibrarySnapshot), total };
   }
 
+  movieHealth(): { total: number; healthyCount: number; suggestionCount: number } {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN EXISTS (SELECT 1 FROM inspections ins WHERE ins.item_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
+                    AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.path = i.path)
+                  THEN 1 ELSE 0 END) AS healthy_count,
+              SUM(CASE WHEN EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
+                  THEN 1 ELSE 0 END) AS suggestion_count
+       FROM library_items i WHERE i.type = 'movie'`,
+    ).get() as { total: number; healthy_count: number | null; suggestion_count: number | null };
+    return {
+      total: Number(row.total),
+      healthyCount: Number(row.healthy_count ?? 0),
+      suggestionCount: Number(row.suggestion_count ?? 0),
+    };
+  }
+
   librarySnapshot(id: string): LibrarySnapshot | undefined {
     const row = this.db.prepare(
       `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,

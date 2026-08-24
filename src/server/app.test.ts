@@ -229,7 +229,7 @@ describe("public HTTP behavior", () => {
       nextOffset: number | null;
       total: number;
     };
-    expect(movies).toMatchObject({ nextOffset: 2, total: 3 });
+    expect(movies).toMatchObject({ nextOffset: 2, total: 3, healthyCount: 0, suggestionCount: 1 });
     expect(movies.items).toHaveLength(2);
     expect(movies.items[0]).toMatchObject({
       mediaState: "inspected",

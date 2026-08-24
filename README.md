@@ -22,7 +22,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Optional language identification: set `WHISPER_LID` to a command that takes a WAV path and prints `{"language":"en","probability":0.94}`. faster-whisper `detect_language` on CUDA is the usual household recipe. If the command is missing, the title page does not offer the action.
 - Home shows a Status strip, large files-optimized and space-saved tiles, and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
 - Settings uses stacked labels and everyday size-cap names. Title-page audio actions keep a fixed-width dropdown so Keep and Replace with downmix do not jump.
-- Series headers show episode total, how many are healthy, and how many still have suggestions
+- Series headers show episode total, how many are healthy, and how many still have suggestions. Movies shows the same three counts for the whole Radarr library, not just the loaded page.
 - Suggestion, Errors, and Queue titles open the same detail page as Movies and Series
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in. mkvmerge and ffmpeg run with a UTF-8 locale so titles such as 烧烤 are not truncated.
