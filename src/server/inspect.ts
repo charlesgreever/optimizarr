@@ -158,7 +158,7 @@ export function parseFfmpegListing(path: string, sizeBytes: number, listing: str
   const subtitles = streams.filter((m) => m[3] === "Subtitle").map((m, i) => parseListedSub(m, i));
   const playlist = longestBlurayPlaylist(listing);
   const listedDuration = parseListedDuration(listing);
-  const durationSec = Math.max(listedDuration, playlist?.durationSec ?? 0);
+  const durationSec = featureDurationSec(listedDuration, playlist?.durationSec ?? 0);
   const hours = durationSec > 0 ? durationSec / 3600 : 0;
   const codec = videoLine.split(",")[0]?.trim().split(" ")[0] ?? "unknown";
   return {
@@ -201,6 +201,21 @@ export function parseBlurayPlaylists(listing: string): Array<{ id: number; durat
 
 export function longestBlurayPlaylist(listing: string): { id: number; durationSec: number } | undefined {
   return parseBlurayPlaylists(listing).sort((a, b) => b.durationSec - a.durationSec)[0];
+}
+
+const MAX_FEATURE_SEC = 8 * 3600;
+
+export function featureDurationSec(listedDuration: number, playlistDuration: number): number {
+  if (listedDuration > MAX_FEATURE_SEC && playlistDuration > 0) return playlistDuration;
+  if (listedDuration > MAX_FEATURE_SEC) return 0;
+  return Math.max(listedDuration, playlistDuration);
+}
+
+export function isoListingLooksUsable(listing: string): boolean {
+  if (!/Stream #0:\d+[^\n]*: Video:/i.test(listing)) return false;
+  const duration = featureDurationSec(parseListedDuration(listing), longestBlurayPlaylist(listing)?.durationSec ?? 0);
+  if (duration <= 0) return true;
+  return duration >= 60 && duration <= MAX_FEATURE_SEC;
 }
 
 function clockToSeconds(hours: string, minutes: string, seconds: string): number {

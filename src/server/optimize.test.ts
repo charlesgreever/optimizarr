@@ -732,8 +732,10 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args[args.indexOf("-playlist") + 1]).toBe("0");
     expect(args).toContain("bluray:/mnt/nas/Catching Fire.iso");
     expect(args).toContain("-map");
-    expect(args).toContain("0");
-    expect(args).toContain("-0:10");
+    expect(args).toContain("0:v:0");
+    expect(args).toContain("0:1");
+    expect(args).not.toContain("-0:10");
+    expect(args).toContain("-max_error_rate");
     expect(isoRemuxIsShort(8776, 10.01)).toBe(true);
     expect(isoRemuxIsShort(8776, 8700)).toBe(false);
   });

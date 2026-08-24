@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  featureDurationSec,
   isIsoPath,
+  isoListingLooksUsable,
   longestBlurayPlaylist,
   parseFfprobe,
   parseFfmpegListing,
@@ -120,5 +122,17 @@ describe("parseFfprobe", () => {
     expect(report.durationSec).toBeGreaterThan(8700);
     expect(report.audio.some((t) => t.index === 10 && t.channels === 0)).toBe(true);
     expect(report.audio.find((t) => t.index === 1)?.channels).toBe(8);
+  });
+
+  it("rejects an audio-only ISO listing and ignores a multi-day Duration line", () => {
+    const listing = [
+      "Input #0, mpegts, from 'file.iso':",
+      "  Duration: 2996:25:16.45, start: 0.000000, bitrate: 192 kb/s",
+      "  Stream #0:0[0x80](und): Audio: ac3, 48000 Hz, stereo, fltp, 192 kb/s",
+    ].join("\n");
+    expect(isoListingLooksUsable(listing)).toBe(false);
+    expect(featureDurationSec(parseListedDuration(listing), 0)).toBe(0);
+    const withPlaylist = `${listing}\n[bluray @ 0x1] playlist 00008.mpls (1:42:11)`;
+    expect(parseFfmpegListing("/mnt/nas/Cars 3.iso", 40_000_000_000, withPlaylist).durationSec).toBeCloseTo(1 * 3600 + 42 * 60 + 11, 0);
   });
 });

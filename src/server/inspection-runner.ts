@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { InspectionReport, LibraryItem } from "./types.ts";
-import { isIsoPath, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
+import { isIsoPath, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
 import { isoInputAttempts } from "./optimize.ts";
 
 export type InspectionRunnerOptions = {
@@ -194,20 +194,28 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
   let lastText = "";
-  for (const input of isoInputAttempts(path).slice(0, 2)) {
+  let usable = "";
+  for (const input of isoInputAttempts(path)) {
     const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
     try {
       const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
       const text = `${stderr}\n${stdout}`;
-      if (text.includes("Stream #")) return text;
       lastText = text;
+      if (isoListingLooksUsable(text)) {
+        usable = text;
+        break;
+      }
     } catch (error) {
       const err = error as { stdout?: string; stderr?: string };
       const text = `${err.stderr ?? ""}\n${err.stdout ?? ""}`;
-      if (text.includes("Stream #")) return text;
       lastText = text;
+      if (isoListingLooksUsable(text)) {
+        usable = text;
+        break;
+      }
     }
   }
+  if (usable) return usable;
   if (lastText.includes("Stream #")) return lastText;
   throw new Error("ffmpeg could not list streams on this disc image.");
 }

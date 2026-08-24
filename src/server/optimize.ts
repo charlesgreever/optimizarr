@@ -102,6 +102,7 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
         temps.push(remuxed);
         await remuxIso(req.ffmpeg, req.ffprobe, current, remuxed, req.report, {
           onTime: (sec) => emit("muxing", scaleProgress(0.02, 0.28, sec / Math.max(req.report.durationSec, 1))),
+          onLog: req.onLog,
           isCancelled: req.isCancelled,
         });
         current = remuxed;
@@ -405,12 +406,17 @@ export function isoRemuxIsShort(expectedSec: number, actualSec: number): boolean
 }
 
 export function isoCopyMaps(report?: InspectionReport): string[] {
-  const maps = ["-map", "0"];
-  // Dummy 0-channel AC3 on some Blu-rays makes Matroska reject the header ("sample rate not set").
-  for (const track of report?.audio ?? []) {
-    if (track.channels <= 0) maps.push("-map", `-0:${track.index}`);
+  const audio = (report?.audio ?? []).filter((track) => track.channels > 0);
+  const subs = report?.subtitles ?? [];
+  if ((report?.width ?? 0) >= 16 && audio.length > 0) {
+    const maps = ["-map", "0:v:0"];
+    for (const track of audio) maps.push("-map", `0:${track.index}`);
+    for (const track of subs) maps.push("-map", `0:${track.index}`);
+    return maps;
   }
-  return maps;
+  // Dummy 0-channel AC3 on some Blu-rays makes Matroska reject the header ("sample rate not set").
+  // Mapping every stream (`-map 0`) still demuxes those AC3 PIDs and ffmpeg can die on "error decoding the audio block".
+  return ["-map", "0:v:0", "-map", "0:a"];
 }
 
 export function isoRemuxArgs(source: string, dest: string, _plan?: ExecutablePlan, report?: InspectionReport): string[] {
@@ -428,7 +434,7 @@ export function isoRemuxInputs(source: string, report?: InspectionReport): strin
 export function isoMapVariants(report?: InspectionReport): string[][] {
   return [
     isoCopyMaps(report),
-    ["-map", "0:v:0", "-map", "0:a:0", "-map", "0:a:1", "-map", "0:a:2", "-map", "0:a:3", "-map", "0:a:4"],
+    ["-map", "0:v:0", "-map", "0:a"],
     ["-map", "0:v:0", "-map", "0:a:0"],
   ];
 }
@@ -443,6 +449,10 @@ export function isoRemuxArgSets(source: string, dest: string, report?: Inspectio
     "-progress",
     "pipe:1",
     "-y",
+    "-fflags",
+    "+genpts+discardcorrupt",
+    "-max_error_rate",
+    "1",
     "-analyzeduration",
     "100M",
     "-probesize",
@@ -463,12 +473,13 @@ async function remuxIso(
   source: string,
   dest: string,
   report: InspectionReport,
-  progress?: { onTime?: (sec: number) => void; isCancelled?: () => boolean },
+  progress?: { onTime?: (sec: number) => void; onLog?: (text: string) => void; isCancelled?: () => boolean },
 ): Promise<void> {
   let lastError: unknown;
   for (const args of isoRemuxArgSets(source, dest, report)) {
     try {
       await run(ffmpeg, args, {
+        onLog: progress?.onLog,
         onChunk: (text) => {
           const sec = parseFfmpegProgress(text);
           if (sec != null) progress?.onTime?.(sec);
