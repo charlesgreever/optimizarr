@@ -309,6 +309,17 @@ export class JobService {
     return { accepted: true };
   }
 
+  async keepPending(): Promise<{ accepted: number; skipped: number }> {
+    let accepted = 0;
+    let skipped = 0;
+    for (const id of this.opts.store.pendingReviewIds()) {
+      const result = await this.keep(id);
+      if ("accepted" in result) accepted += 1;
+      else skipped += 1;
+    }
+    return { accepted, skipped };
+  }
+
   private async performKeep(reviewId: string): Promise<void> {
     const review = this.opts.store.getReview(reviewId);
     if (!review) return;

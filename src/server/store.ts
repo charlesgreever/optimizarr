@@ -22,7 +22,7 @@ import { parseStoredSettings } from "./settings.ts";
 import type { SuggestionFilters } from "./suggestion-filters.ts";
 import { suggestionTrackComparison } from "./tracks.ts";
 
-export type Page<T> = { items: T[]; nextOffset: number | null; total: number };
+export type Page<T> = { items: T[]; nextOffset: number | null; total: number; pendingCount?: number };
 
 export type LibrarySnapshot = {
   item: LibraryItem;
@@ -754,7 +754,18 @@ export class Store {
        FROM reviews r LEFT JOIN library_items i ON i.id = r.item_id
        ORDER BY r.id LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
-    return page(rows.map((row) => ({ ...mapReview(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit);
+    return {
+      ...page(rows.map((row) => ({ ...mapReview(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit),
+      pendingCount: this.pendingReviewCount(),
+    };
+  }
+
+  pendingReviewIds(): string[] {
+    return (this.db.prepare("SELECT id FROM reviews WHERE status = 'pending'").all() as Array<{ id: string }>).map((row) => row.id);
+  }
+
+  pendingReviewCount(): number {
+    return Number((this.db.prepare("SELECT COUNT(*) AS n FROM reviews WHERE status = 'pending'").get() as { n: number }).n);
   }
 
   getReview(id: string): ReviewItem | undefined {

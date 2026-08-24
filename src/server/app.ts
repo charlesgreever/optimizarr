@@ -672,6 +672,13 @@ export function createApp(opts: AppOptions) {
     return c.json({ accepted, skipped }, 202);
   });
 
+  app.post("/api/review/keep-all", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const result = await jobs.keepPending();
+    return c.json(result, 202);
+  });
+
   app.post("/api/review/:id/discard", async (c) => {
     const result = await jobs.discard(c.req.param("id"));
     if ("error" in result) return c.json({ error: result.error }, result.status as 400 | 404 | 409);

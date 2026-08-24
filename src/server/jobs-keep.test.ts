@@ -96,6 +96,48 @@ describe("interrupted Keep recovery", () => {
     ctx.close();
   });
 
+  it("keepPending starts every pending card and leaves keeping cards alone", async () => {
+    const ctx = setup();
+    writeFileSync(ctx.sourcePath, "ORIGINAL!");
+    const pendingIds = ["rev-a", "rev-b"];
+    for (const [index, id] of pendingIds.entries()) {
+      const sidecar = join(ctx.dir, `sidecar-${index}.mkv`);
+      writeFileSync(sidecar, `SIDE${index}`);
+      ctx.store.insertReview({
+        id,
+        jobId: "job-1",
+        itemId: ctx.itemId,
+        displayTitle: "Film",
+        status: "pending",
+        flagged: false,
+        flagReason: null,
+        sourcePath: ctx.sourcePath,
+        sidecarPath: sidecar,
+        ...compare(9, 6),
+        error: null,
+      });
+    }
+    ctx.store.insertReview({
+      id: "rev-keeping",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "keeping",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: join(ctx.dir, "missing.mkv"),
+      ...compare(9, 6),
+      error: null,
+    });
+    expect(ctx.store.reviewPage(0, 50).pendingCount).toBe(2);
+    const result = await ctx.jobs.keepPending();
+    expect(result).toEqual({ accepted: 2, skipped: 0 });
+    await vi.waitFor(() => expect(pendingIds.every((id) => ctx.store.getReview(id) === undefined)).toBe(true));
+    expect(ctx.store.getReview("rev-keeping")?.status).toBe("keeping");
+    ctx.close();
+  });
+
   it("runs Keep selected copies one at a time when concurrency is 1", async () => {
     const ctx = setup({ concurrency: 1 });
     const started: string[] = [];

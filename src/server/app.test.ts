@@ -350,6 +350,7 @@ describe("public HTTP behavior", () => {
       };
       expect(first.items, path).toHaveLength(2);
       expect(first, path).toMatchObject({ nextOffset: 2, total: 3 });
+      if (path === "review") expect(first).toMatchObject({ pendingCount: 3 });
 
       const second = (await (await ctx.app.app.request(`/api/${path}?offset=2&limit=2`, { headers })).json()) as {
         items: Array<{ id?: string; path?: string }>;

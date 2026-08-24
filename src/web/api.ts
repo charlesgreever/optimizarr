@@ -61,6 +61,7 @@ export const api = {
   review: (offset = 0, limit = 50) => req<LibraryPage<ReviewRow>>(`/api/review?offset=${offset}&limit=${limit}`),
   keep: (id: string) => req(`/api/review/${id}/keep`, { method: "POST" }),
   keepSelected: (ids: string[]) => req("/api/review/keep-selected", { method: "POST", body: JSON.stringify({ ids }) }),
+  keepAll: () => req<{ accepted: number; skipped: number }>("/api/review/keep-all", { method: "POST" }),
   discard: (id: string) => req(`/api/review/${id}/discard`, { method: "POST" }),
   history: (offset = 0, limit = 50) => req<LibraryPage<HistoryRow>>(`/api/history?offset=${offset}&limit=${limit}`),
   home: () => req<HomePayload>("/api/home"),
@@ -76,7 +77,7 @@ export const api = {
   deleteExclusion: (id: string) => req<{ exclusions: Exclusion[] }>(`/api/exclusions/${id}`, { method: "DELETE" }),
 };
 
-export type LibraryPage<T> = { items: T[]; nextOffset: number | null; total: number };
+export type LibraryPage<T> = { items: T[]; nextOffset: number | null; total: number; pendingCount?: number };
 export type SeriesSummary = {
   id: string;
   key: string;

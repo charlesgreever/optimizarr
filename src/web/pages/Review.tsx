@@ -1,37 +1,88 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, formatSize, type ReviewRow } from "../api";
 import { PagedListControls } from "../components/PagedListControls";
 import { Help, PageHead } from "../components/Shell";
 import { usePagedList } from "../use-paged-list";
+
+export function keepAllConfirmCopy(count: number): string {
+  const noun = count === 1 ? "file" : "files";
+  return `Keep all ${count} ${noun}? This replaces each library file with its new copy.`;
+}
 
 export function ReviewPage() {
   const list = usePagedList({ loadPage: api.review, keyOf: (row: ReviewRow) => row.id, pollMs: 3000 });
   const items = list.items;
   const [selected, setSelected] = useState<Record<string, boolean>>();
   const [msg, setMsg] = useState("");
+  const [confirmAll, setConfirmAll] = useState(false);
 
   const pending = items.filter((i) => i.status === "pending");
   const chosen = pending.filter((i) => selected?.[i.id]);
+  const pendingCount = list.pendingCount || pending.length;
+
+  useEffect(() => {
+    if (!confirmAll) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConfirmAll(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmAll]);
 
   return (
     <section>
       <PageHead title="Review">
-        <button
-          className="btn"
-          type="button"
-          disabled={chosen.length === 0}
-          onClick={() => void api.keepSelected(chosen.map((i) => i.id)).then((r) => {
-            setMsg(`Keep started for ${(r as { accepted: number }).accepted}.`);
-            setSelected({});
-            return list.reload();
-          })}
-        >
-          Keep selected ({chosen.length})
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn"
+            type="button"
+            disabled={chosen.length === 0}
+            onClick={() => void api.keepSelected(chosen.map((i) => i.id)).then((r) => {
+              setMsg(`Keep started for ${(r as { accepted: number }).accepted}.`);
+              setSelected({});
+              return list.reload();
+            })}
+          >
+            Keep selected ({chosen.length})
+          </button>
+          <button
+            className="btn-secondary"
+            type="button"
+            disabled={pendingCount === 0}
+            onClick={() => setConfirmAll(true)}
+          >
+            Keep all
+          </button>
+        </div>
       </PageHead>
       <Help>
-        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes. If Polisharr restarts during Keep, the card comes back so you can try again, unless the new file is already in the library.
+        Review compares the original and the sidecar. Keep replaces the library file. Discard throws the sidecar away. The original stays until Keep finishes. If Polisharr restarts during Keep, the card comes back so you can try again, unless the new file is already in the library. Keep all promotes every waiting sidecar after you confirm.
       </Help>
+      {confirmAll && (
+        <div className="glass mt-4 space-y-3 p-5" role="dialog" aria-labelledby="keep-all-title" aria-modal="true">
+          <h2 id="keep-all-title" className="text-sm font-semibold tracking-wide text-ink">Keep all files?</h2>
+          <p className="m-0 text-sm leading-5 text-slate-300">{keepAllConfirmCopy(pendingCount)}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setConfirmAll(false);
+                void api.keepAll().then((result) => {
+                  setMsg(`Keep started for ${result.accepted}.`);
+                  setSelected({});
+                  return list.reload();
+                }).catch((error: Error) => setMsg(error.message));
+              }}
+            >
+              Keep all
+            </button>
+            <button className="btn-secondary" type="button" onClick={() => setConfirmAll(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {items.length === 0 && list.loading && <div className="empty">Loading review…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">Nothing is waiting for Keep or Discard.</div>}
       {items.length > 0 && (

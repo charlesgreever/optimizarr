@@ -15,6 +15,7 @@ export function usePagedList<T>(options: {
   const [items, setItems] = useState<T[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [total, setTotal] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const itemsRef = useRef<T[]>([]);
@@ -51,6 +52,7 @@ export function usePagedList<T>(options: {
       setItems(nextItems);
       setNextOffset(mode === "poll" ? retainedNextOffset(nextItems.length, result.total) : result.nextOffset);
       setTotal(result.total);
+      if (typeof result.pendingCount === "number") setPendingCount(result.pendingCount);
     } catch (cause) {
       if (mountedRef.current && generation === generationRef.current) {
         setError(cause instanceof Error ? cause.message : "This list could not be loaded.");
@@ -79,6 +81,7 @@ export function usePagedList<T>(options: {
     setItems([]);
     setNextOffset(null);
     setTotal(0);
+    setPendingCount(0);
     void run(0, "reset");
   }, [options.queryKey, run]);
 
@@ -92,6 +95,7 @@ export function usePagedList<T>(options: {
     items,
     nextOffset,
     total,
+    pendingCount,
     loading,
     error,
     loadMore: () => (nextOffset == null ? Promise.resolve() : run(nextOffset, "append")),
