@@ -9,6 +9,10 @@ import { copiedAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
 
 const execFileAsync = promisify(execFile);
 
+export function toolLocaleEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" };
+}
+
 export type OptimizeRequest = {
   sourcePath: string;
   reviewDir: string;
@@ -330,7 +334,7 @@ async function identifyMkvmergeTrackIds(
   report: InspectionReport,
 ): Promise<MkvmergeTrackIds> {
   try {
-    const { stdout } = await execFileAsync(mkvmerge, ["-J", source], { maxBuffer: 1024 * 512 });
+    const { stdout } = await execFileAsync(mkvmerge, ["-J", source], { maxBuffer: 1024 * 512, env: toolLocaleEnv() });
     const identified = JSON.parse(stdout) as { tracks?: Array<{ id?: unknown; type?: unknown }> };
     const tracks = Array.isArray(identified.tracks) ? identified.tracks : [];
     const ids = (type: "audio" | "subtitles") => tracks
@@ -548,6 +552,7 @@ export function formatToolError(bin: string, error: { message?: string; stderr?:
   const useful =
     lines.find((line) => /error|cannot|failed|invalid|not found|no nvenc|unknown encoder/i.test(line)) ??
     lines.at(-1) ??
+    (error.message && !BANNER.test(error.message) ? error.message : null) ??
     "The tool exited without a useful message.";
   return `${bin} failed. ${useful}`;
 }
@@ -671,7 +676,7 @@ async function run(
 ): Promise<void> {
   if (!opts?.onChunk && !opts?.isCancelled) {
     try {
-      await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024 });
+      await execFileAsync(bin, args, { timeout: 0, maxBuffer: 2 * 1024 * 1024, env: toolLocaleEnv() });
       return;
     } catch (error) {
       const err = error as { message?: string; stderr?: string; stdout?: string };
@@ -679,7 +684,7 @@ async function run(
     }
   }
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: toolLocaleEnv() });
     let stdout = "";
     let stderr = "";
     const onCancel = setInterval(() => {
@@ -715,6 +720,7 @@ async function run(
 async function probeOutput(ffprobe: string, path: string): Promise<InspectionReport> {
   const { stdout } = await execFileAsync(ffprobe, ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path], {
     maxBuffer: 1024 * 512,
+    env: toolLocaleEnv(),
   });
   const size = (await stat(path)).size;
   return parseFfprobe(path, size, JSON.parse(stdout) as Record<string, unknown>);

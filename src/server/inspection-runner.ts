@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { InspectionReport, LibraryItem } from "./types.ts";
 import { isIsoPath, isoListingLooksUsable, parseFfmpegListing, parseFfprobe, unlistedIsoReport } from "./inspect.ts";
-import { isoInputAttempts } from "./optimize.ts";
+import { isoInputAttempts, toolLocaleEnv } from "./optimize.ts";
 
 export type InspectionRunnerOptions = {
   store: Store;
@@ -185,8 +185,9 @@ async function defaultProbe(ffprobe: string, path: string): Promise<Record<strin
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
-  const { stdout } = await run(ffprobe, ["-v", "quiet", "-threads", "1", "-print_format", "json", "-show_format", "-show_streams", path], {
+  const { stdout } = await run(ffprobe, ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path], {
     maxBuffer: 1024 * 512,
+    env: toolLocaleEnv(),
   });
   return JSON.parse(stdout) as Record<string, unknown>;
 }
@@ -200,7 +201,7 @@ async function defaultIsoListing(ffmpeg: string, path: string): Promise<string> 
   for (const input of isoInputAttempts(path)) {
     const args = ["-hide_banner", "-threads", "1", "-analyzeduration", "20M", "-probesize", "20M", ...input];
     try {
-      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512 });
+      const { stdout, stderr } = await run(ffmpeg, args, { timeout: 12_000, maxBuffer: 1024 * 512, env: toolLocaleEnv() });
       const text = `${stderr}\n${stdout}`;
       lastText = text;
       if (isoListingLooksUsable(text)) {

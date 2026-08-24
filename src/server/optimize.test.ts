@@ -17,6 +17,7 @@ import {
   muxPlanArgs,
   nvencBitrate,
   optimizeSteps,
+  toolLocaleEnv,
   parseFfmpegProgress,
   parseMkvmergeProgress,
   planFromSuggestion,
@@ -97,6 +98,92 @@ describe("mkvmerge arguments", () => {
     const message = formatToolError("mkvmerge", output);
 
     expect(message).toBe("mkvmerge failed. Error: The source file type is unsupported.");
+  });
+
+  it("runs mkvmerge with a UTF-8 locale so JSON identify is not truncated", async () => {
+    expect(toolLocaleEnv()).toMatchObject({ LANG: "C.UTF-8", LC_ALL: "C.UTF-8" });
+    const dir = await mkdtemp(join(tmpdir(), "polisharr-mkvmerge-locale-"));
+    try {
+      const sourcePath = join(dir, "episode.mkv");
+      const reviewDir = join(dir, "review");
+      const mkvmerge = join(dir, "mkvmerge.cjs");
+      const ffprobe = join(dir, "ffprobe.cjs");
+      const ffmpeg = join(dir, "ffmpeg.cjs");
+      await writeFile(sourcePath, "source");
+      await writeFile(ffmpeg, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "fs.writeFileSync(process.argv.at(-1), 'stereo');",
+      ].join("\n"));
+      await writeFile(mkvmerge, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const utf8 = /UTF-8/i.test(process.env.LC_ALL || process.env.LANG || '');",
+        "const args = process.argv.slice(2);",
+        "if (args.includes('-J')) {",
+        "  if (!utf8) { process.stdout.write('{\"tracks\":[{\"id\":0,\"type\":\"video\",\"properties\":{\"title\":\"'); process.exit(0); }",
+        "  process.stdout.write(JSON.stringify({ tracks: [{ id: 0, type: 'video' }, { id: 1, type: 'audio' }, { id: 2, type: 'subtitles' }] }));",
+        "  process.exit(0);",
+        "}",
+        "if (!utf8) process.exit(2);",
+        "fs.writeFileSync(args[args.indexOf('-o') + 1], 'muxed');",
+        "process.stdout.write('Progress: 100%\\n');",
+      ].join("\n"));
+      await writeFile(ffprobe, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const muxed = fs.readFileSync(process.argv.at(-1), 'utf8') === 'muxed';",
+        "process.stdout.write(JSON.stringify({",
+        "  format: { duration: '120' },",
+        "  streams: [",
+        "    { index: 0, codec_type: 'video', codec_name: 'hevc', width: 1920, height: 1080, bits_per_raw_sample: '8' },",
+        "    { index: 1, codec_type: 'audio', codec_name: 'eac3', channels: 6, tags: { language: 'eng' } },",
+        "    ...(muxed ? [{ index: 2, codec_type: 'audio', codec_name: 'aac', channels: 2, tags: { language: 'eng' } }] : []),",
+        "    { index: muxed ? 3 : 2, codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'eng' } }",
+        "  ]",
+        "}));",
+      ].join("\n"));
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755), chmod(ffmpeg, 0o755)]);
+      const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
+      const result = await optimizer({
+        sourcePath,
+        reviewDir,
+        plan: planFromSuggestion({
+          ...suggestion,
+          actions: ["tracks", "add_stereo"],
+          keepAudio: [1],
+          stripAudio: [],
+          keepSubs: [2],
+          stripSubs: [],
+        }),
+        report: {
+          sourceSig: "episode.mkv|13",
+          sourceMethod: "ffprobe",
+          listingState: "complete",
+          durationSec: 120,
+          sizeBytes: 13,
+          sizePerHourGb: 0.001,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [{ index: 1, language: "eng", channels: 6, codec: "eac3", title: "", untagged: false, commentary: false }],
+          subtitles: [{ index: 2, language: "eng", codec: "subrip", title: "烧烤", untagged: false, forced: false, sdh: false }],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "none",
+        ffmpeg,
+        ffprobe,
+        mkvmerge,
+        conservative: false,
+      });
+      expect(result.sidecarPath.endsWith(".mkv")).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps the selected MP4 caption when ffprobe and mkvmerge track IDs differ", async () => {
