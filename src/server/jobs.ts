@@ -54,6 +54,12 @@ export class JobService {
     if (this.opts.store.activeJobForItem(itemId)) {
       return { error: "This title already has an active job.", status: 409 };
     }
+    if (suggestion.actions.includes("search_language") && suggestion.actions.every((action) => action === "search_language")) {
+      return {
+        error: "This title needs a Radarr or Sonarr search, not an encode. Open the title page to confirm.",
+        status: 400,
+      };
+    }
     const id = randomUUID();
     const writeMode = this.opts.store.getSettings().writeMode;
     const plan = planFromSuggestion(suggestion, writeMode);

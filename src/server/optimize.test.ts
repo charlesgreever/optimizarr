@@ -822,6 +822,8 @@ describe("ISO remux and custom audio arguments", () => {
     expect(args).toContain("-map");
     expect(args).toContain("0:v:0?");
     expect(args).toContain("0:1?");
+    expect(args).toContain("-metadata:s:a:0");
+    expect(args).toContain("language=eng");
     expect(args).not.toContain("-0:10");
     expect(args).toContain("-max_error_rate");
     expect(isoRemuxIsShort(8776, 10.01)).toBe(true);

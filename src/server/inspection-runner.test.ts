@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -197,6 +197,80 @@ describe("inspection runner", () => {
     expect(report?.width).toBe(1920);
     expect(report?.audio[0]?.codec).toBe("dts");
     expect(runner.leftoverCount()).toBe(0);
+    store.close();
+  });
+
+  it("does not put a missing path or a failed ISO listing on Errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-inspect-missing-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: "packed",
+      enabled: true,
+    });
+    const missingId = `${instanceId}:movie:1`;
+    const isoId = `${instanceId}:movie:2`;
+    store.upsertItem({
+      id: missingId,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Moana",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: join(dir, "Moana (2026)"),
+      sizeBytes: 0,
+      quality: "",
+      resolution: "",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    store.upsertItem({
+      id: isoId,
+      instanceId,
+      arrId: 2,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Cars 3",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: join(dir, "Cars 3.iso"),
+      sizeBytes: 40,
+      quality: "Bluray-1080p",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    writeFileSync(join(dir, "Cars 3.iso"), "iso");
+    const runner = createInspectionRunner({
+      store,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      probe: async () => {
+        throw new Error("ffprobe must not run on a missing file.");
+      },
+      listIso: async () => {
+        throw new Error("ffmpeg could not list streams on this disc image.");
+      },
+      recomputeSuggestion: () => undefined,
+    });
+
+    await runner.inspectPending();
+    expect(store.listErrors()).toEqual([]);
+    expect(store.getInspection(isoId)?.listingState).toBe("iso_unlisted");
     store.close();
   });
 });

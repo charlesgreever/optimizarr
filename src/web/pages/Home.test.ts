@@ -33,5 +33,6 @@ describe("Home dashboard", () => {
   it("names activity outcomes in everyday words", () => {
     expect(activityOutcomeLabel("kept")).toBe("Kept");
     expect(activityOutcomeLabel("flagged")).toBe("Flagged");
+    expect(activityOutcomeLabel("searched")).toBe("Asked to search");
   });
 });

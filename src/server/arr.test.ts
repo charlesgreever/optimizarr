@@ -36,6 +36,19 @@ describe("Arr identity", () => {
     expect(episodes).toEqual([]);
   });
 
+  it("skips a Radarr movie that has no media file yet", () => {
+    const movies = parseRadarrMovies([
+      { id: 1, title: "Moana", path: "/mnt/nas/Kids Movies/Moana (2026)", hasFile: false },
+      {
+        id: 2,
+        title: "Cars 3",
+        movieFile: { path: "/mnt/nas/Kids Movies/Cars 3.mkv", size: 2, quality: { quality: { name: "Bluray-1080p" } } },
+      },
+    ]);
+    expect(movies.map((row) => row.title)).toEqual(["Cars 3"]);
+    expect(movies[0]?.path).toBe("/mnt/nas/Kids Movies/Cars 3.mkv");
+  });
+
   it("prefers the Arr-hosted poster path over an external remote URL", () => {
     const movies = parseRadarrMovies([{
       id: 1,

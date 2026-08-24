@@ -154,8 +154,9 @@ export function parseFfmpegListing(path: string, sizeBytes: number, listing: str
   if (streams.length === 0) return unlistedIsoReport(path, sizeBytes);
   const videoLine = streams.find((m) => m[3] === "Video")?.[4] ?? "";
   const size = videoLine.match(/(\d{3,5})x(\d{3,5})/);
-  const audio = streams.filter((m) => m[3] === "Audio").map((m, i) => parseListedAudio(m, i));
-  const subtitles = streams.filter((m) => m[3] === "Subtitle").map((m, i) => parseListedSub(m, i));
+  const langs = parseBlurayStreamLanguages(listing);
+  const audio = streams.filter((m) => m[3] === "Audio").map((m, i) => withListedLanguage(parseListedAudio(m, i), langs));
+  const subtitles = streams.filter((m) => m[3] === "Subtitle").map((m, i) => withListedLanguage(parseListedSub(m, i), langs));
   const playlist = longestBlurayPlaylist(listing);
   const listedDuration = parseListedDuration(listing);
   const durationSec = featureDurationSec(listedDuration, playlist?.durationSec ?? 0);
@@ -185,6 +186,25 @@ export function parseListedDuration(listing: string): number {
   const match = listing.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
   if (!match) return 0;
   return clockToSeconds(match[1], match[2], match[3]);
+}
+
+export function parseBlurayStreamLanguages(listing: string): Map<number, string> {
+  const langs = new Map<number, string>();
+  for (const row of listing.matchAll(/stream\s+(\d+)\s*:[^\n]*\blang(?:uage)?\s*[=:]\s*([A-Za-z]{2,3})\b/gi)) {
+    const language = normalizeLang(row[2] ?? "und");
+    if (language !== "und") langs.set(Number(row[1]), language);
+  }
+  return langs;
+}
+
+function withListedLanguage<T extends { index: number; language: string; untagged: boolean }>(
+  track: T,
+  langs: Map<number, string>,
+): T {
+  if (track.language !== "und") return track;
+  const language = langs.get(track.index);
+  if (!language) return track;
+  return { ...track, language, untagged: false };
 }
 
 export function parseBlurayPlaylists(listing: string): Array<{ id: number; durationSec: number }> {

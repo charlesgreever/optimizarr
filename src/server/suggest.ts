@@ -9,6 +9,7 @@ import type {
 } from "./types.ts";
 import { normalizeLang } from "./inspect.ts";
 import { exceedsSizeCap } from "./size-budget.ts";
+import { soleNonPreferredAudio } from "./arr-search.ts";
 
 export type SuggestInput = {
   item: LibraryItem;
@@ -40,15 +41,18 @@ export function is4k(item: LibraryItem, report: InspectionReport): boolean {
 
 export function buildSuggestion(input: SuggestInput): Suggestion | null {
   if (input.excluded) return null;
-  if (input.report.listingState === "iso_unlisted") return null;
+  if (input.report.listingState === "iso_unlisted" && !input.settings.suggestionDefaults.convertIsoToMkv) return null;
   const { item, report, settings } = input;
   const category = sizeCategory(item, report);
   const cap = settings.sizeCaps[category];
   const overCap = exceedsSizeCap(report.sizePerHourGb, cap);
   const lang = normalizeLang(settings.preferredLanguage);
-  const keepAudio = settings.suggestionDefaults.removeNonPreferredAudio
-    ? report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length))
-    : report.audio;
+  const onlyWrongLanguage = soleNonPreferredAudio(report.audio, lang);
+  const keepAudio = onlyWrongLanguage
+    ? report.audio.filter((track) => track.channels > 0)
+    : settings.suggestionDefaults.removeNonPreferredAudio
+      ? report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length))
+      : report.audio;
   const stripAudio = report.audio.filter((t) => !keepAudio.includes(t));
   const keepSubs = settings.suggestionDefaults.removeNonPreferredSubtitles
     ? report.subtitles.filter((t) => t.language === lang || (t.untagged && report.subtitles.length === 1))
@@ -67,13 +71,16 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     !input.sizeExempt &&
     (input.forceTranscode ||
       (settings.suggestionDefaults.transcodeToSizeCap && overCap && (inefficient || /hevc|h265/.test(codec))));
-  const remux = settings.suggestionDefaults.convertMp4ToMkv && /\.mp4$/i.test(item.path);
+  const remux = (settings.suggestionDefaults.convertMp4ToMkv && /\.mp4$/i.test(item.path))
+    || (settings.suggestionDefaults.convertIsoToMkv && /\.iso$/i.test(item.path));
 
   const actions: SuggestionAction[] = [];
   if (transcode) actions.push("transcode");
   if (remux) actions.push("remux");
   if (extraTracks) actions.push("tracks");
   if (addStereo) actions.push("add_stereo");
+  const searchLanguage = settings.suggestionDefaults.searchPreferredLanguage && onlyWrongLanguage;
+  if (searchLanguage && actions.length === 0) actions.push("search_language");
   if (actions.length === 0) return null;
 
   const reasons: string[] = [];
@@ -82,10 +89,12 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   } else if (transcode && input.forceTranscode) {
     reasons.push(`Re-encode to ${target.toUpperCase()} because you asked to force this title.`);
   }
-  if (remux) reasons.push("Convert the MP4 container to MKV before any video encode.");
+  if (remux && /\.iso$/i.test(item.path)) reasons.push("Convert the disc image to MKV.");
+  else if (remux) reasons.push("Convert the MP4 container to MKV before any video encode.");
   if (stripAudio.length) reasons.push("Drop audio tracks that are not in your preferred language.");
   if (stripSubs.length) reasons.push("Drop subtitle tracks that are not in your preferred language.");
   if (addStereo) reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");
+  if (searchLanguage) reasons.push("The only audio track is not in your preferred language.");
 
   const warnings: string[] = [];
   if (transcode && input.hardwareAvailable === false) {

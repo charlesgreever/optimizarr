@@ -30,7 +30,11 @@ export const api = {
   series: (offset = 0, limit = 50) => req<LibraryPage<SeriesSummary>>(`/api/library/series?offset=${offset}&limit=${limit}`),
   seriesEpisodes: (instanceId: string, seriesId: number, offset = 0, limit = 50) =>
     req<LibraryPage<LibraryRow>>(`/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/episodes?offset=${offset}&limit=${limit}`),
-  title: (id: string) => req<{ item: LibraryRow; hardware: Hardware; settings: { writeMode: string; videoTarget: string } }>(`/api/library/items/${id}`),
+  title: (id: string) => req<{
+    item: LibraryRow;
+    hardware: Hardware;
+    settings: { writeMode: string; videoTarget: string; preferredLanguage?: string };
+  }>(`/api/library/items/${id}`),
   previewPlan: async (id: string, draft: Record<string, unknown>) => {
     const res = await fetch(`/api/library/items/${id}/plan`, {
       method: "POST",
@@ -41,6 +45,8 @@ export const api = {
   },
   queueCustom: (id: string, draft: Record<string, unknown>, runNow = false) =>
     req(`/api/library/items/${id}/queue`, { method: "POST", body: JSON.stringify({ draft, runNow }) }),
+  searchPreferred: (id: string) =>
+    req(`/api/library/items/${id}/search-preferred`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   syncProfiles: () => req<{ results: Array<{ created: string[]; updated: string[]; failed: string[] }> }>("/api/settings/profiles/sync", { method: "POST" }),
   inspect: () => req<InspectState>("/api/inspect/status"),
   errors: (offset = 0, limit = 50) => req<LibraryPage<FileError>>(`/api/errors?offset=${offset}&limit=${limit}`),
@@ -112,6 +118,8 @@ export type SettingsPayload = {
     addStereo: boolean;
     transcodeToSizeCap: boolean;
     convertMp4ToMkv: boolean;
+    convertIsoToMkv: boolean;
+    searchPreferredLanguage: boolean;
   };
   videoTarget: "hevc" | "av1";
   concurrency: number;
@@ -206,7 +214,7 @@ export type ReviewRow = {
   sidecar: { codec: string | null; sizeBytes: number | null; sizePerHourGb: number | null; durationSec: number; tracks: string };
   error: string | null;
 };
-export type HistoryRow = { id: string; displayTitle: string; outcome: "kept" | "discarded" | "flagged" | "failed" | "cancelled"; bytesSaved: number; createdAt: number };
+export type HistoryRow = { id: string; displayTitle: string; outcome: "kept" | "discarded" | "flagged" | "failed" | "cancelled" | "searched"; bytesSaved: number; createdAt: number };
 export type HomePayload = {
   filesOptimized: number;
   spaceSavedBytes: number;

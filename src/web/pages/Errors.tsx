@@ -11,10 +11,10 @@ export function ErrorsPage() {
     <section>
       <PageHead title="Errors" />
       <Help>
-        Each row is one file Polisharr could not read or probe. The count is distinct files, not retry attempts. Open a title for the same media page as Movies and Series.
+        Each row is one file Polisharr could not read or probe. Titles that are still downloading, or a future release with no file yet, are not listed here. The count is distinct files, not retry attempts. Open a title for the same media page as Movies and Series.
       </Help>
       {items.length === 0 && list.loading && <div className="empty">Loading errors…</div>}
-      {items.length === 0 && !list.loading && !list.error && <div className="empty">No unreadable files. Nothing needs attention here.</div>}
+      {items.length === 0 && !list.loading && !list.error && <div className="empty">No unreadable files. Still-downloading titles are not errors.</div>}
       {items.length > 0 && (
         <div className="glass mt-5 overflow-x-auto">
           <table>

@@ -146,20 +146,24 @@ export class LibrarySync {
     }
     if (instance.kind === "radarr") {
       const movies = parseRadarrMovies(await fetchJson(`${trimUrl(instance.url)}/api/v3/movie`, key, this.options.fetch));
-      for (const movie of movies) this.storeMovie(instance, movie);
+      const ids: string[] = [];
+      for (const movie of movies) ids.push(this.storeMovie(instance, movie));
+      this.options.store.removeItemsNotIn(instance.id, "movie", ids);
       return;
     }
     const series = parseSonarrSeries(await fetchJson(`${trimUrl(instance.url)}/api/v3/series`, key, this.options.fetch));
+    const episodeIds: string[] = [];
     for (const show of series) {
       const episodes = parseSonarrEpisodes(
         await fetchJson(`${trimUrl(instance.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, this.options.fetch),
         show.title, show.posterUrl, show.profile, show.tags,
       );
-      for (const episode of episodes) this.storeEpisode(instance, episode);
+      for (const episode of episodes) episodeIds.push(this.storeEpisode(instance, episode));
     }
+    this.options.store.removeItemsNotIn(instance.id, "episode", episodeIds);
   }
 
-  private storeMovie(instance: StoredInstance, movie: ArrMovie): void {
+  private storeMovie(instance: StoredInstance, movie: ArrMovie): string {
     const id = `${instance.id}:movie:${movie.id}`;
     this.options.store.upsertItem({
       id, instanceId: instance.id, arrId: movie.id, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
@@ -168,9 +172,10 @@ export class LibrarySync {
       tags: movie.tags, posterRemoteUrl: movie.posterUrl,
       sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
     });
+    return id;
   }
 
-  private storeEpisode(instance: StoredInstance, episode: ArrEpisode): void {
+  private storeEpisode(instance: StoredInstance, episode: ArrEpisode): string {
     const id = `${instance.id}:episode:${episode.id}`;
     this.options.store.upsertItem({
       id, instanceId: instance.id, arrId: episode.id, arrSeriesId: episode.seriesId,
@@ -180,6 +185,7 @@ export class LibrarySync {
       resolution: episode.resolution, profile: episode.profile, tags: episode.tags,
       posterRemoteUrl: episode.posterUrl, sizeExempt: this.options.store.getItem(id)?.sizeExempt ?? false,
     });
+    return id;
   }
 
   private async refreshRoots(instance: StoredInstance, key: string): Promise<string[]> {

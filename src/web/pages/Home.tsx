@@ -76,6 +76,7 @@ export function activityOutcomeLabel(outcome: HistoryRow["outcome"]): string {
   if (outcome === "discarded") return "Discarded";
   if (outcome === "flagged") return "Flagged";
   if (outcome === "failed") return "Failed";
+  if (outcome === "searched") return "Asked to search";
   return "Cancelled";
 }
 

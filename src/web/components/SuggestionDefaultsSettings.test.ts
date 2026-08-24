@@ -12,6 +12,8 @@ describe("suggestion defaults settings", () => {
         addStereo: true,
         transcodeToSizeCap: true,
         convertMp4ToMkv: false,
+        convertIsoToMkv: false,
+        searchPreferredLanguage: false,
       },
       onChange: () => undefined,
       onSave: () => undefined,
@@ -19,6 +21,7 @@ describe("suggestion defaults settings", () => {
 
     expect(html).toContain("Default suggestion operations");
     expect(html).toContain("Convert MP4 to MKV");
+    expect(html).toContain("Convert ISO to MKV");
     expect(html).toContain("Save suggestion defaults");
   });
 });

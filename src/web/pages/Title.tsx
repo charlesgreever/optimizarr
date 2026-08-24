@@ -14,6 +14,7 @@ export function TitlePage() {
   const [item, setItem] = useState<LibraryRow | null>(null);
   const [av1, setAv1] = useState(false);
   const [writeDefault, setWriteDefault] = useState("sidecar");
+  const [preferredLanguage, setPreferredLanguage] = useState("eng");
   const [msg, setMsg] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [plan, setPlan] = useState<ExecutablePlan | null>(null);
@@ -37,6 +38,7 @@ export function TitlePage() {
       setItem(r.item);
       setAv1(r.hardware.av1);
       setWriteDefault(r.settings.writeMode);
+      if (r.settings.preferredLanguage) setPreferredLanguage(r.settings.preferredLanguage);
       const nextAudio: Record<number, { action: AudioAction; channels?: number }> = {};
       const nextSubs: Record<number, "keep" | "remove"> = {};
       for (const t of r.item.report?.audio ?? []) nextAudio[t.index] = { action: "keep" };
@@ -73,6 +75,12 @@ export function TitlePage() {
 
   const locked = titleOptimizeLocked(item);
   const queueReady = canQueueCustomPlan(plan, errors, locked);
+  const usableAudio = (report?.audio ?? []).filter((track) => track.channels > 0);
+  const onlyWrongLanguage = usableAudio.length === 1
+    && (usableAudio[0]?.language ?? "und") !== "und"
+    && (usableAudio[0]?.language ?? "und") !== preferredLanguage
+    && !locked;
+  const arrName = item.type === "episode" ? "Sonarr" : "Radarr";
 
   return (
     <section className="space-y-5">
@@ -264,6 +272,20 @@ export function TitlePage() {
         >
           Queue this plan
         </button>
+        {onlyWrongLanguage && (
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={() => {
+              if (!window.confirm(`This removes the current file from the library and asks ${arrName} to search again.`)) return;
+              void api.searchPreferred(id)
+                .then(() => setMsg(`${arrName} will search for a preferred-language copy.`))
+                .catch((e: Error) => setMsg(e.message));
+            }}
+          >
+            {`Ask ${arrName} to search for a preferred-language copy`}
+          </button>
+        )}
       </Section>
       {msg && <p className="ok text-sm">{msg}</p>}
     </section>

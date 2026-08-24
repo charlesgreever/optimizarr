@@ -1082,6 +1082,8 @@ describe("public HTTP behavior", () => {
       addStereo: false,
       transcodeToSizeCap: false,
       convertMp4ToMkv: true,
+      convertIsoToMkv: false,
+      searchPreferredLanguage: false,
     });
     expect(suggestions.items).toHaveLength(0);
     expect(ctx.probeCalls()).toBe(probesBeforeSave);
@@ -1444,5 +1446,94 @@ describe("public HTTP behavior", () => {
     });
     const jobsAfter = (await (await ctx.app.app.request("/api/jobs", { headers })).json()) as { items: unknown[] };
     expect(jobsAfter.items).toEqual([]);
+  });
+
+  it("requires a session and a confirm before asking Radarr to search for preferred audio", async () => {
+    const calls: string[] = [];
+    const dir = mkdtempSync(join(tmpdir(), "opt-search-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      fetch: (async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (String(url).includes("/system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+        if (String(url).endsWith("/movie/10")) {
+          return new Response(JSON.stringify({ id: 10, movieFile: { id: 77, path: "/media/film.mkv" } }));
+        }
+        return new Response("{}", { status: 201 });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    expect((await created.app.request("/api/library/items/x/search-preferred", { method: "POST", body: "{}" })).status).toBe(401);
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(dir, "review") }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    const itemId = `${instanceId}:movie:10`;
+    created.store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 10,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/media/film.mkv",
+      sizeBytes: 1,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    created.store.saveInspection(itemId, {
+      sourceSig: "/media/film.mkv|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 3600,
+      isoPlaylist: null,
+      sizeBytes: 1,
+      sizePerHourGb: 1,
+      videoCodec: "h264",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [{ index: 1, language: "deu", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false }],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    const denied = await created.app.request(`/api/library/items/${itemId}/search-preferred`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    });
+    expect(denied.status).toBe(400);
+    const ok = await created.app.request(`/api/library/items/${itemId}/search-preferred`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(ok.status).toBe(200);
+    expect(created.store.getItem(itemId)).toBeUndefined();
+    expect(calls.some((call) => call.startsWith("DELETE ") && call.includes("/moviefile/77"))).toBe(true);
+    expect(calls.some((call) => call.startsWith("POST ") && call.includes("/command"))).toBe(true);
   });
 });

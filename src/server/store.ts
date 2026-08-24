@@ -346,6 +346,23 @@ export class Store {
     return row ? mapItem(row) : undefined;
   }
 
+  removeItemsNotIn(instanceId: string, type: "movie" | "episode", keepIds: string[]): void {
+    const keep = new Set(keepIds);
+    for (const item of this.listItems(type).filter((row) => row.instanceId === instanceId)) {
+      if (keep.has(item.id)) continue;
+      this.deleteLibraryItem(item.id);
+    }
+  }
+
+  deleteLibraryItem(id: string): void {
+    const item = this.getItem(id);
+    this.db.prepare("DELETE FROM inspections WHERE item_id = ?").run(id);
+    this.db.prepare("DELETE FROM suggestions WHERE item_id = ?").run(id);
+    this.clearFileErrorsForItem(id);
+    if (item?.path) this.clearFileError(item.path);
+    this.db.prepare("DELETE FROM library_items WHERE id = ?").run(id);
+  }
+
   listItems(type?: "movie" | "episode"): LibraryItem[] {
     const sql = type
       ? `SELECT i.*, inst.name AS instance_name FROM library_items i JOIN instances inst ON inst.id = i.instance_id WHERE i.type = ?`
@@ -1050,7 +1067,7 @@ function reviewStatus(value: unknown): ReviewStatus {
 }
 
 function activityOutcome(value: unknown): ActivityOutcome {
-  if (value === "kept" || value === "discarded" || value === "flagged" || value === "failed" || value === "cancelled") return value;
+  if (value === "kept" || value === "discarded" || value === "flagged" || value === "failed" || value === "cancelled" || value === "searched") return value;
   throw new Error(`The saved activity outcome ${String(value)} is invalid.`);
 }
 

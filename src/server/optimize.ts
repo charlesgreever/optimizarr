@@ -438,6 +438,19 @@ export function isoRemuxInputs(source: string, report?: InspectionReport): strin
   return [...preferred, ...rest];
 }
 
+export function isoRemuxLanguageArgs(report?: InspectionReport): string[] {
+  const args: string[] = [];
+  const audio = (report?.audio ?? []).filter((track) => track.channels > 0 && track.language && track.language !== "und");
+  const subs = (report?.subtitles ?? []).filter((track) => track.language && track.language !== "und");
+  audio.forEach((track, i) => {
+    args.push(`-metadata:s:a:${i}`, `language=${track.language}`);
+  });
+  subs.forEach((track, i) => {
+    args.push(`-metadata:s:s:${i}`, `language=${track.language}`);
+  });
+  return args;
+}
+
 export function isoMapVariants(report?: InspectionReport): string[][] {
   return [
     isoCopyMaps(report),
@@ -468,7 +481,7 @@ export function isoRemuxArgSets(source: string, dest: string, report?: Inspectio
   const sets: string[][] = [];
   for (const input of isoRemuxInputs(source, report)) {
     for (const maps of isoMapVariants(report)) {
-      sets.push([...head, ...input, ...maps, "-c", "copy", dest]);
+      sets.push([...head, ...input, ...maps, ...isoRemuxLanguageArgs(report), "-c", "copy", dest]);
     }
   }
   return sets;

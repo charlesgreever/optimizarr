@@ -30,7 +30,9 @@ export function SuggestionDefaultsSettings({
       {checkbox("addStereo", "Add stereo from surround audio")}
       {checkbox("transcodeToSizeCap", "Transcode files over their size cap")}
       {checkbox("convertMp4ToMkv", "Convert MP4 to MKV")}
-      <p className="help">These choices control automatic Suggestions. Force, Add stereo, and custom title plans stay available.</p>
+      {checkbox("convertIsoToMkv", "Convert ISO to MKV")}
+      {checkbox("searchPreferredLanguage", "Suggest a Radarr or Sonarr search when the only audio is not preferred")}
+      <p className="help">These choices control automatic Suggestions. Force, Add stereo, and custom title plans stay available. A preferred-language search still waits for a confirm on the title and does not delete a file until you agree.</p>
       <button className="btn" type="button" onClick={onSave}>Save suggestion defaults</button>
     </div>
   );

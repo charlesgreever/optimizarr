@@ -80,15 +80,20 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
 
   async function inspectItem(item: LibraryItem): Promise<ReinspectionResult> {
     if (!item.path) return { ok: false, warning: "This title has no file path to inspect." };
-    let readable: boolean;
+    let access: "ok" | "missing" | "denied";
     try {
-      readable = opts.readable ? await opts.readable(item.path) : await isReadable(item.path);
+      access = opts.readable
+        ? (await opts.readable(item.path) ? "ok" : "denied")
+        : await pathAccess(item.path);
     } catch (error) {
       const warning = error instanceof Error ? error.message : "The file path could not be checked.";
-      opts.store.setFileError(item.path, item.id, warning);
+      if (!isIsoPath(item.path)) opts.store.setFileError(item.path, item.id, warning);
       return { ok: false, warning };
     }
-    if (!readable) {
+    if (access === "missing") {
+      return { ok: false, warning: "This title has no file yet." };
+    }
+    if (access === "denied") {
       const warning = "This path is not readable inside the container. Check the volume mount.";
       opts.store.setFileError(item.path, item.id, warning);
       return { ok: false, warning };
@@ -179,12 +184,14 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
   return { inspectPending, inspectOne, reinspectChangedItem, leftoverCount };
 }
 
-async function isReadable(path: string): Promise<boolean> {
+async function pathAccess(path: string): Promise<"ok" | "missing" | "denied"> {
   try {
     await access(path);
-    return true;
-  } catch {
-    return false;
+    return "ok";
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT") return "missing";
+    return "denied";
   }
 }
 

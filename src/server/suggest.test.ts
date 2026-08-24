@@ -150,6 +150,8 @@ describe("suggestion engine", () => {
         addStereo: false,
         transcodeToSizeCap: false,
         convertMp4ToMkv: false,
+        convertIsoToMkv: false,
+        searchPreferredLanguage: false,
       },
     };
     const automatic = buildSuggestion({
@@ -309,5 +311,87 @@ describe("suggestion engine", () => {
       av1Available: false,
     });
     expect(suggestion).toBeNull();
+  });
+
+  it("adds an opt-in remux for ISO disc images including an unlisted disc", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        removeNonPreferredSubtitles: false,
+        removeNonPreferredAudio: false,
+        addStereo: false,
+        transcodeToSizeCap: false,
+        convertIsoToMkv: true,
+      },
+    };
+    const listed = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/discs/Cars 3.ISO" },
+      report: report({
+        sourceMethod: "iso_ffmpeg",
+        listingState: "complete",
+        videoCodec: "h264",
+        sizePerHourGb: 1,
+        audio: [],
+        subtitles: [],
+        hdr: "none",
+      }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const unlisted = buildSuggestion({
+      item: { ...movie, path: "/mnt/nas/discs/Broken.iso" },
+      report: report({
+        sourceMethod: "iso_ffmpeg",
+        listingState: "iso_unlisted",
+        videoCodec: "unknown",
+        audio: [],
+        subtitles: [],
+        sizePerHourGb: 0,
+        width: 0,
+        height: 0,
+      }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(listed?.actions).toEqual(["remux"]);
+    expect(listed?.reasons.some((reason) => /disc image/i.test(reason))).toBe(true);
+    expect(unlisted?.actions).toEqual(["remux"]);
+  });
+
+  it("offers a preferred-language search instead of stripping the only soundtrack", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        transcodeToSizeCap: false,
+        addStereo: false,
+        searchPreferredLanguage: true,
+      },
+    };
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({
+        sizePerHourGb: 1,
+        videoCodec: "hevc",
+        hdr: "none",
+        audio: [{ index: 1, language: "deu", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false }],
+        subtitles: [],
+      }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion?.actions).toEqual(["search_language"]);
+    expect(suggestion?.keepAudio).toEqual([1]);
+    expect(suggestion?.reasons.some((reason) => /preferred language/i.test(reason))).toBe(true);
   });
 });

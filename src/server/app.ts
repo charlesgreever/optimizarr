@@ -17,6 +17,7 @@ import {
   trimUrl,
 } from "./arr.ts";
 import { buildSuggestion } from "./suggest.ts";
+import { deleteArrFileAndSearch, soleNonPreferredAudio } from "./arr-search.ts";
 import { displayTitle, matchesTitleSearch } from "./titles.ts";
 import { JobService } from "./jobs.ts";
 import { ffmpegOptimizer, type Optimizer } from "./optimize.ts";
@@ -462,7 +463,11 @@ export function createApp(opts: AppOptions) {
     return c.json({
       item: library.item(item.id, true),
       hardware: lastHardware,
-      settings: { writeMode: store.getSettings().writeMode, videoTarget: store.getSettings().videoTarget },
+      settings: {
+        writeMode: store.getSettings().writeMode,
+        videoTarget: store.getSettings().videoTarget,
+        preferredLanguage: store.getSettings().preferredLanguage,
+      },
     });
   });
 
@@ -502,6 +507,40 @@ export function createApp(opts: AppOptions) {
     const queued = jobs.enqueueCustom(item.id, result.plan, Boolean(body.runNow));
     if ("error" in queued) return c.json({ error: queued.error }, queued.status as 400 | 404 | 409);
     return c.json({ ok: true, id: queued.id, plan: result.plan });
+  });
+
+  app.post("/api/library/items/:id/search-preferred", async (c) => {
+    const blocked = gateOptimize();
+    if (blocked) return c.json({ error: blocked }, 403);
+    const body = await c.req.json<{ confirm?: boolean }>().catch(() => ({} as { confirm?: boolean }));
+    if (body.confirm !== true) {
+      return c.json({ error: "Confirm that Radarr or Sonarr should remove this file and search again." }, 400);
+    }
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    if (store.activeJobForItem(item.id) || store.pendingReviewForItem(item.id)) {
+      return c.json({ error: "Finish or cancel the current work on this title first." }, 409);
+    }
+    const report = store.getInspection(item.id);
+    if (!report || !soleNonPreferredAudio(report.audio, store.getSettings().preferredLanguage)) {
+      return c.json({ error: "This title does not have a single non-preferred audio track." }, 400);
+    }
+    const inst = store.getInstance(item.instanceId);
+    if (!inst || (inst.kind !== "radarr" && inst.kind !== "sonarr") || !inst.secret) {
+      return c.json({ error: "This title has no Radarr or Sonarr connection to search with." }, 400);
+    }
+    const result = await deleteArrFileAndSearch({
+      kind: inst.kind,
+      url: inst.url,
+      apiKey: decryptSecret(secret, inst.secret),
+      arrId: item.arrId,
+      episodeFileId: item.arrEpisodeFileId,
+    }, httpFetch);
+    if (!result.ok) return c.json({ error: result.error }, 502);
+    store.addHistory(item.id, "searched", 0);
+    store.saveSuggestion(item.id, null);
+    store.deleteLibraryItem(item.id);
+    return c.json({ ok: true });
   });
 
   app.post("/api/library/series/:instanceId/:seriesId/optimize", async (c) => {

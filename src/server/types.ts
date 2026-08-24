@@ -14,10 +14,10 @@ export type JobPhase =
   | "idle";
 export type ReviewStatus = "pending" | "keeping" | "discarding";
 export type SizeCategory = "movie1080p" | "movie4kSdr" | "movie4kHdr" | "tv1080p" | "tv4k";
-export type SuggestionAction = "transcode" | "remux" | "tracks" | "add_stereo";
+export type SuggestionAction = "transcode" | "remux" | "tracks" | "add_stereo" | "search_language";
 export type VideoTarget = "hevc" | "av1";
 export type HardwareBackend = "cuda" | "vaapi" | "none";
-export type ActivityOutcome = "kept" | "discarded" | "flagged" | "failed" | "cancelled";
+export type ActivityOutcome = "kept" | "discarded" | "flagged" | "failed" | "cancelled" | "searched";
 export type ExclusionKind = "path" | "profile" | "tag" | "title";
 
 export type SizeCaps = {
@@ -34,6 +34,8 @@ export type SuggestionDefaults = {
   addStereo: boolean;
   transcodeToSizeCap: boolean;
   convertMp4ToMkv: boolean;
+  convertIsoToMkv: boolean;
+  searchPreferredLanguage: boolean;
 };
 
 export const DEFAULT_SIZE_CAPS: SizeCaps = {
@@ -50,6 +52,8 @@ export const DEFAULT_SUGGESTION_DEFAULTS: SuggestionDefaults = {
   addStereo: true,
   transcodeToSizeCap: true,
   convertMp4ToMkv: false,
+  convertIsoToMkv: false,
+  searchPreferredLanguage: false,
 };
 
 export type Settings = {

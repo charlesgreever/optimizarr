@@ -40,21 +40,23 @@ export async function fetchJson(url: string, apiKey: string, httpFetch: typeof f
 
 export function parseRadarrMovies(payload: unknown): ArrMovie[] {
   if (!Array.isArray(payload)) throw shape("Radarr movie list");
-  return payload.map((raw) => {
+  return payload.flatMap((raw) => {
     const row = asRecord(raw);
-    const file = firstFile(row);
-    const quality = qualityName(file);
-    return {
+    const file = movieFileOf(row);
+    const path = str(file?.path, "");
+    if (!path) return [];
+    const quality = qualityName(file ?? {});
+    return [{
       id: num(row.id),
       title: str(row.title, "Untitled"),
-      path: str(file.path ?? row.path, ""),
-      size: num(file.size ?? row.sizeOnDisk),
+      path,
+      size: num(file?.size ?? row.sizeOnDisk),
       quality,
-      resolution: resolutionFrom(quality, file),
+      resolution: resolutionFrom(quality, file ?? {}),
       profile: str(asRecord(row.qualityProfile).name, ""),
       tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
       posterUrl: posterFrom(row.images),
-    };
+    }];
   });
 }
 
@@ -148,9 +150,9 @@ function shape(what: string): Error {
   return err;
 }
 
-function firstFile(row: Record<string, unknown>): Record<string, unknown> {
+function movieFileOf(row: Record<string, unknown>): Record<string, unknown> | null {
   if (row.movieFile && typeof row.movieFile === "object") return asRecord(row.movieFile);
-  return row;
+  return null;
 }
 
 function qualityName(file: Record<string, unknown>): string {

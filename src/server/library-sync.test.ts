@@ -87,6 +87,54 @@ describe("LibrarySync", () => {
     }
   });
 
+  it("drops a folder-only Radarr movie after a refresh that has no media file", async () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-prune-")), "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });
+    const itemId = `${instanceId}:movie:9`;
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 9,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Moana",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/Kids Movies/Moana (2026)",
+      sizeBytes: 0,
+      quality: "",
+      resolution: "",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    store.setFileError("/mnt/nas/Kids Movies/Moana (2026)", itemId, "This path is not readable inside the container. Check the volume mount.");
+    const sync = new LibrarySync({
+      store,
+      decrypt: () => "key",
+      inspectPending: async () => undefined,
+      intervalMs: 0,
+      fetch: (async (input) => {
+        if (String(input).endsWith("/rootfolder")) return new Response("[]");
+        return new Response(JSON.stringify([
+          { id: 9, title: "Moana", path: "/mnt/nas/Kids Movies/Moana (2026)", hasFile: false },
+        ]));
+      }) as typeof fetch,
+    });
+    try {
+      await sync.refresh();
+      expect(store.listItems("movie")).toEqual([]);
+      expect(store.listErrors()).toEqual([]);
+    } finally {
+      sync.stop();
+      store.close();
+    }
+  });
+
   it("imports one Radarr movie from a Download webhook and ignores Test", async () => {
     const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-sync-hook-")), "polisharr.db"));
     store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: "packed", enabled: true });

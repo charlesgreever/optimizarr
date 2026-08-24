@@ -156,4 +156,32 @@ describe("parseFfprobe", () => {
     expect(isoInspectionLooksStale(listed, path)).toBe(false);
     expect(isoInspectionLooksStale(listed, "/mnt/nas/Cars 3.mkv")).toBe(false);
   });
+
+  it("reads playlist languages from stream parens and bluray lang lines", () => {
+    const parens = parseFfmpegListing("/mnt/nas/Cars 3.iso", 40_000_000_000, [
+      "[bluray @ 0x1] playlist 00805.mpls (1:42:25)",
+      "  Stream #0:0: Video: h264, 1920x1080",
+      "  Stream #0:1(eng): Audio: dts, 48000 Hz, 7.1",
+      "  Stream #0:2(spa): Subtitle: hdmv_pgs_subtitle",
+    ].join("\n"));
+    expect(parens.audio[0]?.language).toBe("eng");
+    expect(parens.subtitles[0]?.language).toBe("spa");
+    const fromLangLines = parseFfmpegListing("/mnt/nas/Cars 3.iso", 40_000_000_000, [
+      "[bluray @ 0x1] playlist 00805.mpls (1:42:25)",
+      "[bluray @ 0x1] stream 1: Audio lang=eng",
+      "[bluray @ 0x1] stream 2: Subtitle language: spa",
+      "  Stream #0:0: Video: h264, 1920x1080",
+      "  Stream #0:1: Audio: dts, 48000 Hz, 7.1",
+      "  Stream #0:2: Subtitle: hdmv_pgs_subtitle",
+    ].join("\n"));
+    expect(fromLangLines.audio[0]?.language).toBe("eng");
+    expect(fromLangLines.audio[0]?.untagged).toBe(false);
+    expect(fromLangLines.subtitles[0]?.language).toBe("spa");
+    const unknown = parseFfmpegListing("/mnt/nas/Cars 3.iso", 40_000_000_000, [
+      "  Stream #0:0: Video: h264, 1920x1080",
+      "  Stream #0:1: Audio: dts, 48000 Hz, 7.1",
+    ].join("\n"));
+    expect(unknown.audio[0]?.language).toBe("und");
+    expect(unknown.audio[0]?.untagged).toBe(true);
+  });
 });

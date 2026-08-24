@@ -80,6 +80,8 @@ describe("store schema migration", () => {
       addStereo: false,
       transcodeToSizeCap: true,
       convertMp4ToMkv: false,
+      convertIsoToMkv: false,
+      searchPreferredLanguage: false,
     });
   });
 

@@ -73,8 +73,11 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 47. As a library owner, I want empty states when the library has not synced, when there are no suggestions, when the queue is idle, when Review is empty, and when Errors is empty, so that I know what to do next.
 48. As a library owner, I want a clear error when an Arr API key or URL is wrong, so that I can fix sync instead of staring at an empty library.
 49. As a library owner, I want a clear error when the network path from an Arr is not readable inside the container, so that I know it is a volume or mount problem.
+49a. As a library owner, I want a Radarr or Sonarr title that has no media file yet (a future release, or a download that has not finished) to stay off Errors, so that “not downloaded yet” is not mixed with a broken mount.
+49b. As a library owner, I want Polisharr to list a title only after the Arr reports a real media file, so that a movie folder with no file does not appear on Movies as unreadable.
 50. As a library owner, I want unread or unreadable rows to show the path error and disable optimize actions, so that a click does not claim success.
 51. As a library owner, I want an Errors section that lists every file that could not be loaded or probed, so that "16 files could not be loaded" is something I can act on.
+51a. As a library owner, I want Errors help to say that still-downloading titles are not listed there, so that I do not hunt a mount problem for a missing file.
 52. As a library owner, I want each Errors row to show the file name, full path, Arr title when known, and the reason it failed, and I want that title to open the same media page as Movies and Series when the library item is known, so that I can fix permissions, mounts, or a corrupt file without searching for the title.
 53. As a library owner, I want the failed count to be distinct files, not retry attempts, so that the number never exceeds the library.
 54. As a library owner, I want a file that fails ffprobe to be tried a bounded number of times and then marked failed, so that the inspector does not retry it forever.
