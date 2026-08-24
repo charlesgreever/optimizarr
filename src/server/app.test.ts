@@ -1645,4 +1645,89 @@ describe("public HTTP behavior", () => {
     expect(created.store.getInspection(itemId)?.audio[0]).toMatchObject({ language: "eng", untagged: false });
     expect(readFileSync(sourcePath, "utf8")).toBe("ORIGINAL");
   });
+
+  it("identifies an untagged text subtitle without rewriting the file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-sub-lid-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const sourcePath = join(dir, "film.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    const sample = `1
+00:01:30,000 --> 00:01:40,000
+The quick brown fox jumps over the lazy dog. Hello, how are you today? This is a longer sample of English dialogue from a movie scene.
+`;
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      extractSubtitleSample: async () => sample,
+      fetch: (async () => new Response("[]")) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    expect((await created.app.request("/api/library/items/x/detect-subtitle-language", { method: "POST", body: "{}" })).status).toBe(401);
+    const setupRes = await created.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    const itemId = `${instanceId}:movie:11`;
+    created.store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 11,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: sourcePath,
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    created.store.saveInspection(itemId, {
+      sourceSig: `${sourcePath}|8`,
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 7200,
+      isoPlaylist: null,
+      sizeBytes: 8,
+      sizePerHourGb: 1,
+      videoCodec: "h264",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [{ index: 2, language: "und", codec: "subrip", title: "", untagged: true, forced: false, sdh: false }],
+      hasChapters: false,
+      hasAttachments: false,
+    });
+    const detected = await created.app.request(`/api/library/items/${itemId}/detect-subtitle-language`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ trackIndex: 2 }),
+    });
+    const detectedBody = (await detected.json()) as { ok?: boolean; language?: string; probability?: number };
+    expect(detected.status).toBe(200);
+    expect(detectedBody).toMatchObject({ ok: true, language: "eng" });
+    expect(created.store.getInspection(itemId)?.subtitles[0]?.language).toBe("und");
+    const applied = await created.app.request(`/api/library/items/${itemId}/apply-subtitle-language`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ trackIndex: 2, language: "eng", probability: detectedBody.probability }),
+    });
+    expect(applied.status).toBe(200);
+    expect(created.store.getInspection(itemId)?.subtitles[0]).toMatchObject({ language: "eng", untagged: false });
+    expect(readFileSync(sourcePath, "utf8")).toBe("ORIGINAL");
+  });
 });

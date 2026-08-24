@@ -29,6 +29,30 @@ export function canIdentifyLanguage(track: { language?: string; untagged?: boole
   return track.untagged === true || track.language === "und";
 }
 
+const TEXT_SUBTITLE_CODECS = new Set([
+  "mov_text",
+  "eia_608",
+  "eia_608_closed_captions",
+  "webvtt",
+  "subrip",
+  "srt",
+  "ass",
+  "ssa",
+  "text",
+  "ttxt",
+]);
+
+export function canIdentifySubtitle(track: { language?: string; untagged?: boolean; codec?: string } | undefined, locked: boolean): boolean {
+  if (locked || !track) return false;
+  if (track.untagged !== true && track.language !== "und") return false;
+  return TEXT_SUBTITLE_CODECS.has((track.codec ?? "").toLowerCase().replace(/-/g, "_"));
+}
+
+export function isImageSubtitle(codec: string | undefined): boolean {
+  const name = (codec ?? "").toLowerCase();
+  return name.includes("pgs") || name.includes("dvd_subtitle") || name.includes("dvb_subtitle") || name.includes("xsub") || name.includes("vobsub");
+}
+
 export function formatClipClock(sec: number): string {
   const total = Math.max(0, Math.floor(sec));
   const minutes = Math.floor(total / 60);

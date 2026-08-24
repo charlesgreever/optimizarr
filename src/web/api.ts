@@ -64,6 +64,22 @@ export const api = {
       `/api/library/items/${id}/apply-language`,
       { method: "POST", body: JSON.stringify({ trackIndex, language, probability }) },
     ),
+  detectSubtitleLanguage: (id: string, trackIndex: number, startSec?: number) =>
+    req<{
+      ok?: boolean;
+      language?: string;
+      languageName?: string;
+      probability?: number;
+      startSec?: number;
+      suggestedNextSec?: number;
+      durationSec?: number;
+      reason?: string;
+    }>(`/api/library/items/${id}/detect-subtitle-language`, { method: "POST", body: JSON.stringify({ trackIndex, startSec }) }),
+  applySubtitleLanguage: (id: string, trackIndex: number, language: string, probability: number) =>
+    req<{ ok?: boolean; language?: string; languageName?: string; item?: LibraryRow }>(
+      `/api/library/items/${id}/apply-subtitle-language`,
+      { method: "POST", body: JSON.stringify({ trackIndex, language, probability }) },
+    ),
   syncProfiles: () => req<{ results: Array<{ created: string[]; updated: string[]; failed: string[] }> }>("/api/settings/profiles/sync", { method: "POST" }),
   inspect: () => req<InspectState>("/api/inspect/status"),
   errors: (offset = 0, limit = 50) => req<LibraryPage<FileError>>(`/api/errors?offset=${offset}&limit=${limit}`),
@@ -268,8 +284,8 @@ export type InspectionReport = {
   sizeBytes: number;
   durationSec: number;
   sizePerHourGb?: number;
-  audio: Array<{ index: number; language: string; channels: number; codec: string; title: string }>;
-  subtitles: Array<{ index: number; language: string; codec: string; title: string; sdh?: boolean; forced?: boolean }>;
+  audio: Array<{ index: number; language: string; channels: number; codec: string; title: string; untagged?: boolean }>;
+  subtitles: Array<{ index: number; language: string; codec: string; title: string; sdh?: boolean; forced?: boolean; untagged?: boolean }>;
 };
 export type ExecutablePlan = {
   reasons: string[];

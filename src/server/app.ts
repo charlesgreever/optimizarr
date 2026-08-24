@@ -5,6 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import argon2 from "argon2";
@@ -30,6 +31,7 @@ import {
   languageDisplayName,
   LID_MIN_PROBABILITY,
 } from "./language-id.ts";
+import { applySubtitleLanguageToReport, detectSubtitleLanguageSample } from "./subtitle-language-id.ts";
 import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
@@ -59,6 +61,7 @@ export type AppOptions = {
   syncIntervalMs?: number;
   extractLanguageClip?: (args: string[]) => Promise<void>;
   runLanguageLid?: (clipPath: string) => Promise<string>;
+  extractSubtitleSample?: (args: string[]) => Promise<string>;
 };
 
 export function createApp(opts: AppOptions) {
@@ -620,6 +623,69 @@ export function createApp(opts: AppOptions) {
     store.saveInspection(item.id, next);
     recomputeSuggestion(item.id);
     const language = next.audio.find((track) => track.index === trackIndex)?.language ?? body.language;
+    return c.json({
+      ok: true,
+      language,
+      languageName: languageDisplayName(language),
+      item: library.item(item.id, true),
+    });
+  });
+
+  const extractSubtitleSample = opts.extractSubtitleSample ?? (async (args: string[]) => {
+    await execFileAsync(opts.env.ffmpeg, args, { timeout: 120_000, env: toolLocaleEnv() });
+    const dest = args.at(-1);
+    if (!dest) throw new Error("ffmpeg could not extract subtitle text from this track.");
+    return readFile(dest, "utf8");
+  });
+
+  app.post("/api/library/items/:id/detect-subtitle-language", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ trackIndex?: number; startSec?: number }>().catch(() => ({} as { trackIndex?: number; startSec?: number }));
+    const trackIndex = body.trackIndex;
+    if (typeof trackIndex !== "number" || !Number.isSafeInteger(trackIndex)) {
+      return c.json({ error: "Pick a subtitle track to identify." }, 400);
+    }
+    const input = isIsoPath(item.path)
+      ? isoRemuxInputs(item.path, report)[0] ?? ["-i", item.path]
+      : ["-i", item.path];
+    const result = await detectSubtitleLanguageSample({
+      report,
+      trackIndex,
+      startSec: typeof body.startSec === "number" ? body.startSec : undefined,
+      input,
+      extract: extractSubtitleSample,
+    });
+    if (!result.ok) {
+      if (result.status === 200) return c.json(result);
+      const status = result.status === 400 ? 400 : 502;
+      return c.json({ error: result.reason, ...result }, status);
+    }
+    return c.json(result);
+  });
+
+  app.post("/api/library/items/:id/apply-subtitle-language", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    const report = store.getInspection(item.id);
+    if (!report) return c.json({ error: "This file has not been inspected yet, or the path is unreadable." }, 400);
+    const body = await c.req.json<{ trackIndex?: number; language?: string; probability?: number }>().catch(
+      () => ({} as { trackIndex?: number; language?: string; probability?: number }),
+    );
+    const trackIndex = body.trackIndex;
+    if (typeof trackIndex !== "number" || !Number.isSafeInteger(trackIndex) || typeof body.language !== "string") {
+      return c.json({ error: "Confirm the language for this subtitle track." }, 400);
+    }
+    if (typeof body.probability !== "number" || body.probability < LID_MIN_PROBABILITY) {
+      return c.json({ error: "That sample was not confident enough to save." }, 400);
+    }
+    const next = applySubtitleLanguageToReport(report, trackIndex, body.language);
+    if ("error" in next) return c.json({ error: next.error }, 400);
+    store.saveInspection(item.id, next);
+    recomputeSuggestion(item.id);
+    const language = next.subtitles.find((track) => track.index === trackIndex)?.language ?? body.language;
     return c.json({
       ok: true,
       language,

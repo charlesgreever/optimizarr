@@ -3,8 +3,10 @@ import {
   audioActionSelectClass,
   audioChannelSelectClass,
   canIdentifyLanguage,
+  canIdentifySubtitle,
   canQueueCustomPlan,
   formatClipClock,
+  isImageSubtitle,
   parseClipClock,
   titleOptimizeLocked,
 } from "./title-plan";
@@ -38,5 +40,9 @@ describe("title plan gating", () => {
     expect(formatClipClock(90)).toBe("1:30");
     expect(parseClipClock("10:00")).toBe(600);
     expect(parseClipClock("90")).toBe(90);
+    expect(canIdentifySubtitle({ language: "und", untagged: true, codec: "subrip" }, false)).toBe(true);
+    expect(canIdentifySubtitle({ language: "und", untagged: true, codec: "hdmv_pgs_subtitle" }, false)).toBe(false);
+    expect(canIdentifySubtitle({ language: "eng", untagged: false, codec: "subrip" }, false)).toBe(false);
+    expect(isImageSubtitle("hdmv_pgs_subtitle")).toBe(true);
   });
 });

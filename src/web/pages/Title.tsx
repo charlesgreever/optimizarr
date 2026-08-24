@@ -8,7 +8,9 @@ import {
   audioActionSelectClass,
   audioChannelSelectClass,
   canIdentifyLanguage,
+  canIdentifySubtitle,
   canQueueCustomPlan,
+  isImageSubtitle,
   formatClipClock,
   parseClipClock,
   titleOptimizeLocked,
@@ -36,6 +38,18 @@ export function TitlePage() {
   const [subs, setSubs] = useState<Record<number, "keep" | "remove">>({});
   const [languageIdAvailable, setLanguageIdAvailable] = useState(false);
   const [lid, setLid] = useState<{
+    trackIndex: number;
+    listening: boolean;
+    ok: boolean | null;
+    language?: string;
+    languageName?: string;
+    probability?: number;
+    startSec?: number;
+    suggestedNextSec?: number;
+    reason?: string;
+    timeInput: string;
+  } | null>(null);
+  const [subLid, setSubLid] = useState<{
     trackIndex: number;
     listening: boolean;
     ok: boolean | null;
@@ -148,6 +162,61 @@ export function TitlePage() {
     }
   }
 
+  async function listenForSubtitleLanguage(trackIndex: number, startSec?: number) {
+    setSubLid({
+      trackIndex,
+      listening: true,
+      ok: null,
+      timeInput: formatClipClock(startSec ?? 90),
+    });
+    try {
+      const result = await api.detectSubtitleLanguage(id, trackIndex, startSec);
+      if (result.ok && result.language) {
+        setSubLid({
+          trackIndex,
+          listening: false,
+          ok: true,
+          language: result.language,
+          languageName: result.languageName,
+          probability: result.probability,
+          startSec: result.startSec,
+          suggestedNextSec: result.suggestedNextSec,
+          timeInput: formatClipClock(result.suggestedNextSec ?? (result.startSec ?? 0) + 600),
+        });
+        return;
+      }
+      setSubLid({
+        trackIndex,
+        listening: false,
+        ok: false,
+        reason: result.reason,
+        startSec: result.startSec,
+        suggestedNextSec: result.suggestedNextSec,
+        timeInput: formatClipClock(result.suggestedNextSec ?? 600),
+      });
+    } catch (error) {
+      setSubLid({
+        trackIndex,
+        listening: false,
+        ok: false,
+        reason: error instanceof Error ? error.message : "Language identification failed.",
+        timeInput: formatClipClock(startSec ?? 90),
+      });
+    }
+  }
+
+  async function useDetectedSubtitleLanguage(trackIndex: number) {
+    if (!subLid?.language || subLid.probability == null) return;
+    try {
+      const result = await api.applySubtitleLanguage(id, trackIndex, subLid.language, subLid.probability);
+      if (result.item) setItem(result.item);
+      setSubLid(null);
+      setMsg(`Saved ${result.languageName ?? subLid.languageName} on this subtitle track.`);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not save that language.");
+    }
+  }
+
   if (!item) return <p className="help">{msg || "Loading title…"}</p>;
 
   const locked = titleOptimizeLocked(item);
@@ -169,7 +238,7 @@ export function TitlePage() {
         A sidecar is the new file waiting in Review until you Keep it. Direct write replaces the library file after an integrity check.
         Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
         Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
-        Identify language listens to a 45-second clip. It does not transcribe the movie or change the library file until you Keep a sidecar.
+        Identify language listens to a 45-second audio clip, or reads a few minutes of a text subtitle track. Image subtitles (PGS) cannot be read this way. It does not transcribe the movie or change the library file until you Keep a sidecar.
       </Help>
       {(locked || item.error) && (
         <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>
@@ -358,7 +427,8 @@ export function TitlePage() {
               const title = usefulTrackTitle(track.title, fileName);
               const kept = (subs[track.index] ?? "keep") === "keep";
               return (
-                <label key={track.index} className="flex cursor-pointer flex-wrap items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-sm">
+                <div key={track.index} className="flex flex-col gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
+                <label className="flex cursor-pointer flex-wrap items-center gap-3 text-sm">
                   <input
                     className="accent-accent"
                     type="checkbox"
@@ -372,7 +442,54 @@ export function TitlePage() {
                     {track.forced && <Pill>forced</Pill>}
                     {title && <span className="max-w-64 truncate text-xs text-muted">{title}</span>}
                   </span>
+                  {canIdentifySubtitle(track, locked) && (
+                    <button
+                      className="btn-secondary ml-auto"
+                      type="button"
+                      disabled={subLid?.listening === true}
+                      onClick={() => void listenForSubtitleLanguage(track.index, subLid?.trackIndex === track.index ? parseClipClock(subLid.timeInput) ?? subLid.suggestedNextSec : undefined)}
+                    >
+                      {subLid?.listening && subLid.trackIndex === track.index ? "Reading…" : "Identify language"}
+                    </button>
+                  )}
                 </label>
+                {isImageSubtitle(track.codec) && (track.untagged || track.language === "und") && (
+                  <p className="help m-0">This subtitle track is images, not text, so Polisharr cannot read a sample.</p>
+                )}
+                {subLid && subLid.trackIndex === track.index && !subLid.listening && (
+                  <div className="space-y-2 text-sm text-slate-300">
+                    {subLid.ok && subLid.languageName && (
+                      <p className="m-0">This sample looks like {subLid.languageName} ({Math.round((subLid.probability ?? 0) * 100)}%).</p>
+                    )}
+                    {subLid.ok === false && (
+                      <p className="m-0">{subLid.reason ?? "Not enough subtitle text in this sample."} Started at {formatClipClock(subLid.startSec ?? 0)}.</p>
+                    )}
+                    {subLid.ok === false && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          className="h-10 w-24 rounded-md bg-white/10 px-2"
+                          value={subLid.timeInput}
+                          onChange={(e) => setSubLid({ ...subLid, timeInput: e.target.value })}
+                          aria-label="Subtitle sample start time"
+                        />
+                        <button className="btn-secondary" type="button" onClick={() => void listenForSubtitleLanguage(track.index, parseClipClock(subLid.timeInput) ?? subLid.suggestedNextSec)}>
+                          Read again
+                        </button>
+                      </div>
+                    )}
+                    {subLid.ok && subLid.language && (
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn" type="button" onClick={() => void useDetectedSubtitleLanguage(track.index)}>
+                          {`Use ${subLid.languageName}`}
+                        </button>
+                        <button className="btn-secondary" type="button" onClick={() => setSubLid({ ...subLid, ok: false, reason: "Try another time in the file.", timeInput: formatClipClock(subLid.suggestedNextSec ?? (subLid.startSec ?? 0) + 600) })}>
+                          Try another time
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>
