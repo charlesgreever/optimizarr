@@ -160,6 +160,7 @@ export type SettingsPayload = {
     convertMp4ToMkv: boolean;
     convertIsoToMkv: boolean;
     searchPreferredLanguage: boolean;
+    queueNewImports: boolean;
   };
   videoTarget: "hevc" | "av1";
   concurrency: number;

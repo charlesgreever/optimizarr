@@ -26,6 +26,9 @@ export function parseStoredSettings(value: unknown): Settings {
   if (raw.writeMode === "sidecar" || raw.writeMode === "direct") valid.writeMode = raw.writeMode;
   if (integerInRange(raw.concurrency, 1, 16)) valid.concurrency = raw.concurrency;
   if (integerInRange(raw.inspectConcurrency, 1, 16)) valid.inspectConcurrency = raw.inspectConcurrency;
+  if (typeof raw.queueNewImportsSince === "number" && Number.isFinite(raw.queueNewImportsSince) && raw.queueNewImportsSince >= 0) {
+    valid.queueNewImportsSince = raw.queueNewImportsSince;
+  }
   const sizeCaps = validSizeCaps(raw.sizeCaps, DEFAULT_SETTINGS.sizeCaps, false);
   const suggestionDefaults = validSuggestionDefaults(raw.suggestionDefaults, DEFAULT_SETTINGS.suggestionDefaults, false);
   return {
@@ -78,6 +81,9 @@ export function updateSettings(current: Settings, value: unknown): SettingsResul
       inspectConcurrency: integerValue(raw.inspectConcurrency, current.inspectConcurrency),
       writeMode: raw.writeMode === "direct" || raw.writeMode === "sidecar" ? raw.writeMode : current.writeMode,
       profileAutoAssign: booleanValue(raw.profileAutoAssign, current.profileAutoAssign),
+      queueNewImportsSince: !current.suggestionDefaults.queueNewImports && suggestionDefaults.queueNewImports
+        ? Date.now()
+        : current.queueNewImportsSince,
     },
   };
 }

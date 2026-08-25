@@ -1109,6 +1109,7 @@ describe("public HTTP behavior", () => {
       convertMp4ToMkv: true,
       convertIsoToMkv: false,
       searchPreferredLanguage: false,
+      queueNewImports: false,
     });
     expect(suggestions.items).toHaveLength(0);
     expect(ctx.probeCalls()).toBe(probesBeforeSave);

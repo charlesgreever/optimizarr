@@ -20,4 +20,21 @@ describe("settings boundary", () => {
       concurrency: 1,
     });
   });
+
+  it("stamps queueNewImportsSince when the import auto-queue setting is turned on", () => {
+    const before = Date.now();
+    const enabled = updateSettings(DEFAULT_SETTINGS, {
+      suggestionDefaults: { ...DEFAULT_SETTINGS.suggestionDefaults, queueNewImports: true },
+    });
+    expect(enabled.ok).toBe(true);
+    if (!enabled.ok) return;
+    expect(enabled.settings.suggestionDefaults.queueNewImports).toBe(true);
+    expect(enabled.settings.queueNewImportsSince).toBeGreaterThanOrEqual(before);
+    const stillOn = updateSettings(enabled.settings, {
+      suggestionDefaults: { ...enabled.settings.suggestionDefaults, queueNewImports: true },
+    });
+    expect(stillOn.ok).toBe(true);
+    if (!stillOn.ok) return;
+    expect(stillOn.settings.queueNewImportsSince).toBe(enabled.settings.queueNewImportsSince);
+  });
 });

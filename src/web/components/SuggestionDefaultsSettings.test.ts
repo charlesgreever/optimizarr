@@ -14,6 +14,7 @@ describe("suggestion defaults settings", () => {
         convertMp4ToMkv: false,
         convertIsoToMkv: false,
         searchPreferredLanguage: false,
+        queueNewImports: false,
       },
       onChange: () => undefined,
       onSave: () => undefined,
@@ -22,6 +23,8 @@ describe("suggestion defaults settings", () => {
     expect(html).toContain("Default suggestion operations");
     expect(html).toContain("Convert MP4 to MKV");
     expect(html).toContain("Convert ISO to MKV");
+    expect(html).toContain("Queue new Arr imports automatically");
+    expect(html).toContain("Turning this on does not queue your existing library");
     expect(html).toContain("Save suggestion defaults");
   });
 });

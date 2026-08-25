@@ -45,7 +45,11 @@ export class JobService {
     if (this.timer) clearInterval(this.timer);
   }
 
-  enqueue(itemId: string, suggestion: Suggestion, runNow = false): { id: string } | { error: string; status: number } {
+  enqueue(
+    itemId: string,
+    suggestion: Suggestion,
+    runNowOrOpts: boolean | { runNow?: boolean; writeMode?: import("./types.ts").WriteMode } = false,
+  ): { id: string } | { error: string; status: number } {
     const item = this.opts.store.getItem(itemId);
     if (!item) return { error: "That title is not in the library.", status: 404 };
     if (this.opts.store.pendingReviewForItem(itemId)) {
@@ -60,8 +64,9 @@ export class JobService {
         status: 400,
       };
     }
+    const options = typeof runNowOrOpts === "boolean" ? { runNow: runNowOrOpts } : runNowOrOpts;
     const id = randomUUID();
-    const writeMode = this.opts.store.getSettings().writeMode;
+    const writeMode = options.writeMode ?? this.opts.store.getSettings().writeMode;
     const plan = planFromSuggestion(suggestion, writeMode);
     this.opts.store.insertJob({
       id,
@@ -72,7 +77,7 @@ export class JobService {
       progress: 0,
       error: null,
       warning: suggestion.warning,
-      runNow,
+      runNow: Boolean(options.runNow),
       createdAt: this.now(),
       writeMode,
       plan,

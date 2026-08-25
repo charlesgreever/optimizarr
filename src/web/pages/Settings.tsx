@@ -274,7 +274,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       <div className="glass space-y-4 p-5">
         <h2 className="font-semibold">Radarr and Sonarr webhooks</h2>
         <p className="help">
-          Polisharr can learn about a finished download as soon as Radarr or Sonarr imports it, instead of waiting for the next 15-minute sync. This does not start an encode.
+          Polisharr can learn about a finished download as soon as Radarr or Sonarr imports it, instead of waiting for the next 15-minute sync. The webhook itself does not start an encode. Turn on Queue new Arr imports automatically if you want a matching suggestion queued as a sidecar.
         </p>
         <p className="text-sm">
           URL: <code>{typeof window !== "undefined" ? `${window.location.origin}/api/hooks/arr` : "/api/hooks/arr"}</code>

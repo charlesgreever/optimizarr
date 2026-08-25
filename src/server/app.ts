@@ -39,6 +39,7 @@ import { validateCustomPlan } from "./custom-plan.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
 import { createInspectionRunner } from "./inspection-runner.ts";
 import { createLibraryReadModel } from "./library-read-model.ts";
+import { shouldQueueNewImport } from "./auto-queue.ts";
 import { updateSettings } from "./settings.ts";
 import { LibrarySync, pathsOverlap } from "./library-sync.ts";
 import { parseArrWebhook, presentedWebhookToken, webhookTokenMatches } from "./arr-webhook.ts";
@@ -77,7 +78,7 @@ export function createApp(opts: AppOptions) {
     readable: opts.readable,
     probe: opts.probe,
     listIso: opts.listIso,
-    recomputeSuggestion,
+    recomputeSuggestion: afterInspect,
   });
   const jobs = new JobService({
     store,
@@ -350,6 +351,16 @@ export function createApp(opts: AppOptions) {
     const result = await sync.refresh();
     return c.json({ ...result, inspect: store.getInspectState() });
   });
+
+  function afterInspect(itemId: string): Suggestion | null {
+    const suggestion = recomputeSuggestion(itemId);
+    const item = store.getItem(itemId);
+    if (!item || !suggestion || !shouldQueueNewImport({ settings: store.getSettings(), item, suggestion })) {
+      return suggestion;
+    }
+    jobs.enqueue(itemId, suggestion, { writeMode: "sidecar", runNow: false });
+    return suggestion;
+  }
 
   function recomputeSuggestion(itemId: string): Suggestion | null {
     const item = store.getItem(itemId);

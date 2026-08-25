@@ -36,6 +36,7 @@ export type SuggestionDefaults = {
   convertMp4ToMkv: boolean;
   convertIsoToMkv: boolean;
   searchPreferredLanguage: boolean;
+  queueNewImports: boolean;
 };
 
 export const DEFAULT_SIZE_CAPS: SizeCaps = {
@@ -54,6 +55,7 @@ export const DEFAULT_SUGGESTION_DEFAULTS: SuggestionDefaults = {
   convertMp4ToMkv: false,
   convertIsoToMkv: false,
   searchPreferredLanguage: false,
+  queueNewImports: false,
 };
 
 export type Settings = {
@@ -72,6 +74,7 @@ export type Settings = {
   inspectConcurrency: number;
   writeMode: WriteMode;
   profileAutoAssign: boolean;
+  queueNewImportsSince: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -90,6 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inspectConcurrency: 1,
   writeMode: "sidecar",
   profileAutoAssign: true,
+  queueNewImportsSince: 0,
 };
 
 export type ArrInstance = {
@@ -197,6 +201,8 @@ export type LibraryItem = {
   posterRemoteUrl: string | null;
   hasPoster: boolean;
   sizeExempt: boolean;
+  firstSeenAt?: number;
+  fileChangedAt?: number;
 };
 
 export type FileError = {

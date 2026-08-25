@@ -102,6 +102,8 @@ export class Store {
         poster_remote TEXT,
         poster_bytes BLOB,
         size_exempt INTEGER NOT NULL DEFAULT 0,
+        first_seen_at INTEGER NOT NULL DEFAULT 0,
+        file_changed_at INTEGER NOT NULL DEFAULT 0,
         UNIQUE(instance_id, type, arr_id)
       );
       CREATE TABLE IF NOT EXISTS inspections (
@@ -187,6 +189,8 @@ export class Store {
     this.ensureColumn("jobs", "log", "TEXT");
     this.ensureColumn("library_items", "arr_series_id", "INTEGER");
     this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
+    this.ensureColumn("library_items", "first_seen_at", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("library_items", "file_changed_at", "INTEGER NOT NULL DEFAULT 0");
     this.db.prepare("DELETE FROM settings WHERE key = 'github_token'").run();
   }
 
@@ -320,22 +324,25 @@ export class Store {
 
   upsertItem(item: Omit<LibraryItem, "hasPoster" | "instanceName"> & { posterBytes?: Buffer | null }): string {
     const previous = this.getItem(item.id);
+    const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO library_items (id, instance_id, arr_id, arr_series_id, arr_episode_file_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt)
-         VALUES (@id, @instanceId, @arrId, @arrSeriesId, @arrEpisodeFileId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt)
+        `INSERT INTO library_items (id, instance_id, arr_id, arr_series_id, arr_episode_file_id, type, title, show_title, season, episode, episode_title, path, size_bytes, quality, resolution, profile, tags, poster_remote, poster_bytes, size_exempt, first_seen_at, file_changed_at)
+         VALUES (@id, @instanceId, @arrId, @arrSeriesId, @arrEpisodeFileId, @type, @title, @showTitle, @season, @episode, @episodeTitle, @path, @sizeBytes, @quality, @resolution, @profile, @tags, @posterRemoteUrl, @posterBytes, @sizeExempt, @now, @now)
          ON CONFLICT(instance_id, type, arr_id) DO UPDATE SET
            title=excluded.title, show_title=excluded.show_title, season=excluded.season, episode=excluded.episode,
            episode_title=excluded.episode_title, path=excluded.path, size_bytes=excluded.size_bytes, quality=excluded.quality,
            resolution=excluded.resolution, profile=excluded.profile, tags=excluded.tags, poster_remote=excluded.poster_remote,
            poster_bytes=COALESCE(excluded.poster_bytes, poster_bytes),
-           arr_series_id=excluded.arr_series_id, arr_episode_file_id=excluded.arr_episode_file_id`,
+           arr_series_id=excluded.arr_series_id, arr_episode_file_id=excluded.arr_episode_file_id,
+           file_changed_at=CASE WHEN library_items.path != excluded.path OR library_items.size_bytes != excluded.size_bytes THEN excluded.file_changed_at ELSE library_items.file_changed_at END`,
       )
       .run({
         ...item,
         tags: JSON.stringify(item.tags),
         sizeExempt: item.sizeExempt ? 1 : 0,
         posterBytes: item.posterBytes ?? null,
+        now,
       });
     if (previous && previous.path !== item.path) {
       this.clearFileError(previous.path);
@@ -1011,6 +1018,8 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     posterRemoteUrl: row.poster_remote == null ? null : String(row.poster_remote),
     hasPoster: Boolean(row.poster_bytes || row.poster_remote),
     sizeExempt: Number(row.size_exempt) === 1,
+    firstSeenAt: Number(row.first_seen_at ?? 0),
+    fileChangedAt: Number(row.file_changed_at ?? 0),
   };
 }
 

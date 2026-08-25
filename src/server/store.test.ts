@@ -82,6 +82,7 @@ describe("store schema migration", () => {
       convertMp4ToMkv: false,
       convertIsoToMkv: false,
       searchPreferredLanguage: false,
+      queueNewImports: false,
     });
   });
 
@@ -161,6 +162,52 @@ describe("store schema migration", () => {
     expect(store.getJob("job-running")).toMatchObject({
       status: "queued", phase: "queued", progress: 0, error: "Recovered after Polisharr restarted.",
     });
+  });
+
+  it("records first seen and file-changed times so auto-queue can ignore old library leftovers", async () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-seen-")), "polisharr.db"));
+    stores.push(store);
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: null,
+      enabled: true,
+    });
+    const itemId = `${instanceId}:movie:1`;
+    const base = {
+      id: itemId,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie" as const,
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/Film.mkv",
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [] as string[],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    };
+    store.upsertItem(base);
+    const created = store.getItem(itemId);
+    expect(created?.firstSeenAt).toBeGreaterThan(0);
+    expect(created?.fileChangedAt).toBe(created?.firstSeenAt);
+    store.upsertItem({ ...base, title: "Film 2" });
+    expect(store.getItem(itemId)?.firstSeenAt).toBe(created?.firstSeenAt);
+    expect(store.getItem(itemId)?.fileChangedAt).toBe(created?.fileChangedAt);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    store.upsertItem({ ...base, path: "/mnt/nas/Film-upgrade.mkv", sizeBytes: 9 });
+    const upgraded = store.getItem(itemId);
+    expect(upgraded?.firstSeenAt).toBe(created?.firstSeenAt);
+    expect(upgraded?.fileChangedAt).toBeGreaterThan(created?.fileChangedAt ?? 0);
   });
 
   it("does not mark a title unreadable from a file error on an old path", () => {

@@ -152,6 +152,7 @@ describe("suggestion engine", () => {
         convertMp4ToMkv: false,
         convertIsoToMkv: false,
         searchPreferredLanguage: false,
+        queueNewImports: false,
       },
     };
     const automatic = buildSuggestion({
