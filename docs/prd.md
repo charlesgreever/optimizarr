@@ -49,6 +49,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 25. As a library owner, I want to browse movies in an Arr-like library view, so that the app feels familiar.
 25a. As a library owner, I want the Movies page to show how many titles there are, how many are healthy, and how many still have suggestions, so that I can scan the Radarr library the same way I scan a series header.
 26. As a library owner, I want to browse series and episodes in an Arr-like view, so that TV is not a second-class list of files.
+26b. As a library owner, I want the episode (and movie) pages I already loaded to stay after I queue or otherwise act on a row, so that Load more is not undone by a single Queue click.
 27. As a library owner, I want library pages to be a sortable column-and-row table with the poster on the row, so that I can scan and sort a large library faster than with cards.
 28. As a library owner, I want each row to show current codec, bit depth, resolution, HDR type, quality, size, size-per-hour, audio, and subtitles, so that I can see why it was flagged.
 29. As a library owner, I want each row to show the optimization plan for that title in plain language, so that I do not have to open Suggestions to learn what Polisharr would do.

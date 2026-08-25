@@ -5,7 +5,7 @@ import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
 import { Pill } from "../components/ui";
-import { mergePage } from "../library-pages";
+import { loadRetainedPages, mergePage } from "../library-pages";
 
 export function MoviesPage() {
   const [items, setItems] = useState<LibraryRow[]>([]);
@@ -20,6 +20,9 @@ export function MoviesPage() {
   const activeSortRef = useRef(sort);
   const currentSortRef = useRef(sort);
   const pendingSortResetRef = useRef(false);
+  const pendingRetainRef = useRef(false);
+  const itemsRef = useRef<LibraryRow[]>([]);
+  itemsRef.current = items;
 
   const load = async (reset = false, requestedSort = currentSortRef.current) => {
     if (loadingRef.current) {
@@ -34,7 +37,11 @@ export function MoviesPage() {
     setError("");
     try {
       const page = await api.movies(offset, 50, requestedSort);
-      setItems((current) => reset ? page.items : mergePage(current, page.items));
+      setItems((current) => {
+        const next = reset ? page.items : mergePage(current, page.items);
+        itemsRef.current = next;
+        return next;
+      });
       setNextOffset(page.nextOffset);
       setTotal(page.total);
       setHealthyCount(page.healthyCount ?? 0);
@@ -46,7 +53,58 @@ export function MoviesPage() {
       setLoading(false);
       if (pendingSortResetRef.current) {
         pendingSortResetRef.current = false;
+        pendingRetainRef.current = false;
         void load(true, currentSortRef.current);
+      } else if (pendingRetainRef.current) {
+        pendingRetainRef.current = false;
+        void refreshLoaded();
+      }
+    }
+  };
+
+  const refreshLoaded = async () => {
+    if (loadingRef.current) {
+      pendingRetainRef.current = true;
+      return;
+    }
+    const loadedCount = Math.max(itemsRef.current.length, 1);
+    const requestedSort = currentSortRef.current;
+    loadingRef.current = true;
+    activeSortRef.current = requestedSort;
+    setLoading(true);
+    setError("");
+    try {
+      let total = 0;
+      let healthyCount = 0;
+      let suggestionCount = 0;
+      const page = await loadRetainedPages(async (offset) => {
+        const result = await api.movies(offset, 50, requestedSort);
+        if (offset === 0) {
+          total = result.total;
+          healthyCount = result.healthyCount ?? 0;
+          suggestionCount = result.suggestionCount ?? 0;
+        }
+        return result;
+      }, loadedCount);
+      if (activeSortRef.current !== requestedSort) return;
+      itemsRef.current = page.items;
+      setItems(page.items);
+      setNextOffset(page.nextOffset);
+      setTotal(total);
+      setHealthyCount(healthyCount);
+      setSuggestionCount(suggestionCount);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Movies could not be loaded.");
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+      if (pendingSortResetRef.current) {
+        pendingSortResetRef.current = false;
+        pendingRetainRef.current = false;
+        void load(true, currentSortRef.current);
+      } else if (pendingRetainRef.current) {
+        pendingRetainRef.current = false;
+        void refreshLoaded();
       }
     }
   };
@@ -106,7 +164,7 @@ export function MoviesPage() {
                     </Link>
                     <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
                   </td>
-                  <LibraryMediaCells item={item} onDone={() => void load(true)} />
+                  <LibraryMediaCells item={item} onDone={() => void refreshLoaded()} />
                 </tr>
               ))}
             </tbody>

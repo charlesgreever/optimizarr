@@ -5,7 +5,7 @@ import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
 import { Pill } from "../components/ui";
-import { mergePage, needsFocusedPage } from "../library-pages";
+import { loadRetainedPages, mergePage, needsFocusedPage } from "../library-pages";
 
 export function SeriesPage() {
   const [summaries, setSummaries] = useState<SeriesSummary[]>([]);
@@ -123,6 +123,9 @@ function SeriesGroup({
   const loadingRef = useRef(false);
   const loadedRefreshRef = useRef(refreshVersion);
   const pendingRefreshResetRef = useRef(false);
+  const pendingRetainRef = useRef(false);
+  const episodesRef = useRef<LibraryRow[]>([]);
+  episodesRef.current = episodes;
 
   async function loadEpisodes(reset = false) {
     if (loadingRef.current) {
@@ -137,7 +140,11 @@ function SeriesGroup({
     try {
       const page = await api.seriesEpisodes(summary.instanceId, summary.arrSeriesId, offset);
       if (requestedRefresh === loadedRefreshRef.current) {
-        setEpisodes((current) => reset ? page.items : mergePage(current, page.items));
+        setEpisodes((current) => {
+          const next = reset ? page.items : mergePage(current, page.items);
+          episodesRef.current = next;
+          return next;
+        });
         setNextOffset(page.nextOffset);
       }
     } catch (cause) {
@@ -148,7 +155,47 @@ function SeriesGroup({
       loadingRef.current = false;
       if (pendingRefreshResetRef.current) {
         pendingRefreshResetRef.current = false;
+        pendingRetainRef.current = false;
         void loadEpisodes(true);
+      } else if (pendingRetainRef.current) {
+        pendingRetainRef.current = false;
+        void refreshLoaded();
+      }
+    }
+  }
+
+  async function refreshLoaded() {
+    if (loadingRef.current) {
+      pendingRetainRef.current = true;
+      return;
+    }
+    const loadedCount = Math.max(episodesRef.current.length, 1);
+    loadingRef.current = true;
+    const requestedRefresh = loadedRefreshRef.current;
+    setError("");
+    try {
+      const page = await loadRetainedPages(
+        (offset) => api.seriesEpisodes(summary.instanceId, summary.arrSeriesId, offset),
+        loadedCount,
+      );
+      if (requestedRefresh === loadedRefreshRef.current) {
+        episodesRef.current = page.items;
+        setEpisodes(page.items);
+        setNextOffset(page.nextOffset);
+      }
+    } catch (cause) {
+      if (requestedRefresh === loadedRefreshRef.current) {
+        setError(cause instanceof Error ? cause.message : "Episodes could not be loaded.");
+      }
+    } finally {
+      loadingRef.current = false;
+      if (pendingRefreshResetRef.current) {
+        pendingRefreshResetRef.current = false;
+        pendingRetainRef.current = false;
+        void loadEpisodes(true);
+      } else if (pendingRetainRef.current) {
+        pendingRetainRef.current = false;
+        void refreshLoaded();
       }
     }
   }
@@ -206,7 +253,7 @@ function SeriesGroup({
             void api.optimizeShow(summary.instanceId, summary.arrSeriesId).then((result) => {
               const counts = result as { queued: number; skipped: number };
               onMsg(`Queued ${counts.queued}. Skipped ${counts.skipped}.`);
-              if (open) void loadEpisodes(true);
+              if (open) void refreshLoaded();
             }).catch((cause: Error) => onMsg(cause.message));
           }}
         >
@@ -235,7 +282,7 @@ function SeriesGroup({
                       {item.displayTitle}
                     </Link>
                   </td>
-                  <LibraryMediaCells item={item} onDone={() => void loadEpisodes(true)} />
+                  <LibraryMediaCells item={item} onDone={() => void refreshLoaded()} />
                 </tr>
               ))}
             </tbody>

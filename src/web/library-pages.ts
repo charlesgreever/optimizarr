@@ -37,3 +37,19 @@ export function refreshFirstPageByKey<T>(
 export function retainedNextOffset(loaded: number, total: number): number | null {
   return loaded < total ? loaded : null;
 }
+
+export async function loadRetainedPages<T extends { id: string }>(
+  loadPage: (offset: number) => Promise<{ items: T[]; nextOffset: number | null }>,
+  loadedCount: number,
+): Promise<{ items: T[]; nextOffset: number | null }> {
+  let items: T[] = [];
+  let nextOffset: number | null = 0;
+  const want = Math.max(loadedCount, 1);
+  while (nextOffset != null && items.length < want) {
+    const page = await loadPage(nextOffset);
+    items = mergePage(items, page.items);
+    nextOffset = page.nextOffset;
+    if (page.items.length === 0) break;
+  }
+  return { items, nextOffset };
+}
