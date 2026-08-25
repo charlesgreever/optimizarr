@@ -261,18 +261,28 @@ export async function detectLanguageClip(opts: LanguageDetectOptions): Promise<L
   }
   const startSec = opts.startSec == null ? defaultLanguageClipStart(opts.report.durationSec) : Math.max(0, Math.floor(opts.startSec));
   const dest = join(tmpdir(), `polisharr-lid-${randomUUID()}.wav`);
+  const failed = (reason: string, status: number): LanguageDetectFail => ({
+    ok: false,
+    reason,
+    startSec,
+    suggestedNextSec: suggestedNextStart(startSec, opts.report.durationSec),
+    durationSec: LID_CLIP_SEC,
+    status,
+  });
   try {
-    await opts.extract(languageClipArgs(dest, opts.trackIndex, startSec, opts.input));
-    const parsed = parseLidJson(await opts.runLid(dest));
+    try {
+      await opts.extract(languageClipArgs(dest, opts.trackIndex, startSec, opts.input));
+    } catch {
+      return failed("ffmpeg could not extract a clip from this soundtrack.", 502);
+    }
+    let parsed: LidResult | null;
+    try {
+      parsed = parseLidJson(await opts.runLid(dest));
+    } catch {
+      return failed("Language identification could not run on this clip.", 502);
+    }
     if (lidDecision(parsed) !== "ok" || !parsed) {
-      return {
-        ok: false,
-        reason: "No speech in this sample.",
-        startSec,
-        suggestedNextSec: suggestedNextStart(startSec, opts.report.durationSec),
-        durationSec: LID_CLIP_SEC,
-        status: 200,
-      };
+      return failed("No speech in this sample.", 200);
     }
     return {
       ok: true,
@@ -282,8 +292,6 @@ export async function detectLanguageClip(opts: LanguageDetectOptions): Promise<L
       startSec,
       durationSec: LID_CLIP_SEC,
     };
-  } catch {
-    return { ok: false, reason: "ffmpeg could not extract a clip from this soundtrack.", status: 502 };
   } finally {
     await unlink(dest).catch(() => undefined); // extract may have failed before the clip existed
   }

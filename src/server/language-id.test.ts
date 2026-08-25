@@ -130,4 +130,62 @@ describe("language identification helpers", () => {
     });
     expect(missing).toMatchObject({ ok: false, status: 501 });
   });
+
+  it("keeps startSec and names the failing step when extract or identification throws", async () => {
+    const report: InspectionReport = {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 7200,
+      isoPlaylist: null,
+      sizeBytes: 1,
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [{ index: 1, language: "und", channels: 6, codec: "dts", title: "", untagged: true, commentary: false }],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    const extractFail = await detectLanguageClip({
+      report,
+      trackIndex: 1,
+      input: ["-i", "/movie.mkv"],
+      whisperAvailable: true,
+      extract: async () => {
+        throw new Error("ffmpeg boom");
+      },
+      runLid: async () => {
+        throw new Error("should not run");
+      },
+    });
+    expect(extractFail).toMatchObject({
+      ok: false,
+      reason: "ffmpeg could not extract a clip from this soundtrack.",
+      startSec: 90,
+      suggestedNextSec: 690,
+      status: 502,
+    });
+    const lidFail = await detectLanguageClip({
+      report,
+      trackIndex: 1,
+      startSec: 90,
+      input: ["-i", "/movie.mkv"],
+      whisperAvailable: true,
+      extract: async () => undefined,
+      runLid: async () => {
+        throw new Error("name 'WhisperModel' is not defined");
+      },
+    });
+    expect(lidFail).toMatchObject({
+      ok: false,
+      reason: "Language identification could not run on this clip.",
+      startSec: 90,
+      suggestedNextSec: 690,
+      status: 502,
+    });
+  });
 });

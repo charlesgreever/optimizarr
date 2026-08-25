@@ -145,6 +145,7 @@ export function TitlePage() {
         listening: false,
         ok: false,
         reason: error instanceof Error ? error.message : "Language identification failed.",
+        startSec: startSec ?? 90,
         timeInput: formatClipClock(startSec ?? 90),
       });
     }

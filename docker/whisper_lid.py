@@ -21,7 +21,6 @@ def main() -> int:
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
-    from faster_whisper import WhisperModel
     from faster_whisper.audio import decode_audio
 
     cache = Path(os.environ.get("WHISPER_LID_CACHE") or os.path.join(os.environ.get("CONFIG_DIR", "/config"), "whisper"))
@@ -34,6 +33,8 @@ def main() -> int:
 
 
 def detect(audio: object, model_name: str, cache: Path) -> tuple[str, float]:
+    from faster_whisper import WhisperModel
+
     nvidia = Path("/dev/nvidia0").exists() or Path("/dev/nvidiactl").exists()
     attempts: list[tuple[str, str]] = []
     if nvidia:
