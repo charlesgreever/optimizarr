@@ -20,16 +20,24 @@ def main() -> int:
 
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    cache = configure_cache()
 
     from faster_whisper.audio import decode_audio
 
-    cache = Path(os.environ.get("WHISPER_LID_CACHE") or os.path.join(os.environ.get("CONFIG_DIR", "/config"), "whisper"))
-    cache.mkdir(parents=True, exist_ok=True)
     model_name = os.environ.get("WHISPER_LID_MODEL", "tiny")
     audio = decode_audio(str(clip), sampling_rate=16000)
     language, probability = detect(audio, model_name, cache)
     sys.stdout.write(json.dumps({"language": language, "probability": probability}) + "\n")
     return 0
+
+
+def configure_cache() -> Path:
+    cache = Path(os.environ.get("WHISPER_LID_CACHE") or os.path.join(os.environ.get("CONFIG_DIR", "/config"), "whisper"))
+    cache.mkdir(parents=True, exist_ok=True)
+    # The app drops root but keeps HOME=/root. Hugging Face must not read /root/.cache.
+    os.environ.setdefault("HF_HOME", str(cache))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(cache))
+    return cache
 
 
 def detect(audio: object, model_name: str, cache: Path) -> tuple[str, float]:

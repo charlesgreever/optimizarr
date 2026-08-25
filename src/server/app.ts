@@ -29,6 +29,7 @@ import {
   applyLanguageToReport,
   detectLanguageClip,
   languageDisplayName,
+  languageLidProcessEnv,
   LID_MIN_PROBABILITY,
 } from "./language-id.ts";
 import { applySubtitleLanguageToReport, detectSubtitleLanguageSample } from "./subtitle-language-id.ts";
@@ -567,7 +568,7 @@ export function createApp(opts: AppOptions) {
     const { stdout } = await execFileAsync(opts.env.whisperLid, [clipPath], {
       timeout: 120_000,
       maxBuffer: 64 * 1024,
-      env: toolLocaleEnv(),
+      env: languageLidProcessEnv(toolLocaleEnv(), opts.env.configDir),
     });
     return stdout;
   });

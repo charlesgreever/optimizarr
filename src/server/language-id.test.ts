@@ -5,6 +5,7 @@ import {
   detectLanguageClip,
   languageClipArgs,
   languageFromWhisper,
+  languageLidProcessEnv,
   lidDecision,
   LID_CLIP_SEC,
   parseLidJson,
@@ -21,6 +22,15 @@ describe("language identification helpers", () => {
     expect(languageFromWhisper("und")).toBeNull();
     expect(languageFromWhisper("")).toBeNull();
     expect(languageFromWhisper("xx")).toBeNull();
+  });
+
+  it("points Hugging Face at a writable cache when HOME is still /root", () => {
+    const env = languageLidProcessEnv({ HOME: "/root", PATH: "/usr/bin" }, "/config");
+    expect(env.HF_HOME).toBe("/config/whisper");
+    expect(env.HUGGINGFACE_HUB_CACHE).toBe("/config/whisper");
+    expect(env.WHISPER_LID_CACHE).toBe("/config/whisper");
+    expect(env.HOME).toBe("/root");
+    expect(languageLidProcessEnv({ HOME: "/root", HF_HOME: "/custom" }, "/config").HF_HOME).toBe("/custom");
   });
 
   it("builds a 45-second mono clip command without a shell string", () => {

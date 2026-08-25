@@ -9,6 +9,19 @@ export const LID_MIN_PROBABILITY = 0.75;
 export const LID_DEFAULT_START_SEC = 90;
 export const LID_RETRY_GAP_SEC = 600;
 
+export function languageLidProcessEnv(processEnv: NodeJS.ProcessEnv, configDir: string): NodeJS.ProcessEnv {
+  const cache = join(configDir, "whisper");
+  return {
+    ...processEnv,
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    CONFIG_DIR: processEnv.CONFIG_DIR ?? configDir,
+    WHISPER_LID_CACHE: processEnv.WHISPER_LID_CACHE ?? cache,
+    HF_HOME: processEnv.HF_HOME ?? cache,
+    HUGGINGFACE_HUB_CACHE: processEnv.HUGGINGFACE_HUB_CACHE ?? cache,
+  };
+}
+
 const WHISPER_TO_MATROSKA: Record<string, string> = {
   en: "eng",
   eng: "eng",
