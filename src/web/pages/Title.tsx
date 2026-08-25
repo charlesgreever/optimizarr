@@ -11,6 +11,7 @@ import {
   canIdentifySubtitle,
   canQueueCustomPlan,
   isImageSubtitle,
+  isUntaggedTrack,
   formatClipClock,
   parseClipClock,
   titleOptimizeLocked,
@@ -454,7 +455,7 @@ export function TitlePage() {
                     </button>
                   )}
                 </label>
-                {isImageSubtitle(track.codec) && (track.untagged || track.language === "und") && (
+                {isImageSubtitle(track.codec) && isUntaggedTrack(track) && (
                   <p className="help m-0">This subtitle track is images, not text, so Polisharr cannot read a sample.</p>
                 )}
                 {subLid && subLid.trackIndex === track.index && !subLid.listening && (

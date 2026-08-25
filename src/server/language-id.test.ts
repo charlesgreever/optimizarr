@@ -82,6 +82,10 @@ describe("language identification helpers", () => {
     };
     expect(untaggedAudioTrack(report, 1)?.index).toBe(1);
     expect(untaggedAudioTrack(report, 2)).toBeNull();
+    expect(untaggedAudioTrack({
+      ...report,
+      audio: [{ index: 1, language: "any", channels: 2, codec: "ac3", title: "Stereo", untagged: false, commentary: false }],
+    }, 1)?.index).toBe(1);
     const next = applyLanguageToReport(report, 1, "en");
     expect("error" in next).toBe(false);
     if ("error" in next) return;

@@ -6,6 +6,8 @@ import {
   isoInspectionLooksStale,
   isoListingLooksUsable,
   longestBlurayPlaylist,
+  normalizeInspection,
+  normalizeLang,
   parseFfprobe,
   parseFfmpegListing,
   parseListedDuration,
@@ -30,6 +32,24 @@ describe("parseFfprobe", () => {
     expect(report.bitDepth).toBe(10);
     expect(report.hdr).toBe("dolby_vision");
     expect(report.sizePerHourGb).toBeGreaterThan(8);
+  });
+
+  it("treats muxer language any as untagged", () => {
+    expect(normalizeLang("any")).toBe("und");
+    expect(normalizeLang("ANY")).toBe("und");
+    const report = parseFfprobe("/mnt/nas/Kids TV/episode.mkv", 400_000_000, {
+      format: { duration: "1400" },
+      streams: [
+        { codec_type: "video", codec_name: "h264", width: 1280, height: 720, index: 0 },
+        { codec_type: "audio", codec_name: "ac3", channels: 2, tags: { language: "any", title: "Stereo" }, index: 1 },
+      ],
+    });
+    expect(report.audio[0]).toMatchObject({ language: "und", untagged: true, channels: 2, codec: "ac3" });
+    const stored = normalizeInspection({
+      audio: [{ index: 1, language: "any", channels: 2, codec: "ac3", title: "Stereo", untagged: false, commentary: false }],
+      subtitles: [],
+    });
+    expect(stored.audio[0]).toMatchObject({ language: "und", untagged: true });
   });
 
   it("uses coded size when display size is missing", () => {

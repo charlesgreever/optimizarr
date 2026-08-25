@@ -23,10 +23,17 @@ export function canQueueCustomPlan(
   return Boolean(plan) && errors.length === 0 && !locked;
 }
 
+export function isUntaggedTrack(track: { language?: string; untagged?: boolean } | undefined): boolean {
+  if (!track) return false;
+  if (track.untagged === true) return true;
+  const language = (track.language ?? "und").trim().toLowerCase();
+  return language === "" || language === "und" || language === "unknown" || language === "any";
+}
+
 export function canIdentifyLanguage(track: { language?: string; untagged?: boolean; channels?: number } | undefined, available: boolean, locked: boolean): boolean {
   if (!available || locked || !track) return false;
   if ((track.channels ?? 0) <= 0) return false;
-  return track.untagged === true || track.language === "und";
+  return isUntaggedTrack(track);
 }
 
 const TEXT_SUBTITLE_CODECS = new Set([
@@ -44,7 +51,7 @@ const TEXT_SUBTITLE_CODECS = new Set([
 
 export function canIdentifySubtitle(track: { language?: string; untagged?: boolean; codec?: string } | undefined, locked: boolean): boolean {
   if (locked || !track) return false;
-  if (track.untagged !== true && track.language !== "und") return false;
+  if (!isUntaggedTrack(track)) return false;
   return TEXT_SUBTITLE_CODECS.has((track.codec ?? "").toLowerCase().replace(/-/g, "_"));
 }
 

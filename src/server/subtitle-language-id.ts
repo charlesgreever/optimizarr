@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { francAll } from "franc";
+import { isUntaggedLanguage } from "./inspect.ts";
 import { isTextSubtitleCodec } from "./optimize.ts";
 import {
   defaultLanguageClipStart,
@@ -74,7 +75,7 @@ export function untaggedTextSubtitle(
 ): InspectionReport["subtitles"][number] | null {
   const track = report.subtitles.find((row) => row.index === trackIndex);
   if (!track) return null;
-  if (track.language !== "und" && !track.untagged) return null;
+  if (!isUntaggedLanguage(track.language) && !track.untagged) return null;
   if (!isTextSubtitleCodec(track.codec)) return null;
   return track;
 }

@@ -76,6 +76,9 @@ describe("subtitle language identification", () => {
     expect(isTextSubtitleCodec("hdmv_pgs_subtitle")).toBe(false);
     expect(untaggedTextSubtitle(report(), 2)?.index).toBe(2);
     expect(untaggedTextSubtitle(report(), 3)).toBeNull();
+    expect(untaggedTextSubtitle(report({
+      subtitles: [{ index: 2, language: "any", codec: "subrip", title: "", untagged: false, forced: false, sdh: false }],
+    }), 2)?.index).toBe(2);
   });
 
   it("detects from an extracted sample and does not write until apply", async () => {

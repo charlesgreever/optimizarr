@@ -119,10 +119,15 @@ function hdrKind(
   return "none";
 }
 
+export function isUntaggedLanguage(value: string | undefined): boolean {
+  const v = (value ?? "und").trim().toLowerCase();
+  return v === "" || v === "und" || v === "unknown" || v === "any";
+}
+
 export function normalizeLang(value: string): string {
   const v = value.toLowerCase();
   if (v === "en" || v === "eng" || v === "english") return "eng";
-  if (v === "und" || v === "unknown" || v === "") return "und";
+  if (isUntaggedLanguage(v)) return "und";
   return v.slice(0, 3);
 }
 
@@ -142,11 +147,16 @@ export function normalizeInspection(raw: Record<string, unknown>, path = "", siz
     height: typeof raw.height === "number" ? raw.height : 0,
     bitDepth: typeof raw.bitDepth === "number" ? raw.bitDepth : 8,
     hdr: raw.hdr === "hdr10" || raw.hdr === "hdr10plus" || raw.hdr === "dolby_vision" ? raw.hdr : "none",
-    audio: Array.isArray(raw.audio) ? (raw.audio as InspectionReport["audio"]) : [],
-    subtitles: Array.isArray(raw.subtitles) ? (raw.subtitles as InspectionReport["subtitles"]) : [],
+    audio: Array.isArray(raw.audio) ? (raw.audio as InspectionReport["audio"]).map(withNormalizedLanguage) : [],
+    subtitles: Array.isArray(raw.subtitles) ? (raw.subtitles as InspectionReport["subtitles"]).map(withNormalizedLanguage) : [],
     hasChapters: Boolean(raw.hasChapters),
     hasAttachments: Boolean(raw.hasAttachments),
   };
+}
+
+function withNormalizedLanguage<T extends { language: string; untagged: boolean }>(track: T): T {
+  const language = normalizeLang(track.language);
+  return { ...track, language, untagged: track.untagged || language === "und" };
 }
 
 export function parseFfmpegListing(path: string, sizeBytes: number, listing: string): InspectionReport {

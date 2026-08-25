@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isUntaggedLanguage } from "./inspect.ts";
 import type { InspectionReport } from "./types.ts";
 
 export const LID_CLIP_SEC = 45;
@@ -215,7 +216,7 @@ export function lidDecision(result: LidResult | null): "ok" | "no_speech" {
 export function untaggedAudioTrack(report: InspectionReport, trackIndex: number): InspectionReport["audio"][number] | null {
   const track = report.audio.find((row) => row.index === trackIndex);
   if (!track || track.channels <= 0) return null;
-  if (track.language !== "und" && !track.untagged) return null;
+  if (!isUntaggedLanguage(track.language) && !track.untagged) return null;
   return track;
 }
 
