@@ -119,6 +119,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 85. As a library owner, I want extra audio and subtitle tracks that are not my preferred language suggested for removal, so that files are not full of languages I never use.
 86. As a library owner, I want every preferred-language audio and subtitle track kept (including SDH, forced, and commentary), so that I do not lose useful English (or other preferred) tracks.
 87. As a library owner, I want untagged (`und` / unknown) audio and subtitle tracks suggested for drop, so that mystery tracks do not linger.
+87b. As a library owner, I want Identify language on an untagged PGS subtitle to OCR a short sample when `PGS_OCR` is installed, so that I can tag bitmap subs the same way I tag text subs. Saving still does not rewrite the library file until Keep.
 88. As a library owner, I want a lone untagged dialogue track kept, so that track cleanup cannot silence the file.
 89. As a library owner, I want a tracks-only plan when the video is already fine but tracks are messy, so that I am not forced to re-encode for language cleanup.
 90. As a library owner, I want already-HEVC (or AV1) under-cap files with messy tracks to get tracks-only work, not a re-encode.

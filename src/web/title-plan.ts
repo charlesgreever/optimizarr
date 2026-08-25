@@ -49,10 +49,16 @@ const TEXT_SUBTITLE_CODECS = new Set([
   "ttxt",
 ]);
 
-export function canIdentifySubtitle(track: { language?: string; untagged?: boolean; codec?: string } | undefined, locked: boolean): boolean {
+export function canIdentifySubtitle(
+  track: { language?: string; untagged?: boolean; codec?: string } | undefined,
+  locked: boolean,
+  pgsAvailable = false,
+): boolean {
   if (locked || !track) return false;
   if (!isUntaggedTrack(track)) return false;
-  return TEXT_SUBTITLE_CODECS.has((track.codec ?? "").toLowerCase().replace(/-/g, "_"));
+  const codec = (track.codec ?? "").toLowerCase().replace(/-/g, "_");
+  if (TEXT_SUBTITLE_CODECS.has(codec)) return true;
+  return pgsAvailable && codec.includes("pgs");
 }
 
 export function isImageSubtitle(codec: string | undefined): boolean {

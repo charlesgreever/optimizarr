@@ -7,7 +7,10 @@ import {
   letterCount,
   plainTextFromSrt,
   SUB_SAMPLE_SEC,
+  isPgsSubtitleCodec,
+  pgsSampleArgs,
   subtitleSampleArgs,
+  untaggedPgsSubtitle,
   untaggedTextSubtitle,
 } from "./subtitle-language-id.ts";
 import type { InspectionReport } from "./types.ts";
@@ -79,6 +82,11 @@ describe("subtitle language identification", () => {
     expect(untaggedTextSubtitle(report({
       subtitles: [{ index: 2, language: "any", codec: "subrip", title: "", untagged: false, forced: false, sdh: false }],
     }), 2)?.index).toBe(2);
+    expect(isPgsSubtitleCodec("hdmv_pgs_subtitle")).toBe(true);
+    const pgsArgs = pgsSampleArgs("/tmp/s.sup", 3, 90, ["-i", "/movie.mkv"]);
+    expect(pgsArgs).toContain("copy");
+    expect(pgsArgs.at(-1)).toBe("/tmp/s.sup");
+    expect(pgsArgs.join(" ")).not.toMatch(/;|&&|\|/);
   });
 
   it("detects from an extracted sample and does not write until apply", async () => {
@@ -106,10 +114,27 @@ describe("subtitle language identification", () => {
         throw new Error("should not extract PGS");
       },
     });
-    expect(bitmap).toMatchObject({ ok: false, status: 400 });
+    expect(bitmap).toMatchObject({ ok: false, status: 501 });
+    const pgsOk = await detectSubtitleLanguageSample({
+      report: listed,
+      trackIndex: 3,
+      input: ["-i", "/movie.mkv"],
+      extract: async () => {
+        throw new Error("should not extract SRT");
+      },
+      extractSup: async () => undefined,
+      ocrPgs: async () => englishSrt,
+      pgsOcrAvailable: true,
+    });
+    expect(pgsOk).toMatchObject({ ok: true, language: "eng", languageName: "English", startSec: 90 });
+    expect(untaggedPgsSubtitle(listed, 3)?.index).toBe(3);
     const next = applySubtitleLanguageToReport(listed, 2, "en");
     expect("error" in next).toBe(false);
     if ("error" in next) return;
     expect(next.subtitles[0]).toMatchObject({ language: "eng", untagged: false, languagePending: true });
+    const taggedPgs = applySubtitleLanguageToReport(listed, 3, "en");
+    expect("error" in taggedPgs).toBe(false);
+    if ("error" in taggedPgs) return;
+    expect(taggedPgs.subtitles[1]).toMatchObject({ language: "eng", languagePending: true });
   });
 });

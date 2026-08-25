@@ -64,6 +64,8 @@ export type AppOptions = {
   extractLanguageClip?: (args: string[]) => Promise<void>;
   runLanguageLid?: (clipPath: string) => Promise<string>;
   extractSubtitleSample?: (args: string[]) => Promise<string>;
+  extractSubtitleSup?: (args: string[]) => Promise<void>;
+  runPgsOcr?: (supPath: string) => Promise<string>;
 };
 
 export function createApp(opts: AppOptions) {
@@ -496,6 +498,7 @@ export function createApp(opts: AppOptions) {
         preferredLanguage: store.getSettings().preferredLanguage,
       },
       languageId: { available: Boolean(opts.runLanguageLid || opts.env.whisperLid) },
+      pgsOcr: { available: Boolean(opts.runPgsOcr || opts.env.pgsOcr) },
     });
   });
 
@@ -649,6 +652,19 @@ export function createApp(opts: AppOptions) {
     if (!dest) throw new Error("ffmpeg could not extract subtitle text from this track.");
     return readFile(dest, "utf8");
   });
+  const extractSubtitleSup = opts.extractSubtitleSup ?? (async (args: string[]) => {
+    await execFileAsync(opts.env.ffmpeg, args, { timeout: 120_000, env: toolLocaleEnv() });
+  });
+  const runPgsOcr = opts.runPgsOcr ?? (async (supPath: string) => {
+    if (!opts.env.pgsOcr) throw new Error("PGS language identification is not installed.");
+    const { stdout } = await execFileAsync(opts.env.pgsOcr, [supPath], {
+      timeout: 120_000,
+      maxBuffer: 256 * 1024,
+      env: toolLocaleEnv(),
+    });
+    return stdout;
+  });
+  const pgsOcrAvailable = Boolean(opts.runPgsOcr || opts.env.pgsOcr);
 
   app.post("/api/library/items/:id/detect-subtitle-language", async (c) => {
     const item = store.getItem(c.req.param("id"));
@@ -669,10 +685,13 @@ export function createApp(opts: AppOptions) {
       startSec: typeof body.startSec === "number" ? body.startSec : undefined,
       input,
       extract: extractSubtitleSample,
+      extractSup: extractSubtitleSup,
+      ocrPgs: runPgsOcr,
+      pgsOcrAvailable,
     });
     if (!result.ok) {
       if (result.status === 200) return c.json(result);
-      const status = result.status === 400 ? 400 : 502;
+      const status = result.status === 400 ? 400 : result.status === 501 ? 501 : 502;
       return c.json({ error: result.reason, ...result }, status);
     }
     return c.json(result);

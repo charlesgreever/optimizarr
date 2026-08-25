@@ -12,6 +12,7 @@ export type Env = {
   ffprobe: string;
   mkvmerge: string;
   whisperLid: string | null;
+  pgsOcr: string | null;
   webRoot: string;
   secretPath: string;
   dbPath: string;
@@ -33,6 +34,7 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
     ffprobe: processEnv.FFPROBE ?? "ffprobe",
     mkvmerge: processEnv.MKVMERGE ?? "mkvmerge",
     whisperLid: processEnv.WHISPER_LID?.trim() ? processEnv.WHISPER_LID.trim() : null,
+    pgsOcr: processEnv.PGS_OCR?.trim() ? processEnv.PGS_OCR.trim() : null,
     webRoot: processEnv.WEB_ROOT ?? join(dirname(new URL(import.meta.url).pathname), "../../dist/web"),
     secretPath: join(configDir, ".secret"),
     dbPath: resolveDbPath(configDir),

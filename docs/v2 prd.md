@@ -99,7 +99,7 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 54j. As an operator, I want language identification to be optional at install (a `WHISPER_LID` command). If it is missing, the title page says so and does not pretend to listen.
 54k. As a library owner, I want to ask the title page to identify an untagged text subtitle track by reading a short sample of its words, so that I can tag `und` subs without guessing.
 54l. As a library owner, I want a sample with too little text or a weak guess to stay `und` and offer another start time, so that opening credits do not become English.
-54m. As a library owner, I want image subtitle tracks (PGS) to explain that Polisharr cannot read them as text, so that I do not wait on Identify language for a bitmap.
+54m. As a library owner, I want Identify language on untagged PGS when `PGS_OCR` is installed, and a short explanation that PGS is images when it is not, so that I do not wait on a button that cannot run.
 54n. As a library owner, I want subtitle identify-language to leave the library file unchanged until Keep, the same as audio identify-language.
 55. As a library owner, I want inspect to never run ffprobe on a `.iso` path (any case), so that disc images do not fail or hang the walker.
 56. As a library owner, I want inspect to list ISO streams with ffmpeg into the same inspection report shape as MKV, so that bulk and custom share one document.

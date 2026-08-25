@@ -44,6 +44,7 @@ describe("title plan gating", () => {
     expect(canIdentifySubtitle({ language: "und", untagged: true, codec: "subrip" }, false)).toBe(true);
     expect(canIdentifySubtitle({ language: "any", untagged: false, codec: "subrip" }, false)).toBe(true);
     expect(canIdentifySubtitle({ language: "und", untagged: true, codec: "hdmv_pgs_subtitle" }, false)).toBe(false);
+    expect(canIdentifySubtitle({ language: "und", untagged: true, codec: "hdmv_pgs_subtitle" }, false, true)).toBe(true);
     expect(canIdentifySubtitle({ language: "eng", untagged: false, codec: "subrip" }, false)).toBe(false);
     expect(isImageSubtitle("hdmv_pgs_subtitle")).toBe(true);
   });

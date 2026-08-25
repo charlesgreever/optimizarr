@@ -23,5 +23,7 @@ describe("env", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-env-"));
     expect(loadEnv({ CONFIG_DIR: dir }).whisperLid).toBeNull();
     expect(loadEnv({ CONFIG_DIR: dir, WHISPER_LID: "/usr/local/bin/whisper-lid" }).whisperLid).toBe("/usr/local/bin/whisper-lid");
+    expect(loadEnv({ CONFIG_DIR: dir }).pgsOcr).toBeNull();
+    expect(loadEnv({ CONFIG_DIR: dir, PGS_OCR: "/usr/local/bin/pgs-ocr" }).pgsOcr).toBe("/usr/local/bin/pgs-ocr");
   });
 });

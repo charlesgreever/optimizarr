@@ -38,6 +38,7 @@ export function TitlePage() {
   const [audio, setAudio] = useState<Record<number, { action: AudioAction; channels?: number }>>({});
   const [subs, setSubs] = useState<Record<number, "keep" | "remove">>({});
   const [languageIdAvailable, setLanguageIdAvailable] = useState(false);
+  const [pgsOcrAvailable, setPgsOcrAvailable] = useState(false);
   const [lid, setLid] = useState<{
     trackIndex: number;
     listening: boolean;
@@ -76,6 +77,7 @@ export function TitlePage() {
       setWriteDefault(r.settings.writeMode);
       if (r.settings.preferredLanguage) setPreferredLanguage(r.settings.preferredLanguage);
       setLanguageIdAvailable(Boolean(r.languageId?.available));
+      setPgsOcrAvailable(Boolean(r.pgsOcr?.available));
       const nextAudio: Record<number, { action: AudioAction; channels?: number }> = {};
       const nextSubs: Record<number, "keep" | "remove"> = {};
       for (const t of r.item.report?.audio ?? []) nextAudio[t.index] = { action: "keep" };
@@ -240,7 +242,7 @@ export function TitlePage() {
         A sidecar is the new file waiting in Review until you Keep it. Direct write replaces the library file after an integrity check.
         Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
         Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
-        Identify language listens to a 45-second audio clip, or reads a few minutes of a text subtitle track. Image subtitles (PGS) cannot be read this way. Saving a language does not rewrite the library file. Queue this plan can remux a copy that writes the tag; Keep then replaces the library file.
+        Identify language listens to a 45-second audio clip, or reads a few minutes of a text subtitle track. Untagged PGS can be identified from a short OCR sample when that helper is installed. Saving a language does not rewrite the library file. Queue this plan can remux a copy that writes the tag; Keep then replaces the library file.
       </Help>
       {(locked || item.error) && (
         <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>
@@ -444,7 +446,7 @@ export function TitlePage() {
                     {track.forced && <Pill>forced</Pill>}
                     {title && <span className="max-w-64 truncate text-xs text-muted">{title}</span>}
                   </span>
-                  {canIdentifySubtitle(track, locked) && (
+                  {canIdentifySubtitle(track, locked, pgsOcrAvailable) && (
                     <button
                       className="btn-secondary ml-auto"
                       type="button"
@@ -455,7 +457,7 @@ export function TitlePage() {
                     </button>
                   )}
                 </label>
-                {isImageSubtitle(track.codec) && isUntaggedTrack(track) && (
+                {isImageSubtitle(track.codec) && isUntaggedTrack(track) && !canIdentifySubtitle(track, locked, pgsOcrAvailable) && (
                   <p className="help m-0">This subtitle track is images, not text, so Polisharr cannot read a sample.</p>
                 )}
                 {subLid && subLid.trackIndex === track.index && !subLid.listening && (

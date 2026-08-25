@@ -1,0 +1,11 @@
+#!/bin/sh
+# Prints OCR'd text for a PGS .sup sample. stdout is text only.
+if [ -z "$TESSDATA_PREFIX" ]; then
+  if [ -d /usr/share/tesseract-ocr/5/tessdata ]; then
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+  elif [ -d /usr/share/tesseract-ocr/4.00/tessdata ]; then
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+  fi
+  export TESSDATA_PREFIX
+fi
+exec /opt/pgs-ocr/bin/python3 /usr/local/lib/polisharr/pgs_ocr.py "$@"

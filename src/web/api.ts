@@ -35,6 +35,7 @@ export const api = {
     hardware: Hardware;
     settings: { writeMode: string; videoTarget: string; preferredLanguage?: string };
     languageId?: { available?: boolean };
+    pgsOcr?: { available?: boolean };
   }>(`/api/library/items/${id}`),
   previewPlan: async (id: string, draft: Record<string, unknown>) => {
     const res = await fetch(`/api/library/items/${id}/plan`, {

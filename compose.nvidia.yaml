@@ -12,6 +12,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
       WHISPER_LID: /usr/local/bin/whisper-lid
+      PGS_OCR: /usr/local/bin/pgs-ocr
     volumes:
       - /home/cgreever/appdata/arr/optimizarr/config:/config
       - /mnt/nas:/mnt/nas
