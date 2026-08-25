@@ -1,4 +1,5 @@
-import { isIsoPath } from "./inspect.ts";
+import { isIsoPath, isUntaggedLanguage } from "./inspect.ts";
+import { languageDisplayName } from "./language-id.ts";
 import { is4k, sizeCategory } from "./suggest.ts";
 import type {
   AudioOp,
@@ -15,7 +16,7 @@ import type {
   VideoTarget,
   WriteMode,
 } from "./types.ts";
-import { planHasVideoTranscode } from "./types.ts";
+import { keepWritesLanguage, planHasVideoTranscode } from "./types.ts";
 
 export type CustomPlanInput = {
   item: LibraryItem;
@@ -40,14 +41,15 @@ export function validateCustomPlan(input: CustomPlanInput): CustomPlanResult {
     errors.push({ field: "subtitles", message: "Track edits are unavailable until streams can be listed." });
   }
 
-  const audioOps = listed ? buildAudioOps(report, draft.audio ?? [], errors) : keepAllAudio(report);
-  const subOps = listed ? buildSubtitleOps(report, draft.subtitles ?? [], errors) : keepAllSubs(report);
+  const audioOps = listed ? buildAudioOps(report, draft.audio ?? [], errors) : report.audio.map(keepAudioOp);
+  const subOps = listed ? buildSubtitleOps(report, draft.subtitles ?? [], errors) : report.subtitles.map(keepSubtitleOp);
   const video = buildVideo(item, report, hardware, videoDraft, errors);
 
   const remux = iso && (draft.remuxToMkv !== false);
   const trackWork = audioOps.some((op) => op.op !== "keep") || subOps.some((op) => op.op !== "keep");
+  const languageWork = audioOps.some(keepWritesLanguage) || subOps.some(keepWritesLanguage);
   const videoWork = video.kind !== "copy";
-  const hasWork = remux || trackWork || videoWork;
+  const hasWork = remux || trackWork || videoWork || languageWork;
   if (!hasWork) {
     errors.push({ field: "plan", message: "This plan does not change the file. Choose a track, remux, or encode option before Queue." });
   }
@@ -126,7 +128,7 @@ function buildVideo(
 
 function buildAudioOps(report: InspectionReport, choices: NonNullable<CustomPlanDraft["audio"]>, errors: PlanFieldError[]): AudioOp[] {
   const byIndex = new Map(report.audio.map((t) => [t.index, t]));
-  const ops: AudioOp[] = report.audio.map((t) => ({ op: "keep" as const, index: t.index }));
+  const ops: AudioOp[] = report.audio.map(keepAudioOp);
   for (const choice of choices) {
     const track = byIndex.get(choice.index);
     if (!track) {
@@ -162,7 +164,7 @@ function buildAudioOps(report: InspectionReport, choices: NonNullable<CustomPlan
 
 function buildSubtitleOps(report: InspectionReport, choices: NonNullable<CustomPlanDraft["subtitles"]>, errors: PlanFieldError[]): SubtitleOp[] {
   const known = new Set(report.subtitles.map((t) => t.index));
-  const ops: SubtitleOp[] = report.subtitles.map((t) => ({ op: "keep" as const, index: t.index }));
+  const ops: SubtitleOp[] = report.subtitles.map(keepSubtitleOp);
   for (const choice of choices) {
     if (!known.has(choice.index)) {
       errors.push({ field: `subtitles.${choice.index}`, message: "That subtitle track is not in this file." });
@@ -174,12 +176,18 @@ function buildSubtitleOps(report: InspectionReport, choices: NonNullable<CustomP
   return ops;
 }
 
-function keepAllAudio(report: InspectionReport): AudioOp[] {
-  return report.audio.map((t) => ({ op: "keep" as const, index: t.index }));
+function keepAudioOp(track: InspectionReport["audio"][number]): AudioOp {
+  if (track.languagePending && !isUntaggedLanguage(track.language)) {
+    return { op: "keep", index: track.index, language: track.language };
+  }
+  return { op: "keep", index: track.index };
 }
 
-function keepAllSubs(report: InspectionReport): SubtitleOp[] {
-  return report.subtitles.map((t) => ({ op: "keep" as const, index: t.index }));
+function keepSubtitleOp(track: InspectionReport["subtitles"][number]): SubtitleOp {
+  if (track.languagePending && !isUntaggedLanguage(track.language)) {
+    return { op: "keep", index: track.index, language: track.language };
+  }
+  return { op: "keep", index: track.index };
 }
 
 function validDownmix(from: number, to: number): boolean {
@@ -217,15 +225,22 @@ function planReasons(input: {
   for (const op of input.audio) {
     const track = input.report.audio.find((t) => t.index === op.index);
     const name = trackLabel(track?.title || track?.language || `track ${op.index}`);
+    if (op.op === "keep" && keepWritesLanguage(op) && op.language) {
+      reasons.push(`Write ${languageDisplayName(op.language)} on audio ${name}.`);
+    }
     if (op.op === "remove") reasons.push(`Remove audio ${name}.`);
     if (op.op === "replace_aac") reasons.push(`Replace audio ${name} with AAC at the same channel layout.`);
     if (op.op === "replace_downmix") reasons.push(`Replace audio ${name} with an AAC ${layoutName(op.channels)} downmix.`);
     if (op.op === "add_downmix") reasons.push(`Add an AAC ${layoutName(op.channels)} downmix from audio ${name}.`);
   }
   for (const op of input.subtitles) {
-    if (op.op !== "remove") continue;
     const track = input.report.subtitles.find((t) => t.index === op.index);
-    reasons.push(`Remove subtitle ${trackLabel(track?.title || track?.language || `track ${op.index}`)}.`);
+    const name = trackLabel(track?.title || track?.language || `track ${op.index}`);
+    if (op.op === "keep" && keepWritesLanguage(op) && op.language) {
+      reasons.push(`Write ${languageDisplayName(op.language)} on subtitle ${name}.`);
+    }
+    if (op.op !== "remove") continue;
+    reasons.push(`Remove subtitle ${name}.`);
   }
   if (input.writeMode !== input.globalWrite) {
     reasons.push(input.writeMode === "direct"

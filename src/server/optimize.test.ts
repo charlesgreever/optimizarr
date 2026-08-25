@@ -70,6 +70,17 @@ describe("mkvmerge arguments", () => {
     expect(args.join(" ")).not.toContain("mkvmerge -o");
   });
 
+  it("writes a pending soundtrack language onto the source file during a copy remux", () => {
+    const plan = planFromSuggestion({ ...suggestion, actions: ["tracks"], keepAudio: [1], stripAudio: [2], keepSubs: [3, 4], stripSubs: [] });
+    plan.audio = [{ op: "keep", index: 1, language: "eng" }, { op: "remove", index: 2 }];
+    const args = muxPlanArgs(source, "/tmp/out.mkv", plan);
+    const langAt = args.indexOf("--language");
+    const sourceAt = args.indexOf(source);
+    expect(args[langAt + 1]).toBe("1:eng");
+    expect(langAt).toBeGreaterThan(-1);
+    expect(langAt).toBeLessThan(sourceAt);
+  });
+
   it("tags a downmix extra with the source audio language", () => {
     const plan = planFromSuggestion({ ...suggestion, actions: ["add_stereo"], keepAudio: [1], stripAudio: [] });
     const args = muxPlanArgs(source, "/tmp/out.mkv", plan, [{ path: "/tmp/stereo.aac", language: "eng" }]);

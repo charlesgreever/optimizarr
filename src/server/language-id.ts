@@ -233,7 +233,7 @@ export function applyLanguageToReport(
   return {
     ...report,
     audio: report.audio.map((track) =>
-      track.index === trackIndex ? { ...track, language: mapped, untagged: false } : track,
+      track.index === trackIndex ? { ...track, language: mapped, untagged: false, languagePending: true } : track,
     ),
   };
 }

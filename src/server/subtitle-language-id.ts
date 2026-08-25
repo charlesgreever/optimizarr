@@ -93,7 +93,7 @@ export function applySubtitleLanguageToReport(
   return {
     ...report,
     subtitles: report.subtitles.map((track) =>
-      track.index === trackIndex ? { ...track, language: code, untagged: false } : track,
+      track.index === trackIndex ? { ...track, language: code, untagged: false, languagePending: true } : track,
     ),
   };
 }

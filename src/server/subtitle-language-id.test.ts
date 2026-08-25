@@ -110,6 +110,6 @@ describe("subtitle language identification", () => {
     const next = applySubtitleLanguageToReport(listed, 2, "en");
     expect("error" in next).toBe(false);
     if ("error" in next) return;
-    expect(next.subtitles[0]).toMatchObject({ language: "eng", untagged: false });
+    expect(next.subtitles[0]).toMatchObject({ language: "eng", untagged: false, languagePending: true });
   });
 });

@@ -154,9 +154,15 @@ export function normalizeInspection(raw: Record<string, unknown>, path = "", siz
   };
 }
 
-function withNormalizedLanguage<T extends { language: string; untagged: boolean }>(track: T): T {
+function withNormalizedLanguage<T extends { language: string; untagged: boolean; languagePending?: boolean }>(track: T): T {
   const language = normalizeLang(track.language);
-  return { ...track, language, untagged: track.untagged || language === "und" };
+  const untagged = track.untagged || language === "und";
+  return {
+    ...track,
+    language,
+    untagged,
+    languagePending: Boolean(track.languagePending) && language !== "und",
+  };
 }
 
 export function parseFfmpegListing(path: string, sizeBytes: number, listing: string): InspectionReport {

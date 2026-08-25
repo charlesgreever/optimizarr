@@ -240,7 +240,7 @@ export function TitlePage() {
         A sidecar is the new file waiting in Review until you Keep it. Direct write replaces the library file after an integrity check.
         Codec replace turns one soundtrack into AAC at the same layout. Downmix makes a smaller layout such as stereo.
         Size mode aims at a file size you type. Quality mode aims at an encoder quality number (lower is larger).
-        Identify language listens to a 45-second audio clip, or reads a few minutes of a text subtitle track. Image subtitles (PGS) cannot be read this way. It does not transcribe the movie or change the library file until you Keep a sidecar.
+        Identify language listens to a 45-second audio clip, or reads a few minutes of a text subtitle track. Image subtitles (PGS) cannot be read this way. Saving a language does not rewrite the library file. Queue this plan can remux a copy that writes the tag; Keep then replaces the library file.
       </Help>
       {(locked || item.error) && (
         <p className="help">{item.error || "This title is still uninspected or unreadable. Optimize stays off until inspect finishes."}</p>

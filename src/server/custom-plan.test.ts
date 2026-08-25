@@ -70,6 +70,34 @@ describe("custom plan validation", () => {
     if (!result.ok) expect(result.errors[0]?.field).toBe("plan");
   });
 
+  it("treats a saved Identify language tag as remux work on an otherwise copy plan", () => {
+    const tagged = check(
+      { video: { mode: "copy" } },
+      {
+        report: report({
+          audio: [{
+            index: 1,
+            language: "eng",
+            channels: 2,
+            codec: "ac3",
+            title: "Stereo",
+            untagged: false,
+            commentary: false,
+            languagePending: true,
+          }],
+          subtitles: [],
+        }),
+      },
+    );
+    expect(tagged.ok).toBe(true);
+    if (!tagged.ok) return;
+    expect(tagged.plan.video.kind).toBe("copy");
+    expect(tagged.plan.audio).toEqual([{ op: "keep", index: 1, language: "eng" }]);
+    expect(tagged.plan.reasons.some((reason) => /English/.test(reason))).toBe(true);
+    const alreadyTagged = check({ video: { mode: "copy" } });
+    expect(alreadyTagged.ok).toBe(false);
+  });
+
   it("does not count changing only the output policy as media work", () => {
     const result = check({ writeMode: "direct" });
     expect(result.ok).toBe(false);

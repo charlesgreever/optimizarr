@@ -118,6 +118,7 @@ export type AudioTrack = {
   title: string;
   untagged: boolean;
   commentary: boolean;
+  languagePending?: boolean;
 };
 
 export type SubtitleTrack = {
@@ -128,6 +129,7 @@ export type SubtitleTrack = {
   untagged: boolean;
   forced: boolean;
   sdh: boolean;
+  languagePending?: boolean;
 };
 
 export type InspectionReport = {
@@ -308,16 +310,20 @@ export type VideoQualityTranscode = {
 };
 export type VideoIntent = VideoCopy | VideoSizeTranscode | VideoQualityTranscode;
 
-export type AudioKeep = { op: "keep"; index: number };
+export type AudioKeep = { op: "keep"; index: number; language?: string };
 export type AudioRemove = { op: "remove"; index: number };
 export type AudioReplaceAac = { op: "replace_aac"; index: number };
 export type AudioReplaceDownmix = { op: "replace_downmix"; index: number; channels: number };
 export type AudioAddDownmix = { op: "add_downmix"; index: number; channels: number };
 export type AudioOp = AudioKeep | AudioRemove | AudioReplaceAac | AudioReplaceDownmix | AudioAddDownmix;
 
-export type SubtitleKeep = { op: "keep"; index: number };
+export type SubtitleKeep = { op: "keep"; index: number; language?: string };
 export type SubtitleRemove = { op: "remove"; index: number };
 export type SubtitleOp = SubtitleKeep | SubtitleRemove;
+
+export function keepWritesLanguage(op: AudioOp | SubtitleOp): boolean {
+  return op.op === "keep" && Boolean(op.language) && op.language !== "und";
+}
 
 export type ExecutablePlan = {
   origin: PlanOrigin;

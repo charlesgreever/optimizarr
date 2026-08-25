@@ -89,7 +89,7 @@ describe("language identification helpers", () => {
     const next = applyLanguageToReport(report, 1, "en");
     expect("error" in next).toBe(false);
     if ("error" in next) return;
-    expect(next.audio[0]).toMatchObject({ language: "eng", untagged: false });
+    expect(next.audio[0]).toMatchObject({ language: "eng", untagged: false, languagePending: true });
     expect(next.audio[1]?.language).toBe("spa");
     expect(applyLanguageToReport(report, 2, "eng")).toEqual({ error: "That track is not an untagged soundtrack." });
   });

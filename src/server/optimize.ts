@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { isIsoPath, MAX_FEATURE_SEC, parseFfprobe } from "./inspect.ts";
 import type { ExecutablePlan, InspectionReport, Suggestion, WriteMode } from "./types.ts";
-import { planHasVideoTranscode } from "./types.ts";
+import { keepWritesLanguage, planHasVideoTranscode } from "./types.ts";
 import { copiedAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
 
 const execFileAsync = promisify(execFile);
@@ -250,12 +250,14 @@ async function createSubtitleExtras(
 }
 
 function needsMux(plan: ExecutablePlan): boolean {
-  return Boolean(plan.remuxInput) || plan.audio.some((op) => op.op !== "keep") || plan.subtitles.some((op) => op.op !== "keep");
+  return Boolean(plan.remuxInput)
+    || plan.audio.some((op) => op.op !== "keep" || keepWritesLanguage(op))
+    || plan.subtitles.some((op) => op.op !== "keep" || keepWritesLanguage(op));
 }
 
 function needsTrackSelection(plan: ExecutablePlan): boolean {
-  return plan.audio.some((op) => op.op === "remove" || op.op === "replace_aac" || op.op === "replace_downmix") ||
-    plan.subtitles.some((op) => op.op === "remove");
+  return plan.audio.some((op) => op.op === "remove" || op.op === "replace_aac" || op.op === "replace_downmix" || keepWritesLanguage(op)) ||
+    plan.subtitles.some((op) => op.op === "remove" || keepWritesLanguage(op));
 }
 
 export class CancelledError extends Error {
@@ -297,6 +299,16 @@ export function muxPlanArgs(
   if (editsAudio && audio.length) args.push("--audio-tracks", [...new Set(audio)].join(","));
   if (editsSubtitles && keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
   else if (editsSubtitles) args.push("--no-subtitles");
+  for (const op of plan.audio) {
+    if (op.op === "keep" && keepWritesLanguage(op) && op.language) {
+      args.push("--language", `${trackId(trackIds?.audio, op.index, "audio")}:${op.language}`);
+    }
+  }
+  for (const op of plan.subtitles) {
+    if (op.op === "keep" && keepWritesLanguage(op) && op.language) {
+      args.push("--language", `${trackId(trackIds?.subtitles, op.index, "subtitle")}:${op.language}`);
+    }
+  }
   args.push(source);
   for (const extra of extras) {
     taggedExtraArgs(args, extra);
