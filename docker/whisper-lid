@@ -1,0 +1,3 @@
+#!/bin/sh
+# Prints {"language":"en","probability":0.94} for a 16 kHz mono WAV. stdout is JSON only.
+exec /opt/whisper-lid/bin/python3 /usr/local/lib/polisharr/whisper_lid.py "$@"
