@@ -4,30 +4,30 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: Newsreader, ui-serif, Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --color-slate-300: #c4b8aa;
-  --color-slate-400: #a89a8c;
-  --color-slate-500: #8a7d70;
-  --color-canvas: #161310;
-  --color-ink: #f2ebe2;
-  --color-muted: #a89a8c;
-  --color-accent: #d4a45a;
-  --color-accent-strong: #e4bc78;
+  --color-slate-300: #e3f2fd;
+  --color-slate-400: #90caf9;
+  --color-slate-500: #64b5f6;
+  --color-canvas: #0d47a1;
+  --color-ink: #e3f2fd;
+  --color-muted: #90caf9;
+  --color-accent: #2196f3;
+  --color-accent-strong: #90caf9;
   --color-good: #6fad7c;
-  --color-warn: #d4a45a;
+  --color-warn: #90caf9;
   --color-bad: #d36b5c;
 }
 
 :root {
   color-scheme: dark;
-  --bg: #161310;
-  --panel: #1c1814f2;
-  --line: #ffffff14;
-  --text: #f2ebe2;
-  --muted: #a89a8c;
-  --accent: #d4a45a;
-  --accent-strong: #e4bc78;
+  --bg: #0d47a1;
+  --panel: #0a3a8cf2;
+  --line: #e3f2fd22;
+  --text: #e3f2fd;
+  --muted: #90caf9;
+  --accent: #2196f3;
+  --accent-strong: #90caf9;
   --good: #6fad7c;
-  --warn: #d4a45a;
+  --warn: #90caf9;
   --bad: #d36b5c;
 }
 
@@ -47,7 +47,7 @@ body {
   font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 12% 0%, #2a2218 0, transparent 42%),
+    radial-gradient(circle at 12% 0%, #2196f3 0, transparent 38%),
     var(--bg);
 }
 
@@ -64,7 +64,7 @@ a {
 .shell > aside {
   padding: 28px 18px;
   border-right: 1px solid var(--line);
-  background: #1a1612f2;
+  background: #0c3d94f2;
 }
 
 .brand {
@@ -80,8 +80,8 @@ a {
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  color: #161310;
-  background: var(--accent);
+  color: #e3f2fd;
+  background: #2196f3;
   font-family: Newsreader, ui-serif, Georgia, serif;
 }
 
@@ -114,7 +114,7 @@ a {
 
 .shell nav a.active {
   color: var(--text);
-  background: #d4a45a14;
+  background: #2196f324;
   box-shadow: inset 2px 0 var(--accent);
 }
 
@@ -151,7 +151,7 @@ a {
   align-items: center;
   padding: 10px 14px;
   color: var(--muted);
-  background: #14110ee8;
+  background: #0a3680e8;
   border: 1px solid var(--line);
   border-radius: 4px;
 }
@@ -196,7 +196,7 @@ a {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #1c1814f2;
+  background: #0a3a8cf2;
 }
 
 .report-bug-label {
@@ -224,7 +224,7 @@ a {
   padding: 7px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #1c1814;
+  background: #0a3a8c;
 }
 
 .search-results button {
@@ -375,13 +375,13 @@ a {
 }
 
 .btn {
-  border: 1px solid #d4a45a66;
-  background: #d4a45a1c;
+  border: 1px solid #2196f366;
+  background: #2196f31c;
   color: var(--accent-strong);
 }
 
 .btn:hover {
-  background: #d4a45a2c;
+  background: #2196f32c;
 }
 
 .btn-secondary {
@@ -410,7 +410,7 @@ a {
 input,
 select,
 textarea {
-  background: #14110e;
+  background: #0a3680;
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 4px;
@@ -437,7 +437,7 @@ textarea:focus-visible {
   padding: 11px 14px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #14110e;
+  background: #0a3680;
   color: var(--text);
 }
 
@@ -528,9 +528,9 @@ tr:last-child td {
 .inspect-banner {
   margin: 16px 42px 0;
   padding: 11px 14px;
-  border: 1px solid #d4a45a44;
-  background: #d4a45a14;
-  color: #e8c99a;
+  border: 1px solid #90caf944;
+  background: #2196f324;
+  color: #e3f2fd;
   border-radius: 4px;
   font-size: 14px;
 }
@@ -640,8 +640,8 @@ tr:last-child td {
   min-height: 48px;
   border: 0;
   border-radius: 4px;
-  background: var(--accent);
-  color: #161310;
+  background: #e3f2fd;
+  color: #0d47a1;
   font-weight: 700;
   cursor: pointer;
 }
@@ -689,7 +689,7 @@ tr:last-child td {
   gap: 10px;
   padding: 10px;
   border-radius: 4px;
-  background: #14110e;
+  background: #0a3680;
 }
 
 @media (max-width: 1100px) {
@@ -833,7 +833,7 @@ tr:last-child td {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #100e0ccc;
+  background: #0d47a1cc;
 }
 
 .modal-card {
