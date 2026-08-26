@@ -81,14 +81,16 @@ export function letterCount(text: string): number {
 
 export function detectTextLanguage(text: string): { language: string; probability: number } | null {
   if (letterCount(text) < SUB_MIN_LETTERS) return null;
-  const ranked = francAll(text);
-  const top = ranked[0];
-  if (!top || top[0] === "und") return null;
-  const mapped = languageFromWhisper(top[0]);
-  if (!mapped) return null;
-  const score = typeof top[1] === "number" ? top[1] : 0;
-  if (score < LID_MIN_PROBABILITY) return null;
-  return { language: mapped, probability: score };
+  for (const row of francAll(text)) {
+    const code = row[0];
+    const score = typeof row[1] === "number" ? row[1] : 0;
+    if (!code || code === "und") continue;
+    const mapped = languageFromWhisper(code);
+    if (!mapped) continue;
+    if (score < LID_MIN_PROBABILITY) return null;
+    return { language: mapped, probability: score };
+  }
+  return null;
 }
 
 export function untaggedTextSubtitle(

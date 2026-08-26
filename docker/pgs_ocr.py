@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from struct import unpack
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 MAX_IMAGES = 24
 SEGMENT_PDS = 0x14
@@ -197,22 +197,34 @@ def is_blank(image: Image.Image) -> bool:
     return extrema[3][1] == 0
 
 
+def prepare_for_ocr(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    alpha = rgba.split()[-1]
+    lo, hi = alpha.getextrema()
+    if hi - lo >= 32:
+        # Outline-on-transparent PGS: alpha is the glyph, colors are a halo Tesseract cannot read.
+        glyphs = alpha.point(lambda a: 0 if a > 64 else 255)
+    else:
+        glyphs = ImageOps.invert(rgba.convert("L"))
+    rgb = glyphs.convert("RGB")
+    if rgb.height < 160:
+        rgb = rgb.resize((rgb.width * 2, rgb.height * 2), Image.Resampling.LANCZOS)
+    return rgb
+
+
 def tesseract(image: Image.Image) -> str:
+    prepared = prepare_for_ocr(image)
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
         path = handle.name
     try:
-        image.save(path)
-        for lang in ("osd+eng", "eng"):
-            result = subprocess.run(
-                ["tesseract", path, "stdout", "--psm", "6", "-l", lang],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            text = (result.stdout or "").strip()
-            if text:
-                return text
-        return ""
+        prepared.save(path)
+        result = subprocess.run(
+            ["tesseract", path, "stdout", "--psm", "13", "-l", "eng"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return (result.stdout or "").strip()
     finally:
         os.unlink(path)
 

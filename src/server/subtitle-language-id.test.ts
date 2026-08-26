@@ -68,6 +68,20 @@ describe("subtitle language identification", () => {
     expect(detectTextLanguage("1\n00:00:01,000 --> 00:00:02,000\nHi")).toBeNull();
   });
 
+  it("detects English from noisy PGS OCR of a movie sample", () => {
+    const ocr = `SEachsl Vainea mat ea Aare Reals ieee maa
+nee?
+Wait @ Minute, Wwnet @fe you Going, DOC?
+Walla minute, Doo,
+Whal, GO we become assnioves
+RS YOURS, Wary,
+Fey, 006, we beter back up,
+ally! Wirt), | wanted fo show
+Vvnat In Neu Was Tat?`;
+    expect(letterCount(ocr)).toBeGreaterThan(80);
+    expect(detectTextLanguage(ocr)?.language).toBe("eng");
+  });
+
   it("builds a SubRip sample command and rejects image subtitle codecs", () => {
     const args = subtitleSampleArgs("/tmp/s.srt", 2, 90, ["-i", "/movie.mkv"]);
     expect(args).toContain("-c:s");
