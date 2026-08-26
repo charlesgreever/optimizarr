@@ -26,16 +26,16 @@ export function HomeDashboard({ data, onRefresh }: { data: HomePayload; onRefres
       </Help>
       <div className="glass px-5 py-4">
         <div className="text-xs font-medium uppercase tracking-wide text-muted">Status</div>
-        <p className="mt-1 text-base font-medium leading-6 text-ink">{data.status}</p>
+        <p className="mt-1 font-mono text-sm font-medium leading-6 text-ink">{data.status}</p>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <article className="glass px-5 py-5">
+        <article className="glass px-5 py-4">
           <div className="text-xs font-medium uppercase tracking-wide text-muted">Files optimized</div>
-          <p className="mt-2 text-3xl font-semibold tabular-nums text-ink">{data.filesOptimized}</p>
+          <p className="mt-2 font-mono text-2xl font-medium tabular-nums text-ink">{data.filesOptimized}</p>
         </article>
-        <article className="glass px-5 py-5">
+        <article className="glass px-5 py-4">
           <div className="text-xs font-medium uppercase tracking-wide text-muted">Space saved</div>
-          <p className="mt-2 text-3xl font-semibold tabular-nums text-ink">{formatSize(data.spaceSavedBytes)}</p>
+          <p className="mt-2 font-mono text-2xl font-medium tabular-nums text-ink">{formatSize(data.spaceSavedBytes)}</p>
         </article>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -91,10 +91,10 @@ function WorkStat({ label, value, to }: { label: string; value: number; to: stri
   return (
     <Link
       to={to}
-      className="glass block px-4 py-4 transition-colors hover:border-accent/40 hover:text-accent"
+      className="glass block px-4 py-4 transition-colors hover:border-accent/40"
     >
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{value}</div>
+      <div className="mt-2 font-mono text-xl font-medium tabular-nums text-ink">{value}</div>
     </Link>
   );
 }
