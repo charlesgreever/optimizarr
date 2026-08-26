@@ -328,7 +328,7 @@ export function TitlePage() {
             {report?.audio.map((track) => {
               const title = usefulTrackTitle(track.title, fileName);
               return (
-                <div key={track.index} className="flex flex-col gap-3 rounded-lg bg-white/[0.04] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div key={track.index} className="flex flex-col gap-3 rounded border border-ink/10 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <Pill>{track.language || "und"}</Pill>
                     <Pill>{track.codec}</Pill>
@@ -385,7 +385,7 @@ export function TitlePage() {
                       {lid.ok === false && (
                         <div className="flex flex-wrap items-center gap-2">
                           <input
-                            className="h-10 w-24 rounded-md bg-white/10 px-2"
+                            className="h-10 w-24 rounded-md border border-ink/15 bg-white px-2"
                             value={lid.timeInput}
                             onChange={(e) => setLid({ ...lid, timeInput: e.target.value })}
                             aria-label="Start time"
@@ -431,7 +431,7 @@ export function TitlePage() {
               const title = usefulTrackTitle(track.title, fileName);
               const kept = (subs[track.index] ?? "keep") === "keep";
               return (
-                <div key={track.index} className="flex flex-col gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
+                <div key={track.index} className="flex flex-col gap-2 rounded border border-ink/10 bg-white px-3 py-2">
                 <label className="flex cursor-pointer flex-wrap items-center gap-3 text-sm">
                   <input
                     className="accent-accent"
@@ -471,7 +471,7 @@ export function TitlePage() {
                     {subLid.ok === false && (
                       <div className="flex flex-wrap items-center gap-2">
                         <input
-                          className="h-10 w-24 rounded-md bg-white/10 px-2"
+                          className="h-10 w-24 rounded-md border border-ink/15 bg-white px-2"
                           value={subLid.timeInput}
                           onChange={(e) => setSubLid({ ...subLid, timeInput: e.target.value })}
                           aria-label="Subtitle sample start time"
@@ -564,7 +564,7 @@ function parseAudioAction(value: string): AudioAction {
 function ModeChoice({ name, checked, onChange, label }: { name: string; checked: boolean; onChange: () => void; label: string }) {
   return (
     <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-      checked ? "border-accent/40 bg-accent/10 text-accent" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/5"
+      checked ? "border-accent/40 bg-accent/10 text-accent" : "border-ink/15 bg-white text-ink hover:bg-canvas"
     }`}>
       <input className="accent-accent" type="radio" name={name} checked={checked} onChange={onChange} />
       {label}

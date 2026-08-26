@@ -4,9 +4,9 @@ import { api, type LibraryRow } from "../api";
 import { Icons } from "./icons";
 
 const iconBtn =
-  "inline-flex h-11 w-11 items-center justify-center rounded border border-white/10 bg-white/[0.03] text-slate-200 transition-colors hover:border-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-11 w-11 items-center justify-center rounded border border-ink/15 bg-white text-ink transition-colors hover:border-accent hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
 const queueBtn =
-  "inline-flex h-11 items-center justify-center gap-1 rounded border border-accent/40 bg-accent/10 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-11 items-center justify-center gap-1 rounded border border-accent bg-accent px-2.5 text-xs font-semibold text-canvas transition-colors hover:bg-ink hover:border-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
 
 export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => void }) {
   const [msg, setMsg] = useState("");

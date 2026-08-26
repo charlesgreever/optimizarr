@@ -4,31 +4,32 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: Newsreader, ui-serif, Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --color-slate-300: #e3f2fd;
-  --color-slate-400: #90caf9;
-  --color-slate-500: #64b5f6;
-  --color-canvas: #0d47a1;
-  --color-ink: #e3f2fd;
-  --color-muted: #90caf9;
+  --color-slate-200: #0d47a1;
+  --color-slate-300: #3d6aa3;
+  --color-slate-400: #4d7ab0;
+  --color-slate-500: #5c88b8;
+  --color-canvas: #e3f2fd;
+  --color-ink: #0d47a1;
+  --color-muted: #3d6aa3;
   --color-accent: #2196f3;
-  --color-accent-strong: #90caf9;
-  --color-good: #6fad7c;
-  --color-warn: #90caf9;
-  --color-bad: #d36b5c;
+  --color-accent-strong: #0d47a1;
+  --color-good: #2e7d4f;
+  --color-warn: #c47b16;
+  --color-bad: #c4473a;
 }
 
 :root {
-  color-scheme: dark;
-  --bg: #0d47a1;
-  --panel: #0a3a8cf2;
-  --line: #e3f2fd22;
-  --text: #e3f2fd;
-  --muted: #90caf9;
+  color-scheme: light;
+  --bg: #e3f2fd;
+  --panel: #ffffff;
+  --line: #0d47a11f;
+  --text: #0d47a1;
+  --muted: #3d6aa3;
   --accent: #2196f3;
-  --accent-strong: #90caf9;
-  --good: #6fad7c;
-  --warn: #90caf9;
-  --bad: #d36b5c;
+  --accent-strong: #0d47a1;
+  --good: #2e7d4f;
+  --warn: #c47b16;
+  --bad: #c4473a;
 }
 
 * {
@@ -46,9 +47,7 @@ body {
   min-width: 320px;
   font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(circle at 12% 0%, #2196f3 0, transparent 38%),
-    var(--bg);
+  background: var(--bg);
 }
 
 a {
@@ -64,7 +63,7 @@ a {
 .shell > aside {
   padding: 28px 18px;
   border-right: 1px solid var(--line);
-  background: #0c3d94f2;
+  background: #ffffff;
 }
 
 .brand {
@@ -81,7 +80,7 @@ a {
   height: 32px;
   border-radius: 4px;
   color: #e3f2fd;
-  background: #2196f3;
+  background: #0d47a1;
   font-family: Newsreader, ui-serif, Georgia, serif;
 }
 
@@ -104,7 +103,7 @@ a {
 
 .shell nav a:hover {
   color: var(--text);
-  background: #ffffff08;
+  background: #90caf933;
 }
 
 .shell nav a:focus-visible {
@@ -113,8 +112,8 @@ a {
 }
 
 .shell nav a.active {
-  color: var(--text);
-  background: #2196f324;
+  color: var(--accent-strong);
+  background: #e3f2fd;
   box-shadow: inset 2px 0 var(--accent);
 }
 
@@ -136,7 +135,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid #ffffff0d;
+  border-bottom: 1px solid var(--line);
 }
 
 .global-search {
@@ -151,7 +150,7 @@ a {
   align-items: center;
   padding: 10px 14px;
   color: var(--muted);
-  background: #0a3680e8;
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 4px;
 }
@@ -196,7 +195,7 @@ a {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #0a3a8cf2;
+  background: #ffffff;
 }
 
 .report-bug-label {
@@ -204,7 +203,7 @@ a {
   align-items: center;
   gap: 6px;
   margin-right: 4px;
-  color: #8f9bb0;
+  color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -224,7 +223,7 @@ a {
   padding: 7px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #0a3a8c;
+  background: #ffffff;
 }
 
 .search-results button {
@@ -244,12 +243,12 @@ a {
 }
 
 .search-results button:hover {
-  background: #ffffff0c;
+  background: #e3f2fd;
 }
 
 .search-results .muted {
   margin-left: 8px;
-  color: #718097;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -326,7 +325,7 @@ a {
 
 .metrics span {
   display: block;
-  color: #8190a6;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -375,23 +374,25 @@ a {
 }
 
 .btn {
-  border: 1px solid #2196f366;
-  background: #2196f31c;
-  color: var(--accent-strong);
+  border: 1px solid #2196f3;
+  background: #2196f3;
+  color: #e3f2fd;
 }
 
 .btn:hover {
-  background: #2196f32c;
+  background: #0d47a1;
+  border-color: #0d47a1;
+  color: #e3f2fd;
 }
 
 .btn-secondary {
-  border: 1px solid #ffffff1c;
-  background: transparent;
+  border: 1px solid #0d47a133;
+  background: #ffffff;
   color: var(--text);
 }
 
 .btn-secondary:hover {
-  background: #ffffff0c;
+  background: #e3f2fd;
 }
 
 .btn.danger,
@@ -410,7 +411,7 @@ a {
 input,
 select,
 textarea {
-  background: #0a3680;
+  background: #ffffff;
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 4px;
@@ -437,7 +438,7 @@ textarea:focus-visible {
   padding: 11px 14px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #0a3680;
+  background: #ffffff;
   color: var(--text);
 }
 
@@ -455,7 +456,7 @@ th,
 td {
   text-align: left;
   padding: 0.85rem 0.85rem;
-  border-bottom: 1px solid #ffffff12;
+  border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
 
@@ -488,7 +489,7 @@ tbody tr {
 }
 
 tbody tr:hover td {
-  background: #ffffff07;
+  background: #90caf933;
 }
 
 table.dense th,
@@ -528,9 +529,9 @@ tr:last-child td {
 .inspect-banner {
   margin: 16px 42px 0;
   padding: 11px 14px;
-  border: 1px solid #90caf944;
-  background: #2196f324;
-  color: #e3f2fd;
+  border: 1px solid #90caf9;
+  background: #90caf933;
+  color: var(--text);
   border-radius: 4px;
   font-size: 14px;
 }
@@ -554,9 +555,9 @@ tr:last-child td {
   gap: 10px;
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid #ffffff14;
-  border-radius: 9px;
-  background: #ffffff08;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #ffffff;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -640,14 +641,14 @@ tr:last-child td {
   min-height: 48px;
   border: 0;
   border-radius: 4px;
-  background: #e3f2fd;
-  color: #0d47a1;
+  background: #2196f3;
+  color: #e3f2fd;
   font-weight: 700;
   cursor: pointer;
 }
 
 .auth-card button[type="submit"]:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -689,7 +690,7 @@ tr:last-child td {
   gap: 10px;
   padding: 10px;
   border-radius: 4px;
-  background: #0a3680;
+  background: #e3f2fd;
 }
 
 @media (max-width: 1100px) {
@@ -738,7 +739,7 @@ tr:last-child td {
     width: 100%;
     padding: 8px;
     border: 0;
-    border-top: 1px solid #ffffff14;
+    border-top: 1px solid var(--line);
   }
 
   .brand {
@@ -809,6 +810,7 @@ tr:last-child td {
 
 .contact-frame + .contact-frame {
   border-left: 1px solid var(--line);
+  background: #e3f2fd;
 }
 
 .contact-frame dt {
@@ -833,7 +835,7 @@ tr:last-child td {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #0d47a1cc;
+  background: #0d47a159;
 }
 
 .modal-card {

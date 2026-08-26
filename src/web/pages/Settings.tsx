@@ -234,7 +234,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </button>
         <ul className="space-y-2 text-sm">
           {data.instances.map((row) => (
-            <li key={row.id} className="space-y-2 rounded-xl border border-white/10 px-3 py-3">
+            <li key={row.id} className="space-y-2 rounded border border-ink/15 bg-white px-3 py-3">
               <div className="min-w-0">
                 <div className="font-medium text-ink">{row.name}</div>
                 <div className="truncate text-xs text-muted">
@@ -364,7 +364,7 @@ function SecretOnce({
     <div className="space-y-1.5 text-sm">
       <div className="font-medium text-slate-300">{label}</div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <code className="min-w-0 flex-1 break-all rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-ink">{value}</code>
+        <code className="min-w-0 flex-1 break-all rounded-md border border-ink/15 bg-canvas px-3 py-2 text-xs text-ink">{value}</code>
         <button
           className="btn-secondary h-10 shrink-0"
           type="button"

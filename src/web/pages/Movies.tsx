@@ -155,7 +155,7 @@ export function MoviesPage() {
                     {item.hasPoster ? (
                       <img src={`/api/library/${item.id}/poster`} alt="" className="h-14 w-10 rounded-md object-cover ring-1 ring-white/10" />
                     ) : (
-                      <div className="h-14 w-10 rounded-md bg-white/10 ring-1 ring-white/5" />
+                      <div className="h-14 w-10 rounded-md bg-canvas ring-1 ring-ink/15" />
                     )}
                   </td>
                   <td className="min-w-44">

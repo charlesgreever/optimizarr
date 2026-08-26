@@ -28,7 +28,7 @@ export function TitleFacts({ item }: { item: LibraryRow }) {
           className="h-48 w-32 shrink-0 rounded-lg object-cover ring-1 ring-white/10"
         />
       ) : (
-        <div className="h-48 w-32 shrink-0 rounded-lg bg-white/10 ring-1 ring-white/5" />
+        <div className="h-48 w-32 shrink-0 rounded bg-canvas ring-1 ring-ink/15" />
       )}
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap gap-1.5">

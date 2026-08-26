@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { formatSize } from "../api";
 
 const pillTone = {
-  neutral: "border-white/10 bg-white/5 text-slate-300",
+  neutral: "border-ink/15 bg-white text-ink",
   good: "border-good/30 bg-good/10 text-good",
   warn: "border-warn/30 bg-warn/10 text-warn",
   bad: "border-bad/30 bg-bad/10 text-bad",
-  accent: "border-accent/30 bg-accent/15 text-accent",
+  accent: "border-accent/30 bg-accent/10 text-accent",
 } as const;
 
 export function Pill({
@@ -53,7 +53,7 @@ export function FilterChip({
       className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         pressed
           ? "border-accent/40 bg-accent/15 text-accent"
-          : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+          : "border-ink/15 bg-white text-ink hover:bg-canvas"
       }`}
     >
       {children}
