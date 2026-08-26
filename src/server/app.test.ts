@@ -816,6 +816,9 @@ describe("public HTTP behavior", () => {
     });
 
     expect(res.status).toBe(401);
+    expect((await ctx.app.app.request("/api/work", {
+      headers: { "x-real-ip": "127.0.0.1", "x-forwarded-for": "127.0.0.1" },
+    })).status).toBe(401);
   });
 
   it("does not send an Arr API key to an external poster host", async () => {

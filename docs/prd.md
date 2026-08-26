@@ -205,6 +205,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 163. As a library owner, I want tracks-only and stereo-only jobs to use the same sidecar and Keep path, so that review is one workflow.
 164. As a library owner, I want a series suggestion, queue row, review card, history row, and error row to show show title, then season, then episode title, so that I can tell Ted Lasso S03E02 from another episode also named Chelsea.
 165. As a library owner, I want a Home dashboard after login that shows files optimized, space saved, a one-line Status (the running title, how many jobs are waiting, or Idle), open suggestions, queued jobs, pending review, and error count, so that I can see whether the app is earning its keep.
+165b. As a library owner, I want Queue and Review in the sidebar to show counts when jobs are running or waiting and when sidecars are in Review, so that I can see processing and Keep work from any page.
 166. As a library owner, I want Home to show recent kept, flagged, failed, and discarded work, so that I do not have to open History for a glance.
 167. As a library owner, I want space saved to be the sum of (original size minus new size) for successful Keeps and successful direct writes, so that the tally is a real number I can trust.
 168. As a library owner, I want files optimized to count successful Keeps and successful direct writes, so that skipping Review does not hide savings.

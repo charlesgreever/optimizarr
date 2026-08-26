@@ -2,6 +2,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type InspectState, type SearchHit } from "../api";
 import { inspectBannerView } from "../inspect-banner";
+import { headerWorkLine, navCount } from "../nav-work";
 import { buildReportIssueUrl, type ReportKind } from "../reportIssue";
 import { Icons } from "./icons";
 
@@ -21,6 +22,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [inspect, setInspect] = useState<InspectState | null>(null);
+  const [work, setWork] = useState({ queueActive: 0, review: 0, runningTitle: null as string | null });
   const [dismissedFailed, setDismissedFailed] = useState(false);
   const navigate = useNavigate();
 
@@ -41,7 +43,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
     const poll = async () => {
       if (stop) return;
       try {
-        setInspect(await api.inspect());
+        const [inspectState, workState] = await Promise.all([
+          api.inspect(),
+          api.work().catch(() => null),
+        ]);
+        setInspect(inspectState);
+        if (workState) {
+          setWork({
+            queueActive: workState.queueActive,
+            review: workState.review,
+            runningTitle: workState.runningTitle,
+          });
+        }
       } catch {
         /* still signed in later */
       }
@@ -69,6 +82,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <NavLink key={item.to} to={item.to} end={item.to === "/"}>
               {item.icon()}
               <span>{item.label}</span>
+              {item.to === "/queue" && navCount(work.queueActive) != null && (
+                <span className="nav-count">{navCount(work.queueActive)}</span>
+              )}
+              {item.to === "/review" && navCount(work.review) != null && (
+                <span className="nav-count">{navCount(work.review)}</span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -105,7 +124,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="header-actions">
-            <small>{inspecting ? `Inspecting · ${inspect?.pending ?? 0} left` : "● Ready"}</small>
+            <small>{headerWorkLine(inspecting, inspect?.pending ?? 0, work.runningTitle)}</small>
           </div>
         </header>
         {inspecting && (

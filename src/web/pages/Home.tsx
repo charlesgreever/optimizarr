@@ -40,7 +40,7 @@ export function HomeDashboard({ data, onRefresh }: { data: HomePayload; onRefres
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <WorkStat label="Suggestions" value={data.suggestions} to="/suggestions" />
-        <WorkStat label="Queue" value={data.queued} to="/queue" />
+        <WorkStat label="Queue" value={data.queueActive ?? data.queued} to="/queue" />
         <WorkStat label="Review" value={data.review} to="/review" />
         <WorkStat label="Errors" value={data.errors} to="/errors" />
       </div>

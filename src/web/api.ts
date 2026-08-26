@@ -10,6 +10,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => req<{ ok: boolean }>("/api/health"),
+  work: () => req<{ queued: number; queueActive: number; review: number; runningTitle: string | null }>("/api/work"),
   status: () => req<{ authenticated: boolean; firstRun: FirstRun }>("/api/auth/status"),
   setup: (username: string, password: string) => req("/api/auth/setup", { method: "POST", body: JSON.stringify({ username, password }) }),
   login: (username: string, password: string) => req("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
@@ -263,6 +264,7 @@ export type HomePayload = {
   spaceSavedBytes: number;
   suggestions: number;
   queued: number;
+  queueActive?: number;
   review: number;
   errors: number;
   recent: HistoryRow[];

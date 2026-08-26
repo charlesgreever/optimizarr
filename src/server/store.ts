@@ -922,6 +922,7 @@ export class Store {
   workSummary(): {
     suggestions: number;
     queued: number;
+    queueActive: number;
     review: number;
     errors: number;
     failed: number;
@@ -931,6 +932,7 @@ export class Store {
       `SELECT
          (SELECT COUNT(*) FROM suggestions WHERE dismissed = 0) AS suggestions,
          (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status IN ('queued', 'held')) AS queued,
+         (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status IN ('queued', 'held', 'paused', 'running')) AS queue_active,
          (SELECT COUNT(*) FROM reviews) AS review,
          (SELECT COUNT(*) FROM file_errors e WHERE ${currentFileErrorSql("e")}) AS errors,
          (SELECT COUNT(*) FROM jobs WHERE queue_visible = 1 AND status = 'failed') AS failed`,
@@ -944,6 +946,7 @@ export class Store {
     return {
       suggestions: Number(counts.suggestions),
       queued: Number(counts.queued),
+      queueActive: Number(counts.queue_active),
       review: Number(counts.review),
       errors: Number(counts.errors),
       failed: Number(counts.failed),

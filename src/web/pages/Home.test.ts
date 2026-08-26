@@ -10,6 +10,7 @@ const data: HomePayload = {
   spaceSavedBytes: 6 * 1024 ** 3,
   suggestions: 2,
   queued: 1,
+  queueActive: 5,
   review: 3,
   errors: 0,
   status: "Working · Film",
@@ -24,6 +25,7 @@ describe("Home dashboard", () => {
     expect(html).toContain("Working · Film");
     expect(html).toContain("href=\"/suggestions\"");
     expect(html).toContain("href=\"/queue\"");
+    expect(html).toContain(">5</div>");
     expect(html).toContain("href=\"/review\"");
     expect(html).toContain("href=\"/errors\"");
     expect(html).toContain("Kept");

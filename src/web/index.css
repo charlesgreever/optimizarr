@@ -111,6 +111,13 @@ a {
   box-shadow: inset 2px 0 #72efd9;
 }
 
+.nav-count {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
 .shell > main {
   min-width: 0;
 }

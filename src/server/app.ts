@@ -218,6 +218,7 @@ export function createApp(opts: AppOptions) {
   app.use("/api/errors", authed);
   app.use("/api/history", authed);
   app.use("/api/home", authed);
+  app.use("/api/work", authed);
   app.use("/api/search", authed);
   app.use("/api/hardware", authed);
   app.use("/api/auth/password", authed);
@@ -936,6 +937,16 @@ export function createApp(opts: AppOptions) {
     return c.json(store.historyPage(offset, limit));
   });
 
+  app.get("/api/work", (c) => {
+    const work = store.workSummary();
+    return c.json({
+      queued: work.queued,
+      queueActive: work.queueActive,
+      review: work.review,
+      runningTitle: work.running?.displayTitle ?? null,
+    });
+  });
+
   app.get("/api/home", (c) => {
     const sav = store.savings();
     const work = store.workSummary();
@@ -944,6 +955,7 @@ export function createApp(opts: AppOptions) {
       spaceSavedBytes: sav.spaceSavedBytes,
       suggestions: work.suggestions,
       queued: work.queued,
+      queueActive: work.queueActive,
       review: work.review,
       errors: work.errors,
       recent: store.historyPage(0, 8).items,

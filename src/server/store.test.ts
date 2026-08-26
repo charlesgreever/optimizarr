@@ -145,6 +145,32 @@ describe("store schema migration", () => {
     expect((loaded?.plan as { origin?: string }).origin).toBe("custom");
   });
 
+  it("counts running jobs in queueActive so a processing file is not hidden", () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-work-")), "polisharr.db"));
+    stores.push(store);
+    const plan = {
+      origin: "bulk" as const,
+      video: { kind: "copy" as const },
+      audio: [],
+      subtitles: [],
+      container: "mkv" as const,
+      writeMode: "sidecar" as const,
+      warning: null,
+      reasons: [],
+      estimatedOutputBytes: null,
+      category: "movie1080p" as const,
+    };
+    store.insertJob({
+      id: "job-wait", itemId: "item-1", suggestionId: null, status: "queued", phase: "queued",
+      progress: 0, error: null, warning: null, runNow: false, createdAt: 1, writeMode: "sidecar", plan,
+    });
+    store.insertJob({
+      id: "job-run", itemId: "item-2", suggestionId: null, status: "running", phase: "transcoding",
+      progress: 0.4, error: null, warning: null, runNow: false, createdAt: 2, writeMode: "sidecar", plan,
+    });
+    expect(store.workSummary()).toMatchObject({ queued: 1, queueActive: 2 });
+  });
+
   it("returns interrupted running jobs to the queue after restart", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-recovery-"));
     const store = new Store(join(dir, "polisharr.db"));
