@@ -35,12 +35,14 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 
 Polisharr runs as a Docker container next to Radarr and Sonarr. It reads the same library files those apps already know, so the media bind in compose must be that path on both sides. Video encode needs a GPU: NVIDIA (NVENC) or Intel (VAAPI, the Video Acceleration API). There is no CPU encode fallback.
 
-### 1. Get the files
+### 1. Get compose
 
 ```bash
 git clone https://github.com/charlesgreever/polisharr.git polisharr
 cd polisharr
 ```
+
+The running image is `ghcr.io/charlesgreever/polisharr:latest` (version tags such as `0.1.0` match GitHub releases). GitHub Actions builds that image on each `v*` tag.
 
 ### 2. Copy and edit compose
 
@@ -59,10 +61,11 @@ If Radarr and Sonarr already share a Docker network, attach Polisharr to that ne
 ### 3. Start
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Recreate the container after you change GPU settings.
+Recreate the container after you change GPU settings. To compile this tree instead of pulling, uncomment `build: .` in compose and run `docker compose up -d --build`.
 
 ### 4. First run
 
