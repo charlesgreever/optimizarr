@@ -17,7 +17,7 @@ import type {
   Suggestion,
 } from "./types.ts";
 import { normalizeInspection } from "./inspect.ts";
-import { displayTitle, tokenize } from "./titles.ts";
+import { displayTitle, displayTitleForFile, tokenize } from "./titles.ts";
 import { parseStoredSettings } from "./settings.ts";
 import type { SuggestionFilters } from "./suggestion-filters.ts";
 import { suggestionTrackComparison } from "./tracks.ts";
@@ -356,6 +356,22 @@ export class Store {
       `SELECT i.*, inst.name AS instance_name FROM library_items i JOIN instances inst ON inst.id = i.instance_id WHERE i.id = ?`,
     ).get(id) as Record<string, unknown> | undefined;
     return row ? mapItem(row) : undefined;
+  }
+
+  itemsForPath(path: string, instanceId: string): LibraryItem[] {
+    if (!path) return [];
+    const rows = this.db.prepare(
+      `SELECT i.*, inst.name AS instance_name FROM library_items i JOIN instances inst ON inst.id = i.instance_id
+       WHERE i.path = ? AND i.instance_id = ?
+       ORDER BY i.season, i.episode, i.id`,
+    ).all(path, instanceId) as Record<string, unknown>[];
+    return rows.map(mapItem);
+  }
+
+  fileDisplayTitle(itemId: string): string | undefined {
+    const item = this.getItem(itemId);
+    if (!item) return undefined;
+    return displayTitleForFile(this.itemsForPath(item.path, item.instanceId));
   }
 
   removeItemsNotIn(instanceId: string, type: "movie" | "episode", keepIds: string[]): void {
@@ -759,7 +775,7 @@ export class Store {
       const itemId = String(row.item_id);
       return {
         ...mapJob(row),
-        displayTitle: joinedDisplayTitle(row, itemId),
+        displayTitle: this.fileDisplayTitle(itemId) ?? joinedDisplayTitle(row, itemId),
         href: row.item_type == null ? undefined : itemHref(row.item_type, itemId),
       };
     }), total, offset, limit);
@@ -774,6 +790,15 @@ export class Store {
     const row = this.db
       .prepare("SELECT * FROM jobs WHERE item_id = ? AND status IN ('queued','held','paused','running')")
       .get(itemId) as Record<string, unknown> | undefined;
+    return row ? mapJob(row) : undefined;
+  }
+
+  activeJobForPath(path: string, instanceId: string): (Job & { plan: JobPlan }) | undefined {
+    if (!path) return undefined;
+    const row = this.db.prepare(
+      `SELECT j.* FROM jobs j JOIN library_items i ON i.id = j.item_id
+       WHERE i.path = ? AND i.instance_id = ? AND j.status IN ('queued','held','paused','running')`,
+    ).get(path, instanceId) as Record<string, unknown> | undefined;
     return row ? mapJob(row) : undefined;
   }
 
@@ -849,7 +874,7 @@ export class Store {
        ORDER BY r.id LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
     return {
-      ...page(rows.map((row) => ({ ...mapReview(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit),
+      ...page(rows.map((row) => ({ ...mapReview(row), displayTitle: this.fileDisplayTitle(String(row.item_id)) ?? joinedDisplayTitle(row, String(row.item_id)) })), total, offset, limit),
       pendingCount: this.pendingReviewCount(),
     };
   }
@@ -870,6 +895,20 @@ export class Store {
   pendingReviewForItem(itemId: string): ReviewItem | undefined {
     const row = this.db.prepare("SELECT * FROM reviews WHERE item_id = ?").get(itemId) as Record<string, unknown> | undefined;
     return row ? mapReview(row) : undefined;
+  }
+
+  pendingReviewForPath(path: string, instanceId: string): ReviewItem | undefined {
+    if (!path) return undefined;
+    const row = this.db.prepare(
+      `SELECT r.* FROM reviews r JOIN library_items i ON i.id = r.item_id
+       WHERE i.path = ? AND i.instance_id = ?`,
+    ).get(path, instanceId) as Record<string, unknown> | undefined;
+    return row ? mapReview(row) : undefined;
+  }
+
+  reviewsForSidecarPath(sidecarPath: string): ReviewItem[] {
+    if (!sidecarPath) return [];
+    return (this.db.prepare("SELECT * FROM reviews WHERE sidecar_path = ?").all(sidecarPath) as Record<string, unknown>[]).map(mapReview);
   }
 
   updateReview(id: string, patch: Partial<{ status: ReviewStatus; error: string | null }>): void {
@@ -950,7 +989,7 @@ export class Store {
       review: Number(counts.review),
       errors: Number(counts.errors),
       failed: Number(counts.failed),
-      running: row ? { ...mapJob(row), displayTitle: joinedDisplayTitle(row, String(row.item_id)) } : null,
+      running: row ? { ...mapJob(row), displayTitle: this.fileDisplayTitle(String(row.item_id)) ?? joinedDisplayTitle(row, String(row.item_id)) } : null,
     };
   }
 

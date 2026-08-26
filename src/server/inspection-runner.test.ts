@@ -326,4 +326,65 @@ describe("inspection runner", () => {
     expect(runner.leftoverCount()).toBe(0);
     store.close();
   });
+
+  it("probes a shared episode file once and copies the report to the sibling", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-shared-inspect-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({
+      kind: "sonarr",
+      name: "TV",
+      url: "http://sonarr",
+      secret: null,
+      enabled: true,
+    });
+    const path = join(dir, "Paw Patrol - S08E35-E36.mkv");
+    writeFileSync(path, "MEDIA");
+    const e35 = `${instanceId}:episode:35`;
+    const e36 = `${instanceId}:episode:36`;
+    for (const [id, episode] of [[e35, 35], [e36, 36]] as const) {
+      store.upsertItem({
+        id,
+        instanceId,
+        arrId: episode,
+        arrSeriesId: 8,
+        arrEpisodeFileId: 99,
+        type: "episode",
+        title: "Paw Patrol",
+        showTitle: "Paw Patrol",
+        season: 8,
+        episode,
+        episodeTitle: "Rescue Knights",
+        path,
+        sizeBytes: 5,
+        quality: "WEBDL-1080p",
+        resolution: "1080",
+        profile: "HD",
+        tags: [],
+        posterRemoteUrl: null,
+        sizeExempt: false,
+      });
+    }
+    let probed = 0;
+    const runner = createInspectionRunner({
+      store,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      readable: async () => true,
+      probe: async () => {
+        probed += 1;
+        return {
+          format: { duration: "1200" },
+          streams: [{ codec_type: "video", codec_name: "h264", width: 1280, height: 720 }],
+        };
+      },
+      recomputeSuggestion: () => undefined,
+    });
+
+    await runner.inspectPending();
+    expect(probed).toBe(1);
+    expect(store.getInspection(e35)?.sourceSig).toBe(`${path}|5`);
+    expect(store.getInspection(e36)?.sourceSig).toBe(`${path}|5`);
+    expect(runner.leftoverCount()).toBe(0);
+    store.close();
+  });
 });

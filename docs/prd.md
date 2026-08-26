@@ -56,6 +56,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 29. As a library owner, I want each row to show the optimization plan for that title in plain language, so that I do not have to open Suggestions to learn what Polisharr would do.
 30. As a library owner, I want to queue work, add stereo, force a suggestion, or set a size-cap exemption from the movie or episode row, so that I can act where I already am.
 31. As a library owner, I want episode rows to offer the same actions as movie rows, so that Series is not a read-only tree.
+31b. As a library owner, I want two Sonarr episodes that share one file to produce one optimize job and one Review sidecar, and I want both episode rows to say they share that file, so that I do not encode or Keep the same MKV twice.
 32. As a library owner, I want an Optimize all episodes control on the series header, so that I can queue every episode of that show that already has open work.
 33. As a library owner, I want Optimize all episodes to skip healthy, unread, dismissed, and pending-review episodes, and to tell me how many were queued and how many were skipped, so that I do not invent work or stack jobs.
 33a. As a library owner, I want each series header to show how many episodes are healthy and how many still have suggestions, so that I can scan a show without expanding it.

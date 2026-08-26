@@ -26,6 +26,8 @@ export type JobServiceOptions = {
   promote?: (input: PromoteInput) => Promise<PromoteResult>;
 };
 
+export const SHARED_FILE_BUSY = "This file is already in the queue or Review. Another episode uses the same file.";
+
 export class JobService {
   private running = new Set<string>();
   private cancelled = new Set<string>();
@@ -52,12 +54,8 @@ export class JobService {
   ): { id: string } | { error: string; status: number } {
     const item = this.opts.store.getItem(itemId);
     if (!item) return { error: "That title is not in the library.", status: 404 };
-    if (this.opts.store.pendingReviewForItem(itemId)) {
-      return { error: "This title already has a sidecar waiting in Review.", status: 409 };
-    }
-    if (this.opts.store.activeJobForItem(itemId)) {
-      return { error: "This title already has an active job.", status: 409 };
-    }
+    const busy = this.enqueueLock(item);
+    if (busy) return busy;
     if (suggestion.actions.includes("search_language") && suggestion.actions.every((action) => action === "search_language")) {
       return {
         error: "This title needs a Radarr or Sonarr search, not an encode. Open the title page to confirm.",
@@ -89,12 +87,8 @@ export class JobService {
   enqueueCustom(itemId: string, plan: import("./types.ts").ExecutablePlan, runNow = false): { id: string } | { error: string; status: number } {
     const item = this.opts.store.getItem(itemId);
     if (!item) return { error: "That title is not in the library.", status: 404 };
-    if (this.opts.store.pendingReviewForItem(itemId)) {
-      return { error: "This title already has a sidecar waiting in Review.", status: 409 };
-    }
-    if (this.opts.store.activeJobForItem(itemId)) {
-      return { error: "This title already has an active job.", status: 409 };
-    }
+    const busy = this.enqueueLock(item);
+    if (busy) return busy;
     const id = randomUUID();
     this.opts.store.insertJob({
       id,
@@ -113,6 +107,24 @@ export class JobService {
     });
     void this.tick();
     return { id };
+  }
+
+  private enqueueLock(item: NonNullable<ReturnType<Store["getItem"]>>): { error: string; status: number } | undefined {
+    if (this.opts.store.pendingReviewForItem(item.id)) {
+      return { error: "This title already has a sidecar waiting in Review.", status: 409 };
+    }
+    if (this.opts.store.activeJobForItem(item.id)) {
+      return { error: "This title already has an active job.", status: 409 };
+    }
+    const pathReview = this.opts.store.pendingReviewForPath(item.path, item.instanceId);
+    if (pathReview && pathReview.itemId !== item.id) {
+      return { error: SHARED_FILE_BUSY, status: 409 };
+    }
+    const pathJob = this.opts.store.activeJobForPath(item.path, item.instanceId);
+    if (pathJob && pathJob.itemId !== item.id) {
+      return { error: SHARED_FILE_BUSY, status: 409 };
+    }
+    return undefined;
   }
 
   cancel(id: string): { ok: true } | { error: string; status: number } {
@@ -223,9 +235,8 @@ export class JobService {
           this.opts.store.addHistory(item.id, "failed", 0, this.now());
           return;
         }
-        this.opts.store.updateItemFile(item.id, outcome.destPath, result.output.sizeBytes);
-        const reinspection = await this.opts.reinspectChangedItem(item.id, item.path);
-        const warning = appendWarning(outcome.warning, reinspection.ok ? null : `The new file could not be inspected: ${reinspection.warning}`);
+        const synced = await this.syncLibraryFile(item, outcome.destPath, result.output.sizeBytes);
+        const warning = appendWarning(outcome.warning, synced.warning);
         this.opts.store.updateJob(id, { status: "succeeded", phase: "idle", progress: 1, promoteError: warning });
         this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
         return;
@@ -284,16 +295,13 @@ export class JobService {
   async recoverInterruptedKeeps(): Promise<void> {
     for (const review of this.opts.store.listReviews()) {
       if (review.status === "discarding") {
-        try {
-          await unlink(review.sidecarPath);
-        } catch {
-          // Sidecar may already be gone.
-        }
+        await this.unlinkSidecarIfLast(review);
         this.opts.store.deleteReview(review.id);
         this.opts.store.addHistory(review.itemId, "discarded", 0, this.now());
         continue;
       }
       if (review.status !== "keeping") continue;
+      if (!this.opts.store.getReview(review.id)) continue;
       const item = this.opts.store.getItem(review.itemId);
       const job = this.opts.store.getJob(review.jobId);
       const plan = job ? resolvePlan(job.plan, job.writeMode) : undefined;
@@ -324,6 +332,9 @@ export class JobService {
     const review = this.opts.store.getReview(reviewId);
     if (!review) return { error: "That review item is gone.", status: 404 };
     if (review.status === "keeping") return { error: "Keep is already running for this title.", status: 409 };
+    if (this.opts.store.reviewsForSidecarPath(review.sidecarPath).some((row) => row.id !== reviewId && row.status === "keeping")) {
+      return { error: "Keep is already running for this file.", status: 409 };
+    }
     if (!(await fileExists(review.sidecarPath))) {
       this.opts.store.updateReview(reviewId, { status: "pending", error: SIDECAR_GONE });
       return { error: SIDECAR_GONE, status: 409 };
@@ -366,10 +377,9 @@ export class JobService {
       return;
     }
     this.opts.store.addHistory(item.id, "kept", outcome.savedBytes, this.now());
-    this.opts.store.updateItemFile(item.id, outcome.destPath, review.sidecar.sizeBytes ?? item.sizeBytes);
-    const reinspection = await this.opts.reinspectChangedItem(item.id, item.path);
-    this.opts.store.deleteReview(reviewId);
-    const warning = appendWarning(outcome.warning, reinspection.ok ? null : `The new file could not be inspected: ${reinspection.warning}`);
+    const synced = await this.syncLibraryFile(item, outcome.destPath, review.sidecar.sizeBytes ?? item.sizeBytes);
+    this.deleteReviewsForSidecar(review.sidecarPath);
+    const warning = appendWarning(outcome.warning, synced.warning);
     if (warning && job) this.opts.store.updateJob(job.id, { promoteError: warning });
   }
 
@@ -381,9 +391,10 @@ export class JobService {
     }
     const saved = Math.max(0, (review.source.sizeBytes ?? 0) - (review.sidecar.sizeBytes ?? 0));
     this.opts.store.addHistory(review.itemId, "kept", saved, this.now());
-    this.opts.store.updateItemFile(review.itemId, destPath, review.sidecar.sizeBytes ?? 0);
-    await this.opts.reinspectChangedItem(review.itemId, review.sourcePath);
-    this.opts.store.deleteReview(review.id);
+    const item = this.opts.store.getItem(review.itemId);
+    if (item) await this.syncLibraryFile(item, destPath, review.sidecar.sizeBytes ?? item.sizeBytes);
+    else this.opts.store.updateItemFile(review.itemId, destPath, review.sidecar.sizeBytes ?? 0);
+    this.deleteReviewsForSidecar(review.sidecarPath);
   }
 
   private async withKeepSlot<T>(work: () => Promise<T>): Promise<T> {
@@ -498,14 +509,45 @@ export class JobService {
     const review = this.opts.store.getReview(reviewId);
     if (!review) return { error: "That review item is gone.", status: 404 };
     this.opts.store.updateReview(reviewId, { status: "discarding" });
+    await this.unlinkSidecarIfLast(review);
+    this.opts.store.deleteReview(reviewId);
+    this.opts.store.addHistory(review.itemId, "discarded", 0, this.now());
+    return { accepted: true };
+  }
+
+  private async unlinkSidecarIfLast(review: ReviewItem): Promise<void> {
+    const others = this.opts.store.reviewsForSidecarPath(review.sidecarPath).filter((row) => row.id !== review.id);
+    if (others.length > 0) return;
     try {
       await unlink(review.sidecarPath);
     } catch {
       // The sidecar may already be gone.
     }
-    this.opts.store.deleteReview(reviewId);
-    this.opts.store.addHistory(review.itemId, "discarded", 0, this.now());
-    return { accepted: true };
+  }
+
+  private deleteReviewsForSidecar(sidecarPath: string): void {
+    for (const row of this.opts.store.reviewsForSidecarPath(sidecarPath)) {
+      this.opts.store.deleteReview(row.id);
+    }
+  }
+
+  private async syncLibraryFile(
+    item: NonNullable<ReturnType<Store["getItem"]>>,
+    destPath: string,
+    sizeBytes: number,
+  ): Promise<{ warning: string | null }> {
+    const oldPath = item.path;
+    const siblings = this.opts.store.itemsForPath(item.path, item.instanceId);
+    const targets = siblings.length > 0 ? siblings : [item];
+    for (const sibling of targets) {
+      this.opts.store.updateItemFile(sibling.id, destPath, sizeBytes);
+    }
+    const warnings: string[] = [];
+    for (const sibling of targets) {
+      const result = await this.opts.reinspectChangedItem(sibling.id, oldPath);
+      if (!result.ok) warnings.push(`The new file could not be inspected: ${result.warning}`);
+    }
+    return { warning: warnings.length > 0 ? warnings.join(" ") : null };
   }
 
   private now(): number {

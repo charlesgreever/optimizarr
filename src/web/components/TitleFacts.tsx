@@ -16,6 +16,7 @@ export function TitleFacts({ item }: { item: LibraryRow }) {
     hdr,
     report?.bitDepth ? `${report.bitDepth}-bit` : null,
     report?.sizePerHourGb != null ? `${report.sizePerHourGb.toFixed(2)} GB/hr` : null,
+    item.sharedFileLabel,
   ].filter((value): value is string => Boolean(value));
 
   return (

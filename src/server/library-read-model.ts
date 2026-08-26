@@ -1,5 +1,6 @@
 import type { Store, LibrarySnapshot } from "./store.ts";
-import { displayTitle } from "./titles.ts";
+import type { LibraryItem } from "./types.ts";
+import { displayTitle, sharedFileLabel } from "./titles.ts";
 import { audioTrackLabel, subtitleTrackLabel } from "./tracks.ts";
 
 export type Page<T> = {
@@ -15,7 +16,7 @@ export function createLibraryReadModel(store: Store) {
     movies(offset: number, limit: number, sort: "title" | "size" | "quality" = "title") {
       const page = store.libraryPage({ type: "movie", offset, limit, sort });
       const health = store.movieHealth();
-      return { ...presentPage(page, offset, limit), healthyCount: health.healthyCount, suggestionCount: health.suggestionCount };
+      return { ...presentPage(store, page, offset, limit), healthyCount: health.healthyCount, suggestionCount: health.suggestionCount };
     },
     series(offset: number, limit: number) {
       const page = store.seriesPage(offset, limit);
@@ -31,22 +32,24 @@ export function createLibraryReadModel(store: Store) {
     },
     episodes(instanceId: string, arrSeriesId: number, offset: number, limit: number) {
       const page = store.libraryPage({ type: "episode", instanceId, arrSeriesId, offset, limit });
-      return presentPage(page, offset, limit);
+      return presentPage(store, page, offset, limit);
     },
     item(id: string, detail = false) {
       const snapshot = store.librarySnapshot(id);
-      return snapshot ? presentLibraryItem(snapshot, detail) : undefined;
+      if (!snapshot) return undefined;
+      return presentLibraryItem(snapshot, detail, store.itemsForPath(snapshot.item.path, snapshot.item.instanceId));
     },
   };
 }
 
 function presentPage(
+  store: Store,
   page: { rows: LibrarySnapshot[]; total: number },
   offset: number,
   limit: number,
 ): Page<ReturnType<typeof presentLibraryItem>> {
   return {
-    items: page.rows.map((row) => presentLibraryItem(row)),
+    items: page.rows.map((row) => presentLibraryItem(row, false, store.itemsForPath(row.item.path, row.item.instanceId))),
     nextOffset: nextOffset(offset, limit, page.total),
     total: page.total,
   };
@@ -57,7 +60,7 @@ function nextOffset(offset: number, limit: number, total: number): number | null
   return next < total ? next : null;
 }
 
-export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false) {
+export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false, siblings: LibraryItem[] = []) {
   const { item, report, suggestion } = snapshot;
   const error = snapshot.error ?? (!item.path && item.type === "episode"
     ? "Sonarr did not send a file path. Refresh the library."
@@ -65,6 +68,7 @@ export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false) {
   return {
     ...item,
     displayTitle: displayTitle(item),
+    sharedFileLabel: sharedFileLabel(item, siblings),
     inspected: Boolean(report),
     mediaState: error ? "unreadable" as const : report ? "inspected" as const : "waiting" as const,
     report: detail ? report : undefined,

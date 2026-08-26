@@ -78,8 +78,37 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
     }
   }
 
+  function applyReport(item: LibraryItem, report: InspectionReport): void {
+    opts.store.saveInspection(item.id, report);
+    opts.store.clearFileErrorsForItem(item.id);
+    opts.store.clearFileError(item.path);
+    opts.recomputeSuggestion(item.id);
+  }
+
+  function siblingInspection(item: LibraryItem): InspectionReport | undefined {
+    const sourceSig = `${item.path}|${item.sizeBytes}`;
+    for (const sibling of opts.store.itemsForPath(item.path, item.instanceId)) {
+      if (sibling.id === item.id || sibling.sizeBytes !== item.sizeBytes) continue;
+      const report = opts.store.getInspection(sibling.id);
+      if (report?.sourceSig === sourceSig) return report;
+    }
+    return undefined;
+  }
+
+  function applyReportToPathSiblings(item: LibraryItem, report: InspectionReport): void {
+    for (const sibling of opts.store.itemsForPath(item.path, item.instanceId)) {
+      if (sibling.id === item.id || sibling.sizeBytes !== item.sizeBytes) continue;
+      applyReport(sibling, report);
+    }
+  }
+
   async function inspectItem(item: LibraryItem): Promise<ReinspectionResult> {
     if (!item.path) return { ok: false, warning: "This title has no file path to inspect." };
+    const copied = siblingInspection(item);
+    if (copied) {
+      applyReport(item, copied);
+      return { ok: true, report: copied };
+    }
     let access: "ok" | "missing" | "denied";
     try {
       access = opts.readable
@@ -114,18 +143,14 @@ export function createInspectionRunner(opts: InspectionRunnerOptions) {
               ? await opts.probe(item.path, item.sizeBytes)
               : await defaultProbe(opts.ffprobe, item.path),
           );
-      opts.store.saveInspection(item.id, report);
-      opts.store.clearFileErrorsForItem(item.id);
-      opts.store.clearFileError(item.path);
-      opts.recomputeSuggestion(item.id);
+      applyReport(item, report);
+      applyReportToPathSiblings(item, report);
       return { ok: true, report };
     } catch (error) {
       if (isIsoPath(item.path)) {
         const report = unlistedIsoReport(item.path, item.sizeBytes);
-        opts.store.saveInspection(item.id, report);
-        opts.store.clearFileErrorsForItem(item.id);
-        opts.store.clearFileError(item.path);
-        opts.recomputeSuggestion(item.id);
+        applyReport(item, report);
+        applyReportToPathSiblings(item, report);
         return { ok: true, report };
       }
       const warning = error instanceof Error ? error.message : "ffprobe failed.";

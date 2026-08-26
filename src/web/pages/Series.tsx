@@ -281,6 +281,11 @@ function SeriesGroup({
                     <Link className="font-medium leading-snug text-ink hover:text-accent" to={item.href || `/series/episodes/${item.id}`}>
                       {item.displayTitle}
                     </Link>
+                    {item.sharedFileLabel ? (
+                      <div className="mt-1">
+                        <Pill>{item.sharedFileLabel}</Pill>
+                      </div>
+                    ) : null}
                   </td>
                   <LibraryMediaCells item={item} onDone={() => void refreshLoaded()} />
                 </tr>

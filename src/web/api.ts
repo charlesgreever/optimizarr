@@ -185,6 +185,7 @@ export type LibraryRow = {
   instanceId: string;
   arrSeriesId?: number | null;
   displayTitle: string;
+  sharedFileLabel?: string | null;
   title?: string;
   instanceName: string;
   type: "movie" | "episode";
