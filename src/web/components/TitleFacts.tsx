@@ -43,7 +43,7 @@ export function TitleFacts({ item }: { item: LibraryRow }) {
           </div>
           <div>
             <dt className="text-xs font-medium uppercase tracking-wide text-muted">Path</dt>
-            <dd className="mt-0.5 break-all font-mono text-xs leading-5 text-slate-300">
+            <dd className="mt-0.5 break-all font-mono text-xs leading-5 text-muted">
               {item.path || "No file path from the Arr yet."}
             </dd>
           </div>

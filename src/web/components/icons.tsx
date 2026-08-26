@@ -38,6 +38,15 @@ export const Icons = {
   menu: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Svg>
   ),
+  sun: (p?: SVGProps<SVGSVGElement>) => (
+    <Svg {...p}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.6 5.6l1.1 1.1M17.3 17.3l1.1 1.1M18.4 5.6l-1.1 1.1M6.7 17.3 5.6 18.4" />
+    </Svg>
+  ),
+  moon: (p?: SVGProps<SVGSVGElement>) => (
+    <Svg {...p}><path d="M17 14.5A7 7 0 0 1 9.5 7 7.2 7.2 0 1 0 17 14.5z" /></Svg>
+  ),
   help: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.3 2.4c-.8.4-1.3 1-1.3 1.8V14M12 17h.01" /></Svg>
   ),

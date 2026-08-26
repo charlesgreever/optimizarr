@@ -100,7 +100,7 @@ export function SeriesPage() {
           </button>
         </div>
       )}
-      {msg && <p className="mt-3 text-sm text-slate-300">{msg}</p>}
+      {msg && <p className="mt-3 text-sm text-muted">{msg}</p>}
     </section>
   );
 }
@@ -292,7 +292,7 @@ function SeriesGroup({
               ))}
             </tbody>
           </table>
-          {episodes.length === 0 && !error && <div className="p-3 text-sm text-slate-400">Loading episodes…</div>}
+          {episodes.length === 0 && !error && <div className="p-3 text-sm text-muted">Loading episodes…</div>}
           {nextOffset != null && episodes.length > 0 && (
             <div className="p-3 text-center">
               <button className="btn-secondary" type="button" onClick={() => void loadEpisodes()}>Load more episodes</button>

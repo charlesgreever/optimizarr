@@ -12,10 +12,10 @@ export function Card({
   padded?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-ink/10 bg-white">
+    <div className="rounded-2xl border border-gray-200 bg-white shadow-theme-sm dark:border-gray-800 dark:bg-white/[0.03]">
       {(title != null || actions != null) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 px-5 py-4">
-          {title != null ? <h2 className="text-base font-semibold text-ink">{title}</h2> : <span />}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+          {title != null ? <h2 className="text-base font-semibold text-gray-800 dark:text-white/90">{title}</h2> : <span />}
           {actions}
         </div>
       )}

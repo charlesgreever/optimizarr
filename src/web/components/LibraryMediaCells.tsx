@@ -22,7 +22,7 @@ export function LibraryMediaCells({ item, onDone }: { item: LibraryRow; onDone: 
   return (
     <>
       <td className="whitespace-nowrap">
-        {item.quality ? <Pill>{item.quality}</Pill> : <span className="text-slate-500">—</span>}
+        {item.quality ? <Pill>{item.quality}</Pill> : <span className="text-muted">—</span>}
       </td>
       <td><VideoLabel label={view.video} /></td>
       <td className="whitespace-nowrap tabular-nums">{formatSize(item.sizeBytes)}</td>

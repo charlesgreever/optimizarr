@@ -254,7 +254,7 @@ export function TitlePage() {
 
       {item.suggestion && (
         <Section title="Automatic suggestion">
-          <ul className="space-y-1 text-sm leading-5 text-slate-300">
+          <ul className="space-y-1 text-sm leading-5 text-muted">
             {item.suggestion.reasons.map((reason) => <li key={reason}>{reason}</li>)}
           </ul>
           <button
@@ -277,20 +277,20 @@ export function TitlePage() {
           </div>
           {videoMode === "size" && (
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-300">Target GB</span>
+              <span className="mb-1 block font-medium text-muted">Target GB</span>
               <input className="w-28" type="number" min={0.1} step={0.1} value={targetGb} onChange={(e) => setTargetGb(Number(e.target.value))} />
             </label>
           )}
           {videoMode === "quality" && (
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-300">Quality 1–51</span>
+              <span className="mb-1 block font-medium text-muted">Quality 1–51</span>
               <input className="w-28" type="number" min={1} max={51} value={quality} onChange={(e) => setQuality(Number(e.target.value))} />
             </label>
           )}
           {videoMode !== "copy" && (
             <div className="space-y-3">
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-300">Codec</span>
+                <span className="mb-1 block font-medium text-muted">Codec</span>
                 <select value={av1 ? codec : "hevc"} onChange={(e) => {
                   const value = e.target.value;
                   if (value === "hevc" || (value === "av1" && av1)) setCodec(value);
@@ -328,7 +328,7 @@ export function TitlePage() {
             {report?.audio.map((track) => {
               const title = usefulTrackTitle(track.title, fileName);
               return (
-                <div key={track.index} className="flex flex-col gap-3 rounded border border-ink/10 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div key={track.index} className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-white/[0.03]">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <Pill>{track.language || "und"}</Pill>
                     <Pill>{track.codec}</Pill>
@@ -375,7 +375,7 @@ export function TitlePage() {
                     )}
                   </div>
                   {lid && lid.trackIndex === track.index && !lid.listening && (
-                    <div className="w-full basis-full space-y-2 text-sm text-slate-300">
+                    <div className="w-full basis-full space-y-2 text-sm text-muted">
                       {lid.ok && lid.languageName && (
                         <p className="m-0">This clip sounds like {lid.languageName} ({Math.round((lid.probability ?? 0) * 100)}%).</p>
                       )}
@@ -385,7 +385,7 @@ export function TitlePage() {
                       {lid.ok === false && (
                         <div className="flex flex-wrap items-center gap-2">
                           <input
-                            className="h-10 w-24 rounded-md border border-ink/15 bg-white px-2"
+                            className="h-10 w-24 rounded-md border border-gray-200 bg-white px-2 dark:border-gray-800 dark:bg-white/[0.03]"
                             value={lid.timeInput}
                             onChange={(e) => setLid({ ...lid, timeInput: e.target.value })}
                             aria-label="Start time"
@@ -431,7 +431,7 @@ export function TitlePage() {
               const title = usefulTrackTitle(track.title, fileName);
               const kept = (subs[track.index] ?? "keep") === "keep";
               return (
-                <div key={track.index} className="flex flex-col gap-2 rounded border border-ink/10 bg-white px-3 py-2">
+                <div key={track.index} className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-white/[0.03]">
                 <label className="flex cursor-pointer flex-wrap items-center gap-3 text-sm">
                   <input
                     className="accent-accent"
@@ -461,7 +461,7 @@ export function TitlePage() {
                   <p className="help m-0">This subtitle track is images, not text, so Polisharr cannot read a sample.</p>
                 )}
                 {subLid && subLid.trackIndex === track.index && !subLid.listening && (
-                  <div className="space-y-2 text-sm text-slate-300">
+                  <div className="space-y-2 text-sm text-muted">
                     {subLid.ok && subLid.languageName && (
                       <p className="m-0">This sample looks like {subLid.languageName} ({Math.round((subLid.probability ?? 0) * 100)}%).</p>
                     )}
@@ -471,7 +471,7 @@ export function TitlePage() {
                     {subLid.ok === false && (
                       <div className="flex flex-wrap items-center gap-2">
                         <input
-                          className="h-10 w-24 rounded-md border border-ink/15 bg-white px-2"
+                          className="h-10 w-24 rounded-md border border-gray-200 bg-white px-2 dark:border-gray-800 dark:bg-white/[0.03]"
                           value={subLid.timeInput}
                           onChange={(e) => setSubLid({ ...subLid, timeInput: e.target.value })}
                           aria-label="Subtitle sample start time"
@@ -509,7 +509,7 @@ export function TitlePage() {
         )}
         {plan?.warning && <p className="text-sm text-warn">{plan.warning}</p>}
         {(plan?.reasons ?? []).length > 0 && (
-          <ul className="space-y-1 text-sm leading-5 text-slate-300">
+          <ul className="space-y-1 text-sm leading-5 text-muted">
             {(plan?.reasons ?? []).map((reason) => <li key={reason}>{reason}</li>)}
           </ul>
         )}
@@ -564,7 +564,7 @@ function parseAudioAction(value: string): AudioAction {
 function ModeChoice({ name, checked, onChange, label }: { name: string; checked: boolean; onChange: () => void; label: string }) {
   return (
     <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-      checked ? "border-accent/40 bg-accent/10 text-accent" : "border-ink/15 bg-white text-ink hover:bg-canvas"
+      checked ? "border-brand-200 bg-brand-50 text-brand-500 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300"
     }`}>
       <input className="accent-accent" type="radio" name={name} checked={checked} onChange={onChange} />
       {label}

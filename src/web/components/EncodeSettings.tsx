@@ -24,7 +24,7 @@ export function EncodeSettings({
       <h2 className="font-semibold">Encode</h2>
       <p className="help">Detected hardware: {hardwareLabel}</p>
       <label className="block space-y-1.5 text-sm">
-        <span className="font-medium text-slate-300">Target</span>
+        <span className="font-medium text-muted">Target</span>
         <select className={FIELD_CONTROL} value={av1Available ? data.videoTarget : "hevc"} onChange={(event) => {
           const target = event.target.value;
           if (target === "hevc" || (target === "av1" && av1Available)) onChange({ videoTarget: target });
@@ -34,7 +34,7 @@ export function EncodeSettings({
         </select>
       </label>
       <label className="block space-y-1.5 text-sm">
-        <span className="font-medium text-slate-300">Concurrent jobs</span>
+        <span className="font-medium text-muted">Concurrent jobs</span>
         <input
           className="h-10 w-24"
           type="number"
@@ -61,11 +61,11 @@ export function EncodeSettings({
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block space-y-1.5 text-sm">
-          <span className="font-medium text-slate-300">Off-peak start</span>
+          <span className="font-medium text-muted">Off-peak start</span>
           <input className={FIELD_CONTROL} value={data.offPeakStart} onChange={(event) => onChange({ offPeakStart: event.target.value })} />
         </label>
         <label className="block space-y-1.5 text-sm">
-          <span className="font-medium text-slate-300">Off-peak end</span>
+          <span className="font-medium text-muted">Off-peak end</span>
           <input className={FIELD_CONTROL} value={data.offPeakEnd} onChange={(event) => onChange({ offPeakEnd: event.target.value })} />
         </label>
       </div>

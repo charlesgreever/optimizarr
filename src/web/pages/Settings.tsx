@@ -234,7 +234,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </button>
         <ul className="space-y-2 text-sm">
           {data.instances.map((row) => (
-            <li key={row.id} className="space-y-2 rounded border border-ink/15 bg-white px-3 py-3">
+            <li key={row.id} className="space-y-2 rounded-lg border border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-white/[0.03]">
               <div className="min-w-0">
                 <div className="font-medium text-ink">{row.name}</div>
                 <div className="truncate text-xs text-muted">
@@ -343,7 +343,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block space-y-1.5 text-sm">
-      <span className="font-medium text-slate-300">{label}</span>
+      <span className="font-medium text-muted">{label}</span>
       {children}
     </label>
   );
@@ -362,7 +362,7 @@ function SecretOnce({
 }) {
   return (
     <div className="space-y-1.5 text-sm">
-      <div className="font-medium text-slate-300">{label}</div>
+      <div className="font-medium text-muted">{label}</div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <code className="min-w-0 flex-1 break-all rounded-md border border-ink/15 bg-canvas px-3 py-2 text-xs text-ink">{value}</code>
         <button

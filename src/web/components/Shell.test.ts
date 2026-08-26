@@ -23,5 +23,6 @@ describe("app shell", () => {
     expect(html).toContain("lg:hidden");
     expect(html).toContain("aria-label=\"Search movies and episodes\"");
     expect(html).toContain("Polisharr");
+    expect(html).toContain("Switch to dark mode");
   });
 });

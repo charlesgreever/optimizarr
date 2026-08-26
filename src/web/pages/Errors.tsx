@@ -41,7 +41,7 @@ export function ErrorsPage() {
                       )}
                     </td>
                     <td>{row.fileName}</td>
-                    <td className="text-xs text-slate-400">{row.path}</td>
+                    <td className="text-xs text-muted">{row.path}</td>
                     <td>{row.reason}</td>
                   </tr>
                 );

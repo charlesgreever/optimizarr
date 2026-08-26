@@ -96,9 +96,9 @@ function activityTone(outcome: HistoryRow["outcome"]): "good" | "warn" | "bad" |
 
 function WorkStat({ label, value, to }: { label: string; value: number; to: string }) {
   return (
-    <Link to={to} className="block rounded-2xl border border-ink/10 bg-white px-5 py-5 hover:border-accent">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-2 font-mono text-xl font-medium tabular-nums text-ink">{value}</div>
+    <Link to={to} className="block rounded-2xl border border-gray-200 bg-white px-5 py-5 shadow-theme-sm hover:border-brand-300 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="mt-2 font-mono text-xl font-medium tabular-nums text-gray-800 dark:text-white/90">{value}</div>
     </Link>
   );
 }

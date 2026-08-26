@@ -23,7 +23,7 @@ export function SuggestionDefaultsSettings({
   );
 
   return (
-    <div className="space-y-2 border-t border-ink/15 pt-3">
+    <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
       <h3 className="font-semibold">Default suggestion operations</h3>
       {checkbox("removeNonPreferredSubtitles", "Remove non-preferred subtitles")}
       {checkbox("removeNonPreferredAudio", "Remove non-preferred audio tracks")}

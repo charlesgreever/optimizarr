@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { formatSize } from "../api";
 
 const pillTone = {
-  neutral: "border-ink/15 bg-white text-ink",
-  good: "border-good/30 bg-good/10 text-good",
-  warn: "border-warn/30 bg-warn/10 text-warn",
-  bad: "border-bad/30 bg-bad/10 text-bad",
-  accent: "border-accent/30 bg-accent/10 text-accent",
+  neutral: "border-gray-200 bg-white text-gray-700 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300",
+  good: "border-success-100 bg-success-50 text-success-700 dark:border-success-500/20 dark:bg-success-500/10 dark:text-success-500",
+  warn: "border-warning-100 bg-warning-50 text-warning-600 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-500",
+  bad: "border-error-100 bg-error-50 text-error-600 dark:border-error-500/20 dark:bg-error-500/10 dark:text-error-500",
+  accent: "border-brand-100 bg-brand-50 text-brand-500 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-400",
 } as const;
 
 export function Pill({
@@ -25,7 +25,7 @@ export function Pill({
 
 export function PillList({ items, empty }: { items: string[]; empty: string }) {
   if (items.length === 0) {
-    return <span className="text-xs text-slate-500">{empty}</span>;
+    return <span className="text-xs text-muted">{empty}</span>;
   }
   return (
     <div className="flex max-w-52 flex-wrap gap-1">
@@ -52,8 +52,8 @@ export function FilterChip({
       onClick={onToggle}
       className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         pressed
-          ? "border-accent/40 bg-accent/15 text-accent"
-          : "border-ink/15 bg-white text-ink hover:bg-canvas"
+          ? "border-brand-200 bg-brand-50 text-brand-500 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400"
+          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/5"
       }`}
     >
       {children}
@@ -106,13 +106,13 @@ export function MediaSnapshot({
 
 export function VideoLabel({ label }: { label: string }) {
   if (label === "—" || label === "Unknown codec") {
-    return <span className="text-xs text-slate-500">{label}</span>;
+    return <span className="text-xs text-muted">{label}</span>;
   }
   const [codec, detail] = label.split(" · ");
   return (
     <div className="leading-tight">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-200">{codec}</div>
-      {detail && <div className="text-[11px] text-slate-400">{detail}</div>}
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink">{codec}</div>
+      {detail && <div className="text-[11px] text-muted">{detail}</div>}
     </div>
   );
 }
@@ -125,7 +125,7 @@ export function PlanStatus({ lines }: { lines: string[] }) {
     return <span className="text-xs text-warn">{lines[0]}</span>;
   }
   return (
-    <ul className="max-w-64 space-y-1 text-xs leading-5 text-slate-300">
+    <ul className="max-w-64 space-y-1 text-xs leading-5 text-muted">
       {lines.map((line, index) => (
         <li key={`${index}:${line}`}>{line}</li>
       ))}

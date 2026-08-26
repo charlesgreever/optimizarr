@@ -82,7 +82,7 @@ export function ReviewPage() {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="keep-all-title" className="text-sm font-semibold tracking-wide text-ink">Keep all files?</h2>
-            <p className="m-0 text-sm leading-5 text-slate-300">{keepAllConfirmCopy(pendingCount)}</p>
+            <p className="m-0 text-sm leading-5 text-muted">{keepAllConfirmCopy(pendingCount)}</p>
             <div className="flex flex-wrap gap-2">
               <button
                 ref={confirmRef}
@@ -111,7 +111,7 @@ export function ReviewPage() {
       {items.length > 0 && (
         <ul className="mt-5 space-y-3">
           {items.map((item) => (
-            <li key={item.id} className="glass p-4">
+            <li key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-sm dark:border-gray-800 dark:bg-white/[0.03]">
               <label className="flex items-start gap-3">
                 <input
                   type="checkbox"

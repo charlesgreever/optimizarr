@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, type FirstRun } from "../api";
+import { ThemeToggle } from "../components/ThemeToggle";
 
 export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: () => void }) {
   const [username, setUsername] = useState("");
@@ -8,7 +9,10 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
   const setup = !firstRun.hasAdmin;
 
   return (
-    <main className="auth-page">
+    <main className="auth-page relative">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <form
         className="auth-card"
         onSubmit={(e) => {
@@ -20,8 +24,8 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
         }}
       >
         <div className="mb-8 flex items-center gap-3">
-          <b className="grid h-8 w-8 place-items-center rounded bg-ink text-sm text-canvas">P</b>
-          <strong className="text-base font-semibold text-ink">Polisharr</strong>
+          <b className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-semibold text-white">P</b>
+          <strong className="text-base font-semibold text-gray-800 dark:text-white/90">Polisharr</strong>
         </div>
         <p className="eyebrow">{setup ? "FIRST RUN" : "WELCOME BACK"}</p>
         <h1>{setup ? "Create the Polisharr admin" : "Sign in"}</h1>

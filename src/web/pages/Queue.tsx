@@ -138,7 +138,7 @@ export function QueuePage() {
                     {job.error && <div className="text-xs text-rose-400">{job.error}</div>}
                     {job.warning && <div className="text-xs text-amber-300">{job.warning}</div>}
                     {job.promoteError && <div className="text-xs text-amber-300">{job.promoteError}</div>}
-                    {logs[job.id] != null && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-slate-400">{logs[job.id]}</pre>}
+                    {logs[job.id] != null && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-muted">{logs[job.id]}</pre>}
                   </td>
                 </tr>
               ))}

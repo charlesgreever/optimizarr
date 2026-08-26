@@ -35,7 +35,7 @@ export function SuggestionsPage() {
       <Help>
         Suggestions is the work list: only titles that still need something. Open a title for custom work. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
       </Help>
-      <div className="mt-5 space-y-3 rounded-2xl border border-ink/10 bg-white p-4">
+      <div className="mt-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-sm dark:border-gray-800 dark:bg-white/[0.03]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
@@ -123,7 +123,7 @@ export function SuggestionsPage() {
                     <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
                   </td>
                   <td className="max-w-sm">
-                    <ul className="space-y-1 text-sm leading-5 text-slate-300">
+                    <ul className="space-y-1 text-sm leading-5 text-muted">
                       {item.reasons.map((reason, index) => (
                         <li key={`${index}:${reason}`}>{reason}</li>
                       ))}

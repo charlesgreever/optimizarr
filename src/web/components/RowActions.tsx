@@ -4,9 +4,9 @@ import { api, type LibraryRow } from "../api";
 import { Icons } from "./icons";
 
 const iconBtn =
-  "inline-flex h-11 w-11 items-center justify-center rounded border border-ink/15 bg-white text-ink transition-colors hover:border-accent hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:border-brand-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/5";
 const queueBtn =
-  "inline-flex h-11 items-center justify-center gap-1 rounded border border-accent bg-accent px-2.5 text-xs font-semibold text-canvas transition-colors hover:bg-ink hover:border-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-11 items-center justify-center gap-1 rounded-lg border border-brand-500 bg-brand-500 px-2.5 text-xs font-semibold text-white transition-colors hover:border-brand-600 hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-40";
 
 export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => void }) {
   const [msg, setMsg] = useState("");
@@ -61,7 +61,7 @@ export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => v
           {Icons.stereo({ width: 14, height: 14 })}
         </button>
         <button
-          className={`${iconBtn} ${item.sizeExempt ? "border-accent/40 bg-accent/15 text-accent" : ""}`}
+          className={`${iconBtn} ${item.sizeExempt ? "border-brand-200 bg-brand-50 text-brand-500 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400" : ""}`}
           type="button"
           title={item.sizeExempt ? "Clear size exemption" : "Exempt size"}
           aria-label={item.sizeExempt ? "Clear size exemption" : "Exempt size"}
@@ -71,7 +71,7 @@ export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => v
           {Icons.exempt({ width: 14, height: 14 })}
         </button>
       </div>
-      {msg && <p className="text-xs text-slate-400">{msg}</p>}
+      {msg && <p className="text-xs text-muted">{msg}</p>}
     </div>
   );
 }

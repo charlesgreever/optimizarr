@@ -124,7 +124,7 @@ export function MoviesPage() {
       </PageHead>
       <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion. The header counts every movie, not just this page.</Help>
       {total > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted">
           <span>{total} movies</span>
           <Pill tone="good">{healthyCount} healthy</Pill>
           <Pill tone={suggestionCount > 0 ? "accent" : "neutral"}>{suggestionCount} suggestions</Pill>
