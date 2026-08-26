@@ -16,7 +16,7 @@ export function ErrorsPage() {
       {items.length === 0 && list.loading && <div className="empty">Loading errors…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">No unreadable files. Still-downloading titles are not errors.</div>}
       {items.length > 0 && (
-        <div className="glass mt-5 overflow-x-auto">
+        <div className="table-card">
           <table>
             <thead>
               <tr>

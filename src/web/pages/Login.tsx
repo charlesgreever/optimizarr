@@ -19,9 +19,9 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
             .catch((err: Error) => setError(err.message));
         }}
       >
-        <div className="brand">
-          <b>P</b>
-          <strong>Polisharr</strong>
+        <div className="mb-8 flex items-center gap-3">
+          <b className="grid h-8 w-8 place-items-center rounded bg-ink text-sm text-canvas">P</b>
+          <strong className="text-base font-semibold text-ink">Polisharr</strong>
         </div>
         <p className="eyebrow">{setup ? "FIRST RUN" : "WELCOME BACK"}</p>
         <h1>{setup ? "Create the Polisharr admin" : "Sign in"}</h1>

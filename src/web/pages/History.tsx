@@ -13,7 +13,7 @@ export function HistoryPage() {
       {items.length === 0 && list.loading && <div className="empty">Loading history…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">No finished work yet.</div>}
       {items.length > 0 && (
-        <div className="glass mt-5 overflow-x-auto">
+        <div className="table-card">
           <table>
             <thead>
               <tr>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatSize, type HistoryRow, type HomePayload } from "../api";
+import { Card } from "../components/Card";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
 import { Pill } from "../components/ui";
@@ -24,21 +25,21 @@ export function HomeDashboard({ data, onRefresh }: { data: HomePayload; onRefres
       <Help>
         Home is the landing page after sign-in. Files optimized and space saved count after you Keep a sidecar or after a successful direct write. Status is the running title, how many jobs are waiting, or Idle. A sidecar is the new file waiting in Review; Keep replaces the library file with it.
       </Help>
-      <div className="glass px-5 py-4">
+      <Card>
         <div className="text-xs font-medium uppercase tracking-wide text-muted">Status</div>
         <p className="mt-1 font-mono text-sm font-medium leading-6 text-ink">{data.status}</p>
-      </div>
+      </Card>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <article className="glass px-5 py-4">
+        <Card>
           <div className="text-xs font-medium uppercase tracking-wide text-muted">Files optimized</div>
           <p className="mt-2 font-mono text-2xl font-medium tabular-nums text-ink">{data.filesOptimized}</p>
-        </article>
-        <article className="glass px-5 py-4">
+        </Card>
+        <Card>
           <div className="text-xs font-medium uppercase tracking-wide text-muted">Space saved</div>
           <p className="mt-2 font-mono text-2xl font-medium tabular-nums text-ink">{formatSize(data.spaceSavedBytes)}</p>
-        </article>
+        </Card>
       </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <WorkStat label="Suggestions" value={data.suggestions} to="/suggestions" />
         <WorkStat label="Queue" value={data.queueActive ?? data.queued} to="/queue" />
         <WorkStat label="Review" value={data.review} to="/review" />
@@ -49,24 +50,30 @@ export function HomeDashboard({ data, onRefresh }: { data: HomePayload; onRefres
           Nothing has been kept yet. Refresh the library to pull titles, then work Suggestions and Review.
         </p>
       )}
-      <div>
-        <h2 className="text-lg font-semibold text-ink">Recent activity</h2>
+      <Card title="Recent activity" padded={data.recent.length === 0}>
         {data.recent.length === 0 ? (
-          <p className="help mt-3">No finished work yet.</p>
+          <p className="help m-0">No finished work yet.</p>
         ) : (
-          <ul className="mt-3 space-y-2">
-            {data.recent.map((row) => (
-              <li key={row.id} className="glass flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <span className="min-w-0 font-medium text-ink">{row.displayTitle}</span>
-                <span className="flex shrink-0 items-center gap-2 text-sm text-muted">
-                  <Pill tone={activityTone(row.outcome)}>{activityOutcomeLabel(row.outcome)}</Pill>
-                  {row.bytesSaved ? `saved ${formatSize(row.bytesSaved)}` : null}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <table className="dense">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Outcome</th>
+                <th>Saved</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recent.map((row) => (
+                <tr key={row.id}>
+                  <td className="font-medium text-ink">{row.displayTitle}</td>
+                  <td><Pill tone={activityTone(row.outcome)}>{activityOutcomeLabel(row.outcome)}</Pill></td>
+                  <td className="font-mono text-sm text-muted">{row.bytesSaved ? formatSize(row.bytesSaved) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -89,10 +96,7 @@ function activityTone(outcome: HistoryRow["outcome"]): "good" | "warn" | "bad" |
 
 function WorkStat({ label, value, to }: { label: string; value: number; to: string }) {
   return (
-    <Link
-      to={to}
-      className="glass block px-4 py-4 transition-colors hover:border-accent/40"
-    >
+    <Link to={to} className="block rounded-2xl border border-ink/10 bg-white px-5 py-5 hover:border-accent">
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-2 font-mono text-xl font-medium tabular-nums text-ink">{value}</div>
     </Link>

@@ -139,7 +139,7 @@ export function MoviesPage() {
           </div>
         </div>
       ) : (
-        <div className="glass mt-5 overflow-x-auto">
+        <div className="table-card">
           <table className="dense">
             <thead>
               <tr>

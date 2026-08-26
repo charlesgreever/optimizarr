@@ -35,7 +35,7 @@ export function SuggestionsPage() {
       <Help>
         Suggestions is the work list: only titles that still need something. Open a title for custom work. Tracks-only means keep the video and clean languages. After size stays blank when the video will not shrink.
       </Help>
-      <div className="glass mt-5 space-y-3 p-4">
+      <div className="mt-5 space-y-3 rounded-2xl border border-ink/10 bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <input className="filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search suggestions" />
@@ -89,7 +89,7 @@ export function SuggestionsPage() {
       {items.length === 0 && list.loading && <div className="empty">Loading suggestions…</div>}
       {items.length === 0 && !list.loading && !list.error && <div className="empty">No open work. Healthy files stay off this list.</div>}
       {items.length > 0 && (
-        <div className="glass mt-5 overflow-x-auto">
+        <div className="table-card">
           <table>
             <thead>
               <tr>

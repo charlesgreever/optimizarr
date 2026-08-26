@@ -140,7 +140,7 @@ a {
 
 .global-search {
   position: relative;
-  width: min(440px, 60vw);
+  width: min(440px, 100%);
 }
 
 .global-search > label {
@@ -273,7 +273,7 @@ a {
   font-weight: 600;
 }
 
-.page h1,
+.page-heading h1,
 .auth-card h1 {
   margin: 0 0 34px;
   font-family: Newsreader, ui-serif, Georgia, serif;
@@ -311,7 +311,7 @@ a {
 .form-card {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: 4px;
+  border-radius: 1rem;
 }
 
 .metrics article {
@@ -350,6 +350,15 @@ a {
 
 .glass {
   padding: 8px 12px;
+  border-radius: 1rem;
+}
+
+.table-card {
+  margin-top: 1.25rem;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #ffffff;
 }
 
 .btn,
@@ -527,12 +536,12 @@ tr:last-child td {
 }
 
 .inspect-banner {
-  margin: 16px 42px 0;
+  margin: 0;
   padding: 11px 14px;
   border: 1px solid #90caf9;
   background: #90caf933;
   color: var(--text);
-  border-radius: 4px;
+  border-radius: 1rem;
   font-size: 14px;
 }
 
@@ -603,7 +612,7 @@ tr:last-child td {
   width: min(440px, 100%);
   padding: 36px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 1rem;
   background: var(--panel);
 }
 

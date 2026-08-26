@@ -35,6 +35,9 @@ export const Icons = {
   search: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><circle cx="11" cy="11" r="6" /><path d="M20 20l-3.5-3.5" /></Svg>
   ),
+  menu: (p?: SVGProps<SVGSVGElement>) => (
+    <Svg {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Svg>
+  ),
   help: (p?: SVGProps<SVGSVGElement>) => (
     <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.3 2.4c-.8.4-1.3 1-1.3 1.8V14M12 17h.01" /></Svg>
   ),
