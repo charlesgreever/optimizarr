@@ -19,7 +19,7 @@ export type ReportContext = {
   running?: ReportJob | null;
 };
 
-const REPO = "https://github.com/charlesgreever/optimizarr/issues/new";
+const REPO = "https://github.com/charlesgreever/polisharr/issues/new";
 
 export function scrubReportText(value: string): string {
   return value

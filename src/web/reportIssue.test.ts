@@ -8,7 +8,7 @@ describe("report issue", () => {
       inspect: { pending: 12, walking: true, failed: 2 },
       running: { displayTitle: "A title", phase: "transcoding", progress: 0.47, status: "running" },
     });
-    expect(url.startsWith("https://github.com/charlesgreever/optimizarr/issues/new?")).toBe(true);
+    expect(url.startsWith("https://github.com/charlesgreever/polisharr/issues/new?")).toBe(true);
     const parsed = new URL(url);
     expect(parsed.searchParams.get("labels")).toBe("bug");
     expect(parsed.searchParams.get("title")).toBe("Bug: Polisharr");

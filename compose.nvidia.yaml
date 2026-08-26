@@ -1,6 +1,8 @@
 # Household NVIDIA compose (RTX 4070 Ti SUPER). Same as compose.yaml.
+name: polisharr
 services:
   polisharr:
+    container_name: polisharr
     build: .
     ports:
       - "7373:7373"
@@ -14,7 +16,7 @@ services:
       WHISPER_LID: /usr/local/bin/whisper-lid
       PGS_OCR: /usr/local/bin/pgs-ocr
     volumes:
-      - /home/cgreever/appdata/arr/optimizarr/config:/config
+      - /home/cgreever/appdata/arr/polisharr/config:/config
       - /mnt/nas:/mnt/nas
     networks:
       - arr_net

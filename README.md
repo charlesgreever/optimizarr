@@ -38,7 +38,7 @@ Polisharr runs as a Docker container next to Radarr and Sonarr. It reads the sam
 ### 1. Get the files
 
 ```bash
-git clone https://github.com/charlesgreever/optimizarr.git polisharr
+git clone https://github.com/charlesgreever/polisharr.git polisharr
 cd polisharr
 ```
 

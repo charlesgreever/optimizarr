@@ -4,8 +4,10 @@
 #
 #   docker compose up -d --build
 
+name: polisharr
 services:
   polisharr:
+    container_name: polisharr
     build: .
     ports:
       - "7373:7373"

@@ -1,7 +1,9 @@
 # Household Intel UHD 770 (VAAPI) backup. ffmpeg uses /dev/dri/renderD128.
 # Restore by copying over compose.yaml.
+name: polisharr
 services:
   polisharr:
+    container_name: polisharr
     build: .
     ports:
       - "7373:7373"
@@ -11,7 +13,7 @@ services:
       TZ: America/New_York
       CONFIG_DIR: /config
     volumes:
-      - /home/cgreever/appdata/arr/optimizarr/config:/config
+      - /home/cgreever/appdata/arr/polisharr/config:/config
       - /mnt/nas:/mnt/nas
     devices:
       - /dev/dri:/dev/dri
