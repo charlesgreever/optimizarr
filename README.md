@@ -42,7 +42,7 @@ git clone https://github.com/charlesgreever/polisharr.git polisharr
 cd polisharr
 ```
 
-The running image is `ghcr.io/charlesgreever/polisharr:latest` (version tags such as `0.1.0` match GitHub releases). GitHub Actions builds that image on each `v*` tag.
+The running image is `ghcr.io/charlesgreever/polisharr:latest` (version tags such as `0.2.0` match GitHub releases). GitHub Actions builds that image on each `v*` tag.
 
 ### 2. Copy and edit compose
 

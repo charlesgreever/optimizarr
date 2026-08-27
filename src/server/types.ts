@@ -33,6 +33,7 @@ export type SuggestionDefaults = {
   removeNonPreferredAudio: boolean;
   addStereo: boolean;
   transcodeToSizeCap: boolean;
+  transcodeBelowHevc: boolean;
   convertMp4ToMkv: boolean;
   convertIsoToMkv: boolean;
   searchPreferredLanguage: boolean;
@@ -52,6 +53,7 @@ export const DEFAULT_SUGGESTION_DEFAULTS: SuggestionDefaults = {
   removeNonPreferredAudio: true,
   addStereo: true,
   transcodeToSizeCap: true,
+  transcodeBelowHevc: false,
   convertMp4ToMkv: false,
   convertIsoToMkv: false,
   searchPreferredLanguage: false,

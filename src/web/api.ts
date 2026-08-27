@@ -159,6 +159,7 @@ export type SettingsPayload = {
     removeNonPreferredAudio: boolean;
     addStereo: boolean;
     transcodeToSizeCap: boolean;
+    transcodeBelowHevc: boolean;
     convertMp4ToMkv: boolean;
     convertIsoToMkv: boolean;
     searchPreferredLanguage: boolean;

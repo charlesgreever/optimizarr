@@ -64,13 +64,14 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const addStereo = (input.forceStereo || (settings.suggestionDefaults.addStereo && layoutNeedsStereo)) && !alreadyStereo;
   const codec = report.videoCodec.toLowerCase();
   const alreadyAv1 = codec.includes("av1");
-  const inefficient = !alreadyAv1 && !/hevc|h265|av1/.test(codec);
+  const belowHevc = !codecIsAtLeastHevc(report.videoCodec);
   const target: VideoTarget = input.videoTarget === "av1" && input.av1Available ? "av1" : "hevc";
+  const transcodeForCap = settings.suggestionDefaults.transcodeToSizeCap && overCap && (belowHevc || /hevc|h265/.test(codec));
+  const transcodeForCodec = settings.suggestionDefaults.transcodeBelowHevc && belowHevc;
   const transcode =
     !alreadyAv1 &&
     !input.sizeExempt &&
-    (input.forceTranscode ||
-      (settings.suggestionDefaults.transcodeToSizeCap && overCap && (inefficient || /hevc|h265/.test(codec))));
+    (input.forceTranscode || transcodeForCap || transcodeForCodec);
   const remux = (settings.suggestionDefaults.convertMp4ToMkv && /\.mp4$/i.test(item.path))
     || (settings.suggestionDefaults.convertIsoToMkv && /\.iso$/i.test(item.path));
 
@@ -86,7 +87,10 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const reasons: string[] = [];
   if (transcode && overCap) {
     reasons.push(`Over the size cap: ${report.sizePerHourGb.toFixed(2)} GB/hr now, ${cap.toFixed(2)} GB/hr allowed.`);
-  } else if (transcode && input.forceTranscode) {
+  }
+  if (transcode && transcodeForCodec) {
+    reasons.push(`This video is ${codecLabel(report.videoCodec)}. Re-encode to ${target.toUpperCase()}.`);
+  } else if (transcode && input.forceTranscode && !overCap) {
     reasons.push(`Re-encode to ${target.toUpperCase()} because you asked to force this title.`);
   }
   if (remux && /\.iso$/i.test(item.path)) reasons.push("Convert the disc image to MKV.");
@@ -106,6 +110,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const warning = warnings.length > 0 ? warnings.join(" ") : null;
 
   const afterCodec = transcode ? target.toUpperCase() : report.videoCodec;
+  const encodeGbPerHour = transcode ? Math.min(report.sizePerHourGb, cap) : null;
   const estimated = transcode && overCap ? Math.max(0, report.sizeBytes - Math.round(cap * (report.durationSec / 3600) * 1024 ** 3)) : null;
 
   return {
@@ -126,7 +131,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
       codec: afterCodec,
       quality: null,
       sizeBytes: transcode ? (estimated != null ? report.sizeBytes - estimated : null) : null,
-      sizePerHourGb: transcode ? cap : null,
+      sizePerHourGb: encodeGbPerHour,
     },
     dismissed: false,
     keepAudio: keepAudio.map((t) => t.index),
@@ -134,6 +139,21 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     keepSubs: keepSubs.map((t) => t.index),
     stripSubs: stripSubs.map((t) => t.index),
   };
+}
+
+export function codecIsAtLeastHevc(codec: string): boolean {
+  return /hevc|h265|av1/i.test(codec);
+}
+
+export function codecLabel(codec: string): string {
+  const value = codec.toLowerCase();
+  if (/h264|avc/.test(value)) return "H.264";
+  if (/mpeg2/.test(value)) return "MPEG-2";
+  if (/vc1|wmv3/.test(value)) return "VC-1";
+  if (/mpeg4|xvid|divx/.test(value)) return "MPEG-4";
+  if (/vp8/.test(value)) return "VP8";
+  if (/vp9/.test(value)) return "VP9";
+  return codec || "unknown video";
 }
 
 function shouldKeepAudio(

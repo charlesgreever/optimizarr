@@ -495,6 +495,17 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("scale=1920:1080");
   });
 
+  it("does not aim a codec transcode larger than the source", () => {
+    const plan = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode"],
+      now: { codec: "h264", quality: "Bluray-1080p", sizeBytes: 4_000_000_000, sizePerHourGb: 2 },
+      after: { codec: "hevc", quality: null, sizeBytes: null, sizePerHourGb: 2 },
+    });
+    expect(plan.video.kind).toBe("size");
+    if (plan.video.kind === "size") expect(plan.video.targetBytes).toBe(4_000_000_000);
+  });
+
   it("builds a VAAPI encode graph instead of NVENC when that is the usable backend", () => {
     const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
     const args = encodeArgs(source, "/tmp/out.mkv", {

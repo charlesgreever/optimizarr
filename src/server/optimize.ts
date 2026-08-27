@@ -47,7 +47,9 @@ export function planFromSuggestion(suggestion: Suggestion, writeMode: WriteMode 
   const hours = Math.max(suggestion.now.sizePerHourGb && suggestion.now.sizeBytes
     ? suggestion.now.sizeBytes / (suggestion.now.sizePerHourGb * 1024 ** 3)
     : 1, 0.1);
-  const targetBytes = Math.round((suggestion.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3);
+  const capBytes = Math.round((suggestion.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3);
+  const currentBytes = suggestion.now.sizeBytes > 0 ? suggestion.now.sizeBytes : capBytes;
+  const targetBytes = Math.min(capBytes, currentBytes);
   const codec = suggestion.after.codec?.toLowerCase() === "av1" ? "av1" : "hevc";
   const stereoSource = suggestion.keepAudio[0] ?? 0;
   return {

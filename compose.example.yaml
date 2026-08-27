@@ -4,7 +4,7 @@
 #
 #   docker compose up -d
 #
-# Prebuilt image: ghcr.io/charlesgreever/polisharr (tags: latest, 0.1.0).
+# Prebuilt image: ghcr.io/charlesgreever/polisharr (tags: latest, 0.2.0).
 # To build from this tree instead, comment image and uncomment build.
 
 name: polisharr

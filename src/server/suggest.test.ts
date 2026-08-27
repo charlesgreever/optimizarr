@@ -149,6 +149,7 @@ describe("suggestion engine", () => {
         removeNonPreferredAudio: false,
         addStereo: false,
         transcodeToSizeCap: false,
+        transcodeBelowHevc: false,
         convertMp4ToMkv: false,
         convertIsoToMkv: false,
         searchPreferredLanguage: false,
@@ -394,5 +395,111 @@ describe("suggestion engine", () => {
     expect(suggestion?.actions).toEqual(["search_language"]);
     expect(suggestion?.keepAudio).toEqual([1]);
     expect(suggestion?.reasons.some((reason) => /preferred language/i.test(reason))).toBe(true);
+  });
+
+  it("suggests HEVC for under-cap video below HEVC when that operation is on", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        transcodeToSizeCap: false,
+        transcodeBelowHevc: true,
+        removeNonPreferredSubtitles: false,
+        removeNonPreferredAudio: false,
+        addStereo: false,
+      },
+    };
+    const h264 = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "h264", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const mpeg2 = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "mpeg2video", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const hevc = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const exempt = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "h264", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(h264?.actions).toEqual(["transcode"]);
+    expect(h264?.reasons.some((reason) => reason.includes("H.264") && reason.includes("HEVC"))).toBe(true);
+    expect(h264?.after.sizePerHourGb).toBe(1);
+    expect(mpeg2?.reasons.some((reason) => reason.includes("MPEG-2"))).toBe(true);
+    expect(hevc).toBeNull();
+    expect(exempt).toBeNull();
+  });
+
+  it("uses AV1 as the bulk target when Settings and hardware allow it", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "h264", hdr: "none", audio: [], subtitles: [] }),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        videoTarget: "av1",
+        suggestionDefaults: {
+          ...DEFAULT_SETTINGS.suggestionDefaults,
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: true,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      },
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "av1",
+      av1Available: true,
+    });
+    expect(suggestion?.after.codec).toBe("AV1");
+    expect(suggestion?.reasons.some((reason) => reason.includes("AV1"))).toBe(true);
+  });
+
+  it("keeps a single transcode when size-cap and below-HEVC both apply", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({ videoCodec: "h264", hdr: "none", audio: [], subtitles: [] }),
+      settings: {
+        ...DEFAULT_SETTINGS,
+        suggestionDefaults: {
+          ...DEFAULT_SETTINGS.suggestionDefaults,
+          transcodeBelowHevc: true,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      },
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    expect(suggestion?.actions).toEqual(["transcode"]);
+    expect(suggestion?.reasons.some((reason) => /size cap/i.test(reason))).toBe(true);
+    expect(suggestion?.reasons.some((reason) => reason.includes("H.264"))).toBe(true);
+    expect(suggestion?.after.sizePerHourGb).toBe(6);
   });
 });

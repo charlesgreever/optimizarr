@@ -22,6 +22,7 @@ describe("encode settings", () => {
     expect(html).toContain("Concurrent jobs");
     expect(html).toContain("Save encode settings");
     expect(html).toContain("AV1");
+    expect(html).toContain("Automatic Suggestions that re-encode video use this target");
   });
 
   it("hides AV1 when hardware cannot encode it", () => {
@@ -39,6 +40,6 @@ describe("encode settings", () => {
       onChange: vi.fn(),
       onSave: vi.fn(),
     }));
-    expect(html).not.toContain("AV1");
+    expect(html).not.toContain("value=\"av1\"");
   });
 });

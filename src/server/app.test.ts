@@ -1109,6 +1109,7 @@ describe("public HTTP behavior", () => {
       removeNonPreferredAudio: false,
       addStereo: false,
       transcodeToSizeCap: false,
+      transcodeBelowHevc: false,
       convertMp4ToMkv: true,
       convertIsoToMkv: false,
       searchPreferredLanguage: false,
