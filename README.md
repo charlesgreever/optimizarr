@@ -99,7 +99,7 @@ CONFIG_DIR=./config npm start
 
 ## Webhooks from Radarr and Sonarr
 
-Polisharr already syncs Radarr and Sonarr every 15 minutes. A Connect webhook tells it about a finished import right away so the new file is inspected without waiting. The webhook itself does not start an encode. Optional: **Queue new Arr imports automatically** in suggestion defaults queues a sidecar when inspect produces a suggestion. Keep still replaces the library file.
+Polisharr already syncs Radarr and Sonarr every 15 minutes. A Connect webhook tells it about a finished import right away so the new file is inspected without waiting. The webhook itself does not start an encode. Optional: **Queue new Arr imports automatically** in suggestion defaults queues a sidecar when inspect produces a suggestion. Keep still replaces the library file and does not queue that file again. A later Arr upgrade still can.
 
 ### 1. Generate a token in Polisharr
 

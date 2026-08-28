@@ -32,47 +32,74 @@ function settings(over: { queueNewImports?: boolean; queueNewImportsSince?: numb
   };
 }
 
+function item(over: { firstSeenAt?: number; fileChangedAt?: number; sizeBytes?: number; keptSizeBytes?: number } = {}) {
+  return {
+    firstSeenAt: over.firstSeenAt ?? 2_000,
+    fileChangedAt: over.fileChangedAt ?? 2_000,
+    sizeBytes: over.sizeBytes ?? 8,
+    keptSizeBytes: over.keptSizeBytes ?? 0,
+  };
+}
+
 describe("auto-queue new Arr imports", () => {
-  it("queues a sidecar only for files first seen or changed after the setting was turned on", () => {
+  it("queues a sidecar only for files changed after the setting was turned on", () => {
     expect(shouldQueueNewImport({
       settings: settings({ queueNewImports: false }),
-      item: { firstSeenAt: 2_000, fileChangedAt: 2_000 },
+      item: item(),
       suggestion,
     })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings({ queueNewImports: true, queueNewImportsSince: 0 }),
-      item: { firstSeenAt: 2_000, fileChangedAt: 2_000 },
+      item: item(),
       suggestion,
     })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings(),
-      item: { firstSeenAt: 0, fileChangedAt: 0 },
+      item: item({ firstSeenAt: 0, fileChangedAt: 0 }),
       suggestion,
     })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings(),
-      item: { firstSeenAt: 2_000, fileChangedAt: 2_000 },
+      item: item(),
       suggestion: null,
     })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings(),
-      item: { firstSeenAt: 2_000, fileChangedAt: 2_000 },
+      item: item(),
       suggestion: { ...suggestion, actions: ["search_language"], stripAudio: [], keepAudio: [1] },
     })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings(),
-      item: { firstSeenAt: 2_000, fileChangedAt: 500 },
+      item: item({ firstSeenAt: 2_000, fileChangedAt: 500 }),
       suggestion,
-    })).toBe(true);
+    })).toBe(false);
     expect(shouldQueueNewImport({
       settings: settings(),
-      item: { firstSeenAt: 0, fileChangedAt: 2_000 },
+      item: item({ firstSeenAt: 0, fileChangedAt: 2_000 }),
       suggestion,
     })).toBe(true);
     expect(shouldQueueNewImport({
       settings: settings({ languageConfirmed: false }),
-      item: { firstSeenAt: 2_000, fileChangedAt: 2_000 },
+      item: item(),
       suggestion,
     })).toBe(false);
+  });
+
+  it("does not queue the file Polisharr just kept, and does queue a later Arr upgrade", () => {
+    expect(shouldQueueNewImport({
+      settings: settings(),
+      item: item({ sizeBytes: 4, keptSizeBytes: 4 }),
+      suggestion,
+    })).toBe(false);
+    expect(shouldQueueNewImport({
+      settings: settings(),
+      item: item({ sizeBytes: 9, keptSizeBytes: 4 }),
+      suggestion,
+    })).toBe(true);
+    expect(shouldQueueNewImport({
+      settings: settings(),
+      item: item({ sizeBytes: 4, keptSizeBytes: 0 }),
+      suggestion,
+    })).toBe(true);
   });
 });

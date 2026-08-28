@@ -26,6 +26,8 @@ describe("suggestion defaults settings", () => {
     expect(html).toContain("Convert MP4 to MKV");
     expect(html).toContain("Convert ISO to MKV");
     expect(html).toContain("Queue new Arr imports automatically");
+    expect(html).toContain("Keep still replaces the library file and does not queue that file again");
+    expect(html).toContain("A later Arr upgrade still can");
     expect(html).toContain("Turning that on does not queue your existing library");
     expect(html).toContain("Save suggestion defaults");
   });

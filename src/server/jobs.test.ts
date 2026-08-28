@@ -191,6 +191,7 @@ describe("job promotion follow-up", () => {
       if (!("id" in queued)) return;
       await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("succeeded"));
       expect(reinspected).toEqual([{ path: join(dir, "movie.mkv"), sizeBytes: 3 }]);
+      expect(store.getItem(itemId)?.keptSizeBytes).toBe(3);
     } finally {
       jobs.stop();
       store.close();

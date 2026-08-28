@@ -205,6 +205,7 @@ export type LibraryItem = {
   sizeExempt: boolean;
   firstSeenAt?: number;
   fileChangedAt?: number;
+  keptSizeBytes?: number;
 };
 
 export type FileError = {

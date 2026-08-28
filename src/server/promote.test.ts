@@ -82,11 +82,11 @@ describe("promotion", () => {
     expect(readFileSync(result.destPath, "utf8")).toBe("MKV-BYTES");
     expect(iso).not.toBe(result.destPath);
     expect(existsSync(iso)).toBe(false);
-    expect(commands.some((c) => c.url.includes("/api/v3/command") && c.method === "POST")).toBe(true);
+    expect(commands.some((c) => c.url.includes("/api/v3/command"))).toBe(false);
     expect(commands.some((c) => c.url.includes("/Library/Refresh") && c.method === "POST")).toBe(true);
   });
 
-  it("counts a successful replace and does not roll back when Arr refresh fails", async () => {
+  it("counts a successful replace even when Arr HTTP would fail", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-promote-arr-"));
     const original = join(dir, "movie.mkv");
     const output = join(dir, "sidecar.mkv");
@@ -126,7 +126,7 @@ describe("promotion", () => {
     });
     expect(result.replaced).toBe(true);
     expect(result.savedBytes).toBe(6);
-    expect(result.warning).toMatch(/HTTP 500/);
+    expect(result.warning).toBeNull();
     expect(readFileSync(original, "utf8")).toBe("NEW");
   });
 

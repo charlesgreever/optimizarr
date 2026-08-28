@@ -12,6 +12,7 @@ import { promote, promotedPath, type PromoteInput, type PromoteResult } from "./
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
 import { isoInspectionLooksStale } from "./inspect.ts";
+import { refreshArr } from "./notify.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -541,11 +542,18 @@ export class JobService {
     const targets = siblings.length > 0 ? siblings : [item];
     for (const sibling of targets) {
       this.opts.store.updateItemFile(sibling.id, destPath, sizeBytes);
+      this.opts.store.markKeptSize(sibling.id, sizeBytes);
     }
     const warnings: string[] = [];
     for (const sibling of targets) {
       const result = await this.opts.reinspectChangedItem(sibling.id, oldPath);
       if (!result.ok) warnings.push(`The new file could not be inspected: ${result.warning}`);
+    }
+    const instance = this.opts.store.getInstance(item.instanceId);
+    if (instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
+      const arrId = instance.kind === "sonarr" ? (item.arrSeriesId ?? item.arrId) : item.arrId;
+      const msg = await refreshArr(instance.kind, instance.url, this.opts.decrypt(instance.secret), arrId, this.opts.fetch);
+      if (msg) warnings.push(msg);
     }
     return { warning: warnings.length > 0 ? warnings.join(" ") : null };
   }

@@ -1,6 +1,6 @@
 import { copyFile, rename, unlink } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import { notifyPlayers, refreshArr } from "./notify.ts";
+import { notifyPlayers } from "./notify.ts";
 import type { ArrKind, ExecutablePlan, LibraryItem, PlayerKind } from "./types.ts";
 
 export type PromoteInput = {
@@ -68,14 +68,8 @@ export async function promote(input: PromoteInput): Promise<PromoteResult> {
       error: error instanceof Error ? error.message : "Keep could not replace the library file.",
     };
   }
-  let warning: string | null = null;
-  if (input.instance?.secret && (input.instance.kind === "radarr" || input.instance.kind === "sonarr")) {
-    const arrId = input.instance.kind === "sonarr" ? (input.item.arrSeriesId ?? input.item.arrId) : input.item.arrId;
-    const msg = await refreshArr(input.instance.kind, input.instance.url, input.decrypt(input.instance.secret), arrId, input.fetch);
-    if (msg) warning = msg;
-  }
   const playerErrors = await notifyPlayers(input.players, input.fetch);
-  if (playerErrors.length) warning = warning ? `${warning} ${playerErrors.join(" ")}` : playerErrors.join(" ");
+  const warning = playerErrors.length ? playerErrors.join(" ") : null;
   return {
     replaced: true,
     destPath,

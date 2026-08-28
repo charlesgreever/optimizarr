@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -68,6 +68,7 @@ describe("interrupted Keep recovery", () => {
       expect.objectContaining({ itemId: ctx.itemId, outcome: "kept", bytesSaved: 10 }),
     ]);
     expect(ctx.store.getItem(ctx.itemId)?.sizeBytes).toBe(10);
+    expect(ctx.store.getItem(ctx.itemId)?.keptSizeBytes).toBe(10);
     ctx.close();
   });
 
@@ -178,6 +179,46 @@ describe("interrupted Keep recovery", () => {
     await vi.waitFor(() => expect(ids.every((id) => ctx.store.getReview(id) === undefined)).toBe(true));
     expect(maxActive).toBe(1);
     expect(started).toHaveLength(3);
+    jobs.stop();
+    ctx.close();
+  });
+
+  it("replaces the library file when Arr refresh fails after Keep", async () => {
+    const ctx = setup();
+    ctx.store.upsertInstance({
+      id: ctx.store.listInstances()[0]?.id,
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: "enc",
+      enabled: true,
+    });
+    writeFileSync(ctx.sourcePath, "ORIGINAL!");
+    writeFileSync(ctx.sidecarPath, "SIDECAR!!!");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "pending",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(9, 6),
+      error: null,
+    });
+    const jobs = new JobService({
+      ...ctx.base,
+      fetch: (async (url) => String(url).includes("/command")
+        ? new Response("nope", { status: 500 })
+        : new Response("{}", { status: 201 })) as typeof fetch,
+    });
+    const keep = await jobs.keep("rev-1");
+    expect(keep).toEqual({ accepted: true });
+    await vi.waitFor(() => expect(ctx.store.getReview("rev-1")).toBeUndefined());
+    expect(readFileSync(ctx.sourcePath, "utf8")).toBe("SIDECAR!!!");
+    expect(ctx.store.getJob("job-1")?.promoteError).toMatch(/HTTP 500/);
     jobs.stop();
     ctx.close();
   });

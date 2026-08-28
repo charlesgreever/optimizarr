@@ -769,6 +769,137 @@ describe("public HTTP behavior", () => {
     expect(calls.some((call) => call.includes("qualityprofile"))).toBe(false);
   });
 
+  it("does not auto-queue a Keep of an over-cap sidecar, and does auto-queue a later Arr upgrade", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-keep-loop-"));
+    const reviewDir = mkdtempSync(join(tmpdir(), "opt-keep-loop-review-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const sourcePath = join(dir, "avatar.mkv");
+    const sidecarPath = join(reviewDir, "avatar-sidecar.mkv");
+    const originalSize = 8_000_000_000;
+    const keptSize = 4_000_000_000;
+    const upgradeSize = 10_000_000_000;
+    writeFileSync(sourcePath, "ORIGINAL");
+    const movie = {
+      id: 10,
+      title: "Avatar",
+      path: sourcePath,
+      sizeOnDisk: originalSize,
+      movieFile: { path: sourcePath, size: originalSize, quality: { quality: { name: "Bluray-1080p" } } },
+    };
+    const arrRefreshes: Array<{ sizeBytes: number; keptSizeBytes: number }> = [];
+    let storeRef: { listItems: (type?: "movie") => Array<{ sizeBytes: number; keptSizeBytes?: number }> } | undefined;
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      optimizer: async (req) => {
+        writeFileSync(sidecarPath, "PROMOTED");
+        return {
+          sidecarPath,
+          output: { ...req.report, videoCodec: "hevc", sizeBytes: keptSize, sizePerHourGb: keptSize / 1024 ** 3 },
+        };
+      },
+      fetch: (async (url, init) => {
+        const text = String(url);
+        if (text.includes("/api/v3/command") && (init?.method ?? "GET") === "POST") {
+          const item = storeRef?.listItems("movie")[0];
+          arrRefreshes.push({ sizeBytes: item?.sizeBytes ?? 0, keptSizeBytes: item?.keptSizeBytes ?? 0 });
+          return new Response("{}", { status: 201 });
+        }
+        if (text.endsWith("/api/v3/movie")) return new Response(JSON.stringify([movie]));
+        if (text.endsWith("/api/v3/movie/10")) return new Response(JSON.stringify(movie));
+        if (text.includes("system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+        if (text.includes("/rootfolder")) return new Response("[]");
+        return new Response("{}", { status: 201 });
+      }) as typeof fetch,
+    });
+    storeRef = created.store;
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: reviewDir,
+        profileAutoAssign: false,
+        suggestionDefaults: { queueNewImports: true },
+      }),
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    await vi.waitFor(async () => {
+      const review = (await (await created.app.request("/api/review", { headers })).json()) as { items: Array<{ id: string }> };
+      expect(review.items).toHaveLength(1);
+    });
+    const review = (await (await created.app.request("/api/review", { headers })).json()) as { items: Array<{ id: string }> };
+    const keep = await created.app.request(`/api/review/${review.items[0]?.id}/keep`, { method: "POST", headers });
+    expect(keep.status).toBe(202);
+    await vi.waitFor(async () => {
+      const pending = (await (await created.app.request("/api/review", { headers })).json()) as { items: unknown[] };
+      expect(pending.items).toHaveLength(0);
+    });
+    const jobsAfterKeep = (await (await created.app.request("/api/jobs", { headers })).json()) as { items: Array<{ status: string }> };
+    expect(jobsAfterKeep.items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running")).toEqual([]);
+    const history = (await (await created.app.request("/api/history", { headers })).json()) as { items: Array<{ outcome: string }> };
+    expect(history.items.some((row) => row.outcome === "kept")).toBe(true);
+    expect(arrRefreshes.at(-1)).toEqual({ sizeBytes: keptSize, keptSizeBytes: keptSize });
+
+    movie.path = join(dir, "avatar-kept.mkv");
+    movie.movieFile = { ...movie.movieFile, path: movie.path, size: keptSize };
+    movie.sizeOnDisk = keptSize;
+    const minted = (await (await created.app.request("/api/settings/webhook-token", { method: "POST", headers })).json()) as { token: string };
+    const renamed = await created.app.request("/api/hooks/arr", {
+      method: "POST",
+      headers: { "X-Api-Key": minted.token },
+      body: JSON.stringify({ eventType: "Download", movie: { id: 10 } }),
+    });
+    expect(renamed.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(created.store.listItems("movie")[0]?.path).toBe(movie.path);
+    });
+    await created.inspectPending();
+    const jobsAfterRename = (await (await created.app.request("/api/jobs", { headers })).json()) as { items: Array<{ status: string }> };
+    expect(jobsAfterRename.items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running")).toEqual([]);
+
+    movie.movieFile = { ...movie.movieFile, size: upgradeSize };
+    movie.sizeOnDisk = upgradeSize;
+    const upgraded = await created.app.request("/api/hooks/arr", {
+      method: "POST",
+      headers: { "X-Api-Key": minted.token },
+      body: JSON.stringify({ eventType: "Download", movie: { id: 10 } }),
+    });
+    expect(upgraded.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(created.store.listItems("movie")[0]?.sizeBytes).toBe(upgradeSize);
+    });
+    await created.inspectPending();
+    await vi.waitFor(async () => {
+      const jobs = (await (await created.app.request("/api/jobs", { headers })).json()) as { items: Array<{ status: string }> };
+      expect(jobs.items.some((job) => job.status === "queued" || job.status === "held" || job.status === "running" || job.status === "succeeded")).toBe(true);
+      const open = (await (await created.app.request("/api/review", { headers })).json()) as { items: unknown[] };
+      const active = jobs.items.filter((job) => job.status === "queued" || job.status === "held" || job.status === "running");
+      expect(active.length + open.items.length).toBeGreaterThan(0);
+    });
+  });
+
   it("rejects writing integrations without a session", async () => {
     const ctx = await setup();
     apps.push(ctx);

@@ -237,6 +237,47 @@ describe("store schema migration", () => {
     expect(upgraded?.fileChangedAt).toBeGreaterThan(created?.fileChangedAt ?? 0);
   });
 
+  it("remembers the kept size so an Arr upgrade can still look like a new file", () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-kept-size-")), "polisharr.db"));
+    stores.push(store);
+    const instanceId = store.upsertInstance({
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: null,
+      enabled: true,
+    });
+    const itemId = `${instanceId}:movie:1`;
+    const base = {
+      id: itemId,
+      instanceId,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie" as const,
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/mnt/nas/Film.mkv",
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [] as string[],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    };
+    store.upsertItem(base);
+    expect(store.getItem(itemId)?.keptSizeBytes).toBe(0);
+    store.updateItemFile(itemId, "/mnt/nas/Film.mkv", 4);
+    store.markKeptSize(itemId, 4);
+    expect(store.getItem(itemId)).toMatchObject({ sizeBytes: 4, keptSizeBytes: 4 });
+    store.upsertItem({ ...base, path: "/mnt/nas/Film-upgrade.mkv", sizeBytes: 9 });
+    expect(store.getItem(itemId)).toMatchObject({ sizeBytes: 9, keptSizeBytes: 4 });
+  });
+
   it("does not mark a title unreadable from a file error on an old path", () => {
     const dir = mkdtempSync(join(tmpdir(), "opt-stale-error-"));
     const store = new Store(join(dir, "polisharr.db"));

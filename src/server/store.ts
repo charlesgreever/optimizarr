@@ -104,6 +104,7 @@ export class Store {
         size_exempt INTEGER NOT NULL DEFAULT 0,
         first_seen_at INTEGER NOT NULL DEFAULT 0,
         file_changed_at INTEGER NOT NULL DEFAULT 0,
+        kept_size_bytes INTEGER NOT NULL DEFAULT 0,
         UNIQUE(instance_id, type, arr_id)
       );
       CREATE TABLE IF NOT EXISTS inspections (
@@ -191,6 +192,7 @@ export class Store {
     this.ensureColumn("library_items", "arr_episode_file_id", "INTEGER");
     this.ensureColumn("library_items", "first_seen_at", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("library_items", "file_changed_at", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("library_items", "kept_size_bytes", "INTEGER NOT NULL DEFAULT 0");
     this.db.prepare("DELETE FROM settings WHERE key = 'github_token'").run();
   }
 
@@ -519,6 +521,10 @@ export class Store {
 
   updateItemFile(id: string, path: string, sizeBytes: number): void {
     this.db.prepare("UPDATE library_items SET path = ?, size_bytes = ? WHERE id = ?").run(path, sizeBytes, id);
+  }
+
+  markKeptSize(id: string, sizeBytes: number): void {
+    this.db.prepare("UPDATE library_items SET kept_size_bytes = ? WHERE id = ?").run(sizeBytes, id);
   }
 
   deleteInspection(itemId: string): void {
@@ -1062,6 +1068,7 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     sizeExempt: Number(row.size_exempt) === 1,
     firstSeenAt: Number(row.first_seen_at ?? 0),
     fileChangedAt: Number(row.file_changed_at ?? 0),
+    keptSizeBytes: Number(row.kept_size_bytes ?? 0),
   };
 }
 
