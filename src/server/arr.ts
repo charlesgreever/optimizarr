@@ -1,6 +1,11 @@
 import { isMediaFilePath } from "./inspect.ts";
 
-export type ArrMovie = {
+export type ArrHttpAuth = {
+  url: string;
+  apiKey: string;
+};
+
+export type ArrTitle = {
   id: number;
   title: string;
   path: string;
@@ -12,7 +17,9 @@ export type ArrMovie = {
   posterUrl: string | null;
 };
 
-export type ArrEpisode = ArrMovie & {
+export type ArrMovie = ArrTitle;
+
+export type ArrEpisode = ArrTitle & {
   seriesId: number;
   episodeFileId: number | null;
   seriesTitle: string;
@@ -25,8 +32,8 @@ export type ConnectionResult =
   | { ok: true }
   | { ok: false; kind: "auth" | "connect" | "shape"; message: string };
 
-export async function fetchJson(url: string, apiKey: string, httpFetch: typeof fetch): Promise<unknown> {
-  const res = await httpFetch(url, { headers: { "X-Api-Key": apiKey } });
+export async function fetchJson(connection: ArrHttpAuth, path: string, httpFetch: typeof fetch): Promise<unknown> {
+  const res = await httpFetch(`${trimUrl(connection.url)}${path}`, { headers: { "X-Api-Key": connection.apiKey } });
   if (res.status === 401 || res.status === 403) {
     const err = new Error("The Arr rejected this API key.") as Error & { kind: "auth" };
     err.kind = "auth";
@@ -112,9 +119,9 @@ export function parseRootFolders(payload: unknown): string[] {
     .filter((path) => path.length > 0);
 }
 
-export async function testRadarr(url: string, apiKey: string, httpFetch: typeof fetch): Promise<ConnectionResult> {
+export async function testRadarr(connection: ArrHttpAuth, httpFetch: typeof fetch): Promise<ConnectionResult> {
   try {
-    const payload = await fetchJson(`${trimUrl(url)}/api/v3/system/status`, apiKey, httpFetch);
+    const payload = await fetchJson(connection, "/api/v3/system/status", httpFetch);
     const row = asRecord(payload);
     if (typeof row.appName === "string" || typeof row.version === "string") return { ok: true };
     return { ok: false, kind: "shape", message: "That URL answered, but it does not look like Radarr." };
@@ -123,9 +130,9 @@ export async function testRadarr(url: string, apiKey: string, httpFetch: typeof 
   }
 }
 
-export async function testSonarr(url: string, apiKey: string, httpFetch: typeof fetch): Promise<ConnectionResult> {
+export async function testSonarr(connection: ArrHttpAuth, httpFetch: typeof fetch): Promise<ConnectionResult> {
   try {
-    const payload = await fetchJson(`${trimUrl(url)}/api/v3/system/status`, apiKey, httpFetch);
+    const payload = await fetchJson(connection, "/api/v3/system/status", httpFetch);
     const row = asRecord(payload);
     if (typeof row.appName === "string" && String(row.appName).toLowerCase().includes("sonarr")) return { ok: true };
     if (typeof row.version === "string") return { ok: true };

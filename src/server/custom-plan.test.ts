@@ -194,7 +194,7 @@ describe("custom plan validation", () => {
   it("gates AV1, rejects downscale on remux, and keeps bit depth plus HDR warning", () => {
     const av1 = check({ video: { mode: "quality", quality: 20, codec: "av1" } });
     expect(av1.ok).toBe(false);
-    const downscaleCopy = check({ video: { mode: "copy", downscale1080p: true } as never });
+    const downscaleCopy = check({ video: { mode: "copy", downscale1080p: true } });
     expect(downscaleCopy.ok).toBe(false);
     const hdr = check(
       { video: { mode: "size", targetBytes: 6_000_000_000, downscale1080p: true } },

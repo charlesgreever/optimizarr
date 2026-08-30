@@ -13,9 +13,10 @@ import { HistoryPage } from "./pages/History";
 import { SettingsPage } from "./pages/Settings";
 import { TitlePage } from "./pages/Title";
 import { LoginPage } from "./pages/Login";
+import { SetupPage } from "./pages/Setup";
 
 export function App() {
-  const [auth, setAuth] = useState<{ authenticated: boolean; firstRun: FirstRun } | null>(null);
+  const [auth, setAuth] = useState<{ authenticated: boolean; firstRun: FirstRun; version?: string } | null>(null);
 
   useEffect(() => {
     void api.status().then(setAuth).catch(() => setAuth({ authenticated: false, firstRun: emptyFirst() }));
@@ -25,9 +26,12 @@ export function App() {
   if (!auth.firstRun.hasAdmin || !auth.authenticated) {
     return <LoginPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />;
   }
+  if (!auth.firstRun.complete) {
+    return <SetupPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />;
+  }
 
   return (
-    <Shell>
+    <Shell version={auth.version}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/movies" element={<MoviesPage />} />

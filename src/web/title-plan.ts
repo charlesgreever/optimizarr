@@ -36,6 +36,18 @@ export function canIdentifyLanguage(track: { language?: string; untagged?: boole
   return isUntaggedTrack(track);
 }
 
+export const MISSING_WHISPER_LID = "Identify language needs WHISPER_LID. Polisharr will not pretend to listen.";
+
+export function untaggedAudioNeedsLanguageIdHint(
+  track: { language?: string; untagged?: boolean; channels?: number } | undefined,
+  available: boolean,
+  locked: boolean,
+): boolean {
+  if (available || locked || !track) return false;
+  if ((track.channels ?? 0) <= 0) return false;
+  return isUntaggedTrack(track);
+}
+
 const TEXT_SUBTITLE_CODECS = new Set([
   "mov_text",
   "eia_608",

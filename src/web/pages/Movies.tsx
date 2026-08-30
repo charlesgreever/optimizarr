@@ -122,7 +122,7 @@ export function MoviesPage() {
       <PageHead title="Movies">
         <RefreshLibrary onDone={() => void load(true)} />
       </PageHead>
-      <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion. The header counts every movie, not just this page.</Help>
+      <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion. Exempt keeps a large file off the size cap so Polisharr only offers language cleanup and stereo. The header counts every movie, not just this page.</Help>
       {total > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted">
           <span>{total} movies</span>

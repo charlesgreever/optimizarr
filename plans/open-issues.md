@@ -2,11 +2,26 @@
 
 Audit date: 2026-08-21. Baseline: `main` at `e045d76`.
 
-## Full-Main Review Follow-Up
+Remaining work after the 2026-08-29 full-tree review lives in [review-follow-up.md](review-follow-up.md). Do not treat the 2026-08-21 rows below as the current queue.
 
-The later full-main review produced an 18-finding remediation plan. All seven phases are implemented in the working tree: request and secret security, domain parsing, Strict Mode paging, queue and output safety, automatic library sync, Suggestions completion, and documentation. [Main Branch Review Remediation](../docs/main-review-remediation.md) maps each behavior to its public regression evidence.
+## Current remaining work (2026-08-29)
 
-This document covers every GitHub issue that was open during the audit. The audit compared each acceptance list with the public HTTP behavior, server modules, web pages, tests, and commit history. Passing tests support a classification; they do not replace a missing acceptance behavior.
+Review baseline: `main` at `5545611`. Open GitHub issues from `gh issue list --state open` that day:
+
+| Issue | Status | Remaining gap |
+| --- | --- | --- |
+| [#42: Show the running Polisharr version in the app](https://github.com/charlesgreever/polisharr/issues/42) | Open | Sidebar, `GET /api/health`, and Report prefill do not show `package.json` version. Phase 6 of the follow-up plan. |
+| [#43: Login doesn't advertise as username and password on mobile](https://github.com/charlesgreever/polisharr/issues/43) | Open | Login fields have autocomplete tokens but no `name`/`id`/`method="post"`, so mobile password managers often ignore them. Phase 6 of the follow-up plan. |
+
+The 2026-08-29 review also found spec and standards gaps that are not GitHub issues yet. Those are phases 1–5 of [review-follow-up.md](review-follow-up.md): Keep/direct-write original-file safety, custom queue that still leaves the bulk suggestion, first-run as a Settings banner, Identify language hiding a missing `WHISPER_LID`, unlabeled size exemption, and type/fixture cleanups.
+
+Re-run `gh issue list --state open` before closing #42 or #43 so a newer report is not hidden.
+
+## Full-Main Review Follow-Up (2026-08-21)
+
+The 2026-08-21 full-main review produced an 18-finding remediation plan. All seven phases of that plan are implemented: request and secret security, domain parsing, Strict Mode paging, queue and output safety, automatic library sync, Suggestions completion, and documentation. [Main Branch Review Remediation](../docs/main-review-remediation.md) maps each behavior to its public regression evidence. Later Keep-crash and cancel gaps are in [review-follow-up.md](review-follow-up.md), not that document.
+
+This section covers every GitHub issue that was open during the 2026-08-21 audit. The audit compared each acceptance list with the public HTTP behavior, server modules, web pages, tests, and commit history. Passing tests support a classification; they do not replace a missing acceptance behavior.
 
 ## Status
 
@@ -15,7 +30,7 @@ This document covers every GitHub issue that was open during the audit. The audi
 | [#22: Transcode ISO files with ffmpeg; skip ffprobe](https://github.com/charlesgreever/polisharr/issues/22) | Fixed; ready to close | Commits `782bba3`, `a8f1a2c`, and `4d81bf8` implement the superseding v2 ISO contract. ISO paths bypass ffprobe, ffmpeg listings populate inspection reports, unlisted ISOs remain custom-queueable, remux writes MKV, transcodes use the feature duration, and the output receives an integrity probe. Focused inspector, suggestion, and runner tests pass. |
 | [#24: Make library rows denser](https://github.com/charlesgreever/polisharr/issues/24) | Fixed; ready to close | Movies and Series share ordered dense cells, normalized audio/subtitle labels, every plan reason, and explicit waiting/unreadable/none/healthy states. Public HTTP and row-helper tests cover the acceptance states. |
 | [#25: Assign a GB/hr-matched Arr profile](https://github.com/charlesgreever/polisharr/issues/25) | Fixed; ready to close | Auto-assign defaults on but can be disabled. One predicate restricts assignment to successful, non-exempt video transcodes. Explicit sync creates or repairs only Polisharr profiles. Fake Radarr/Sonarr tests cover assignment, skip cases, no search, and visible follow-up failures. |
-| [#26: PRD: Polisharr v2](https://github.com/charlesgreever/polisharr/issues/26) | Fixed; ready to close | The remaining dense-row, profile, and progressive-Series acceptance gaps are complete. [The v2 verification matrix](../docs/v2-verification.md) maps all 92 stories to passing evidence and records the integrated gate. |
+| [#26: PRD: Polisharr v2](https://github.com/charlesgreever/polisharr/issues/26) | Fixed; later gaps | Dense-row, profile, and progressive-Series work shipped. The 2026-08-21 [v2 verification matrix](../docs/v2-verification.md) closed the epic at that date. The 2026-08-29 review found stories 45, 61, 54j, and 67 still incomplete; those are [review-follow-up.md](review-follow-up.md), not a reopen of this issue. |
 | [#33: Queue bulk cancel and finished-row removal](https://github.com/charlesgreever/polisharr/issues/33) | Fixed; ready to close | Authenticated Cancel all, Remove, and Clear finished flows now pass through HTTP and Queue UI. Active removal returns a conflict. Removed Queue rows retain the job data required by Review while History, sidecars, suggestions, and media remain intact. |
 | [#34: Track real Queue encode progress](https://github.com/charlesgreever/polisharr/issues/34) | Fixed; ready to close | Commit `4c82334` makes ffmpeg emit machine-readable elapsed time. The runner maps it against media duration, progress stays below completion during encode, and the integrity phase precedes 100%. ISO remux progress uses the listed feature duration. Parser and phase-scaling tests pass. |
 | [#38: Heavy screens load slowly](https://github.com/charlesgreever/polisharr/issues/38) | Fixed; closed | Batched bounded reads replace the per-row query path. Movies, Suggestions, Queue, Review, Errors, and History return progressive pages; Series returns paged headers first and fetches bounded episode pages only on expansion. Queue and Review suppress overlapping polls while retaining loaded pages. Home and the widget use aggregate counts. The 5,000-episode benchmark reduced the first Series payload from 3,787,645 bytes to 7,023 bytes. |
@@ -203,8 +218,8 @@ Files: `types.ts`, `settings.ts`, `suggest.ts`, `optimize.ts`, `Settings.tsx`, A
 
 Done when an enabled MP4 transcode has `mux` before `encode`, an enabled under-cap MP4 has only `mux`, and the same plans omit `mux` for MKV or a disabled setting.
 
-## Closure Actions
+## Closure Actions (2026-08-21)
 
-- #22, #24, #25, #26, #33, #34, #38, #39, and #40 are ready to close after their changes are committed and published.
-- The final `gh issue list --state open` query found #39, which was filed after the audit and is now included above.
-- Re-run the open-issue query after publication and before closing the final issue so this audit does not hide a still-newer report.
+- #22, #24, #25, #26, #33, #34, #38, #39, and #40 were ready to close after their changes were committed and published.
+- The final `gh issue list --state open` query on 2026-08-21 found #39, which was filed after the audit and is included above.
+- A 2026-08-29 query found #42 and #43. Those, plus the later review findings, are the current queue in [review-follow-up.md](review-follow-up.md).

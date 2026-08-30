@@ -17,6 +17,7 @@ export type ReportContext = {
   route: string;
   inspect?: ReportInspect | null;
   running?: ReportJob | null;
+  version?: string;
 };
 
 const REPO = "https://github.com/charlesgreever/polisharr/issues/new";
@@ -40,6 +41,7 @@ export function buildReportIssueBody(ctx: ReportContext): string {
     "## Context",
     `- Route: ${scrubReportText(ctx.route || "/")}`,
   ];
+  if (ctx.version) lines.push(`- Version: ${scrubReportText(ctx.version)}`);
   if (ctx.inspect && (ctx.inspect.walking || ctx.inspect.pending > 0 || ctx.inspect.failed > 0)) {
     lines.push(
       `- Inspect leftovers: ${ctx.inspect.pending}`,

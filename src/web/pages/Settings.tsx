@@ -48,7 +48,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
       <div>
         <PageHead title="Settings" />
         <Help>
-          Preferred language decides which audio and subtitle tracks stay. Confirm it once before any optimize. The review folder is where sidecars land; it must sit outside your movie and show libraries.
+          Preferred language decides which audio and subtitle tracks stay. Confirm it once before any optimize. The review folder is where finished copies wait for Keep; it must sit outside your movie and show libraries.
         </Help>
       </div>
       {!firstRun.complete && (

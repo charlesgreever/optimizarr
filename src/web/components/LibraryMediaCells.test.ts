@@ -74,7 +74,8 @@ describe("library media cells", () => {
     expect(html).toContain("aria-label=\"Queue\"");
     expect(html).toContain("aria-label=\"Force suggestion\"");
     expect(html).toContain("aria-label=\"Add stereo\"");
-    expect(html).toContain("aria-label=\"Exempt size\"");
+    expect(html).toContain("aria-label=\"Exempt\"");
+    expect(html).toContain("Exempt");
     expect(html).toContain("aria-label=\"Open\"");
   });
 });

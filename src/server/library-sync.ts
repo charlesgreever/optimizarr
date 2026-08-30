@@ -5,7 +5,6 @@ import {
   parseRootFolders,
   parseSonarrEpisodes,
   parseSonarrSeries,
-  trimUrl,
   type ArrEpisode,
   type ArrMovie,
 } from "./arr.ts";
@@ -100,7 +99,11 @@ export class LibrarySync {
     for (const instance of this.options.store.listInstances()) {
       if (!instance.enabled || instance.kind !== "radarr" || !instance.secret) continue;
       try {
-        const raw = await fetchJson(`${trimUrl(instance.url)}/api/v3/movie/${movieId}`, this.options.decrypt(instance.secret), this.options.fetch);
+        const raw = await fetchJson(
+          { url: instance.url, apiKey: this.options.decrypt(instance.secret) },
+          `/api/v3/movie/${movieId}`,
+          this.options.fetch,
+        );
         const movie = parseRadarrMovies(Array.isArray(raw) ? raw : [raw])[0];
         if (!movie) continue;
         this.storeMovie(instance, movie);
@@ -117,12 +120,12 @@ export class LibrarySync {
     for (const instance of this.options.store.listInstances()) {
       if (!instance.enabled || instance.kind !== "sonarr" || !instance.secret) continue;
       try {
-        const key = this.options.decrypt(instance.secret);
-        const rawShow = await fetchJson(`${trimUrl(instance.url)}/api/v3/series/${seriesId}`, key, this.options.fetch);
+        const auth = { url: instance.url, apiKey: this.options.decrypt(instance.secret) };
+        const rawShow = await fetchJson(auth, `/api/v3/series/${seriesId}`, this.options.fetch);
         const show = parseSonarrSeries(Array.isArray(rawShow) ? rawShow : [rawShow])[0];
         if (!show) continue;
         const episodes = parseSonarrEpisodes(
-          await fetchJson(`${trimUrl(instance.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, this.options.fetch),
+          await fetchJson(auth, `/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, this.options.fetch),
           show.title,
           show.posterUrl,
           show.profile,
@@ -145,17 +148,17 @@ export class LibrarySync {
       return;
     }
     if (instance.kind === "radarr") {
-      const movies = parseRadarrMovies(await fetchJson(`${trimUrl(instance.url)}/api/v3/movie`, key, this.options.fetch));
+      const movies = parseRadarrMovies(await fetchJson({ url: instance.url, apiKey: key }, "/api/v3/movie", this.options.fetch));
       const ids: string[] = [];
       for (const movie of movies) ids.push(this.storeMovie(instance, movie));
       this.options.store.removeItemsNotIn(instance.id, "movie", ids);
       return;
     }
-    const series = parseSonarrSeries(await fetchJson(`${trimUrl(instance.url)}/api/v3/series`, key, this.options.fetch));
+    const series = parseSonarrSeries(await fetchJson({ url: instance.url, apiKey: key }, "/api/v3/series", this.options.fetch));
     const episodeIds: string[] = [];
     for (const show of series) {
       const episodes = parseSonarrEpisodes(
-        await fetchJson(`${trimUrl(instance.url)}/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, key, this.options.fetch),
+        await fetchJson({ url: instance.url, apiKey: key }, `/api/v3/episode?seriesId=${show.id}&includeEpisodeFile=true`, this.options.fetch),
         show.title, show.posterUrl, show.profile, show.tags,
       );
       for (const episode of episodes) episodeIds.push(this.storeEpisode(instance, episode));
@@ -191,7 +194,7 @@ export class LibrarySync {
   private async refreshRoots(instance: StoredInstance, key: string): Promise<string[]> {
     try {
       const roots = parseRootFolders(
-        await fetchJson(`${trimUrl(instance.url)}/api/v3/rootfolder`, key, this.options.fetch),
+        await fetchJson({ url: instance.url, apiKey: key }, "/api/v3/rootfolder", this.options.fetch),
       );
       this.options.store.replaceLibraryRoots(instance.id, roots);
       return roots;

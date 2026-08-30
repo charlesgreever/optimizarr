@@ -100,7 +100,7 @@ function buildVideo(
   errors: PlanFieldError[],
 ): VideoIntent {
   if (draft.mode === "copy") {
-    if (draft && "downscale1080p" in draft && (draft as { downscale1080p?: boolean }).downscale1080p) {
+    if (draft.downscale1080p) {
       errors.push({ field: "video.downscale1080p", message: "4K to 1080p needs a size or quality encode. A remux cannot downscale." });
     }
     return { kind: "copy" };

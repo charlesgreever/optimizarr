@@ -60,8 +60,8 @@ describe("title facts", () => {
     expect(html).toContain("Same file as E36");
   });
 
-  it("says when the Arr did not send a path", () => {
+  it("says when Radarr or Sonarr did not send a path", () => {
     const html = renderToStaticMarkup(createElement(TitleFacts, { item: item({ path: "" }) }));
-    expect(html).toContain("No file path from the Arr yet.");
+    expect(html).toContain("No file path from Radarr or Sonarr yet.");
   });
 });

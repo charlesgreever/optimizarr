@@ -372,7 +372,7 @@ export type CustomSubtitleChoice = {
   action: "keep" | "remove";
 };
 export type CustomVideoDraft =
-  | { mode: "copy" }
+  | { mode: "copy"; downscale1080p?: boolean }
   | { mode: "size"; targetBytes: number; codec?: VideoTarget; downscale1080p?: boolean }
   | { mode: "quality"; quality: number; codec?: VideoTarget; downscale1080p?: boolean };
 export type CustomPlanDraft = {

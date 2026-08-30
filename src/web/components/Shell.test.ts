@@ -17,12 +17,13 @@ vi.mock("../api", () => ({
 describe("app shell", () => {
   it("hides the menu button on large screens and labels search", () => {
     const html = renderToStaticMarkup(
-      createElement(MemoryRouter, null, createElement(Shell, null, "body")),
+      createElement(MemoryRouter, null, createElement(Shell, { version: "0.2.1", children: "body" })),
     );
     expect(html).toContain("Open menu");
     expect(html).toContain("lg:hidden");
     expect(html).toContain("aria-label=\"Search movies and episodes\"");
     expect(html).toContain("Polisharr");
+    expect(html).toContain("0.2.1");
     expect(html).toContain("Switch to dark mode");
   });
 });

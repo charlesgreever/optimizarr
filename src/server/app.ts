@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import argon2 from "argon2";
-import type { Env } from "./env.ts";
+import { readAppVersion, type Env } from "./env.ts";
 import { Store } from "./store.ts";
 import { decryptSecret, encryptSecret, loadOrCreateSecret } from "./secrets.ts";
 import { detectHardware, type HardwareProbe } from "./hardware.ts";
@@ -66,9 +66,11 @@ export type AppOptions = {
   extractSubtitleSample?: (args: string[]) => Promise<string>;
   extractSubtitleSup?: (args: string[]) => Promise<void>;
   runPgsOcr?: (supPath: string) => Promise<string>;
+  version?: string;
 };
 
 export function createApp(opts: AppOptions) {
+  const version = opts.version ?? readAppVersion();
   const store = opts.store ?? new Store(opts.env.dbPath);
   const secret = loadOrCreateSecret(opts.env.secretPath);
   const httpFetch = opts.fetch ?? fetch;
@@ -143,7 +145,7 @@ export function createApp(opts: AppOptions) {
     };
   }
 
-  app.get("/api/health", (c) => c.json({ ok: true, service: "polisharr" }));
+  app.get("/api/health", (c) => c.json({ ok: true, service: "polisharr", version }));
 
   app.get("/api/ready", (c) => {
     const settings = store.getSettings();
@@ -164,6 +166,7 @@ export function createApp(opts: AppOptions) {
     return c.json({
       authenticated: Boolean(user),
       firstRun: firstRunState(),
+      version,
     });
   });
 
@@ -335,11 +338,11 @@ export function createApp(opts: AppOptions) {
     if (!inst) return c.json({ error: "That connection does not exist." }, 404);
     const key = inst.secret ? decryptSecret(secret, inst.secret) : "";
     if (inst.kind === "radarr") {
-      const result = await testRadarr(inst.url, key, httpFetch);
+      const result = await testRadarr({ url: inst.url, apiKey: key }, httpFetch);
       return c.json(result, result.ok ? 200 : 400);
     }
     if (inst.kind === "sonarr") {
-      const result = await testSonarr(inst.url, key, httpFetch);
+      const result = await testSonarr({ url: inst.url, apiKey: key }, httpFetch);
       return c.json(result, result.ok ? 200 : 400);
     }
     if (inst.kind === "plex") {

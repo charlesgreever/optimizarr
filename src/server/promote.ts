@@ -1,5 +1,5 @@
-import { copyFile, rename, unlink } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { access, copyFile, rename, unlink } from "node:fs/promises";
+import { extname } from "node:path";
 import { notifyPlayers } from "./notify.ts";
 import type { ArrKind, ExecutablePlan, LibraryItem, PlayerKind } from "./types.ts";
 
@@ -23,10 +23,42 @@ export type PromoteResult = {
   error: string | null;
 };
 
+export function stagedNewPath(destPath: string): string {
+  return `${destPath}.opt-new`;
+}
+
+export function stagedBackupPath(destPath: string): string {
+  return `${destPath}.opt-old`;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function recoverStagedReplace(destPath: string): Promise<void> {
+  const backup = stagedBackupPath(destPath);
+  const staged = stagedNewPath(destPath);
+  const destOk = await pathExists(destPath);
+  const backupOk = await pathExists(backup);
+  if (!destOk && backupOk) {
+    await rename(backup, destPath);
+  }
+  await unlink(staged).catch(() => undefined);
+}
+
+export async function clearStagedBackup(destPath: string): Promise<void> {
+  if (!(await pathExists(destPath))) return;
+  await unlink(stagedBackupPath(destPath)).catch(() => undefined);
+}
+
 export async function replaceLibraryFile(outputPath: string, destPath: string, originalPath = destPath): Promise<void> {
-  const dir = dirname(destPath);
-  const staged = join(dir, `${Date.now()}-${Math.random().toString(16).slice(2)}.opt-new`);
-  const backup = `${destPath}.opt-old`;
+  const staged = stagedNewPath(destPath);
+  const backup = stagedBackupPath(destPath);
   await copyFile(outputPath, staged);
   try {
     await rename(destPath, backup);

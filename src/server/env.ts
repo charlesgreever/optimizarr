@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type Env = {
@@ -19,6 +19,15 @@ export type Env = {
   widgetKeyEnv: string | null;
   trustProxy: boolean;
 };
+
+export function readAppVersion(cwd = process.cwd()): string {
+  try {
+    const raw = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8")) as { version?: unknown };
+    return typeof raw.version === "string" && raw.version.trim() ? raw.version.trim() : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   const configDir = processEnv.CONFIG_DIR ?? "./config";

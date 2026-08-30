@@ -120,8 +120,7 @@ describe("Arr profile HTTP", () => {
     const putBodies: Record<string, unknown>[] = [];
     const warning = await assignProfile({
       kind: "radarr",
-      url: "http://radarr",
-      apiKey: "k",
+      connection: { url: "http://radarr", apiKey: "k" },
       movieId: 10,
       profileName: "Polisharr Movie 4K HDR",
       currentQuality: "Bluray-2160p",
@@ -153,8 +152,7 @@ describe("Arr profile HTTP", () => {
     const createdBodies: Record<string, unknown>[] = [];
     const warning = await assignProfile({
       kind: "radarr",
-      url: "http://radarr",
-      apiKey: "k",
+      connection: { url: "http://radarr", apiKey: "k" },
       movieId: 10,
       profileName: "Polisharr Movie 4K HDR",
       currentQuality: "Bluray-2160p",
@@ -198,8 +196,7 @@ describe("Arr profile HTTP", () => {
     const calls: string[] = [];
     const warning = await assignProfile({
       kind: "sonarr",
-      url: "http://sonarr",
-      apiKey: "k",
+      connection: { url: "http://sonarr", apiKey: "k" },
       seriesId: 42,
       profileName: "Polisharr TV 1080p",
       fetch: (async (url, init) => {

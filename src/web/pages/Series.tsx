@@ -74,7 +74,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={refreshed} />
       </PageHead>
-      <Help>Series loads show headers first. Expand one show to load its episodes. Each header shows how many episodes are healthy and how many still have suggestions. Optimize all episodes queues that show without expanding it.</Help>
+      <Help>Series loads show headers first. Expand one show to load its episodes. Each header shows how many episodes are healthy and how many still have suggestions. Exempt on an episode keeps that file off the size cap so Polisharr only offers language cleanup and stereo. Optimize all episodes queues that show without expanding it.</Help>
       {summaries.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">

@@ -5,6 +5,7 @@
 1. [docs/prd.md](docs/prd.md) — what the product is allowed to do
 2. [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md) — how the TypeScript is allowed to look (`ENG-01` … `ENG-14`)
 3. [CODING_STANDARDS.md](CODING_STANDARDS.md) — how comments, README, and UI copy are allowed to read
+4. [plans/review-follow-up.md](plans/review-follow-up.md) — remaining review and GitHub work (#42, #43, Keep safety, first-run)
 
 Cite an id (`ENG-09`) or a RULE (`RULE-04`) in findings.
 

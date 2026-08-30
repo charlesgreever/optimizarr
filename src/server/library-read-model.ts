@@ -37,7 +37,12 @@ export function createLibraryReadModel(store: Store) {
     item(id: string, detail = false) {
       const snapshot = store.librarySnapshot(id);
       if (!snapshot) return undefined;
-      return presentLibraryItem(snapshot, detail, store.itemsForPath(snapshot.item.path, snapshot.item.instanceId));
+      return presentLibraryItem(
+        snapshot,
+        detail,
+        store.itemsForPath(snapshot.item.path, snapshot.item.instanceId),
+        customPlanReasons(store, snapshot.item.id),
+      );
     },
   };
 }
@@ -49,10 +54,22 @@ function presentPage(
   limit: number,
 ): Page<ReturnType<typeof presentLibraryItem>> {
   return {
-    items: page.rows.map((row) => presentLibraryItem(row, false, store.itemsForPath(row.item.path, row.item.instanceId))),
+    items: page.rows.map((row) => presentLibraryItem(
+      row,
+      false,
+      store.itemsForPath(row.item.path, row.item.instanceId),
+      customPlanReasons(store, row.item.id),
+    )),
     nextOffset: nextOffset(offset, limit, page.total),
     total: page.total,
   };
+}
+
+function customPlanReasons(store: Store, itemId: string): string[] {
+  const job = store.activeJobForItem(itemId);
+  const plan = job?.plan;
+  if (!plan || typeof plan !== "object" || !("reasons" in plan) || !Array.isArray(plan.reasons)) return [];
+  return plan.reasons.filter((reason): reason is string => typeof reason === "string");
 }
 
 function nextOffset(offset: number, limit: number, total: number): number | null {
@@ -60,7 +77,12 @@ function nextOffset(offset: number, limit: number, total: number): number | null
   return next < total ? next : null;
 }
 
-export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false, siblings: LibraryItem[] = []) {
+export function presentLibraryItem(
+  snapshot: LibrarySnapshot,
+  detail = false,
+  siblings: LibraryItem[] = [],
+  customReasons: string[] = [],
+) {
   const { item, report, suggestion } = snapshot;
   const error = snapshot.error ?? (!item.path && item.type === "episode"
     ? "Sonarr did not send a file path. Refresh the library."
@@ -76,7 +98,7 @@ export function presentLibraryItem(snapshot: LibrarySnapshot, detail = false, si
       ? { id: suggestion.id, actions: suggestion.actions, reasons: suggestion.reasons }
       : null,
     error,
-    reasons: suggestion?.reasons ?? [],
+    reasons: suggestion?.reasons ?? customReasons,
     href: item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`,
     listingState: report?.listingState ?? null,
     sourceMethod: report?.sourceMethod ?? null,

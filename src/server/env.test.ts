@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.ts";
+import { loadEnv, readAppVersion } from "./env.ts";
 
 describe("env", () => {
   it("renames an existing Optimizarr database to polisharr.db", () => {
@@ -17,6 +17,10 @@ describe("env", () => {
     const env = loadEnv({ CONFIG_DIR: dir, OPTIMIZARR_WIDGET_KEY: "k", OPTIMIZARR_TRUST_PROXY: "1" });
     expect(env.widgetKeyEnv).toBe("k");
     expect(env.trustProxy).toBe(true);
+  });
+
+  it("reads the package version for health and chrome", () => {
+    expect(readAppVersion()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("reads an optional language-identification command", () => {

@@ -1,5 +1,17 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
+
+if (typeof localStorage === "undefined") {
+  const memory = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+      removeItem: (key: string) => { memory.delete(key); },
+      clear: () => { memory.clear(); },
+    },
+  });
+}
 import { applyTheme, readStoredTheme, resolveTheme, toggleTheme } from "./theme";
 
 afterEach(() => {

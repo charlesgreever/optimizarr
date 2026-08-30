@@ -2,7 +2,9 @@
 
 Review date: 2026-08-21. Baseline: `main` at `d57e82f`.
 
-The full-main review reported 18 unique findings. This document records the implemented behavior and its regression evidence. Tests exercise HTTP responses, public service methods, optimizer arguments, persistence, and rendered React behavior.
+This document records the 18 findings from that review and the behavior shipped to close them. A later full-tree review of `main` `5545611` found further Keep-crash, cancel, and spec gaps. Those are not remediations of this list; they live in [review-follow-up.md](../plans/review-follow-up.md).
+
+The 2026-08-21 review reported 18 unique findings. Tests exercise HTTP responses, public service methods, optimizer arguments, persistence, and rendered React behavior.
 
 ## Security and Trust Boundaries
 

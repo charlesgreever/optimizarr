@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -288,5 +288,230 @@ describe("job promotion follow-up", () => {
       reasons: ["Smaller encode after a missed size target."],
     });
     store.close();
+  });
+
+  it("dismisses the automatic suggestion when a custom plan is queued", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-custom-dismiss-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const itemId = `${instanceId}:movie:10`;
+    const sourcePath = join(dir, "movie.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    store.upsertItem({
+      id: itemId, instanceId, arrId: 10, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: "Film", showTitle: null, season: null, episode: null, episodeTitle: null, path: sourcePath,
+      sizeBytes: 8, quality: "HD", resolution: "1080", profile: "HD", tags: [], posterRemoteUrl: null, sizeExempt: false,
+    });
+    const report: InspectionReport = {
+      sourceSig: `${sourcePath}|8`, sourceMethod: "ffprobe", listingState: "complete", durationSec: 60,
+      sizeBytes: 8, sizePerHourGb: 1, videoCodec: "h264", width: 1920, height: 1080, bitDepth: 8, hdr: "none",
+      audio: [], subtitles: [], hasChapters: false, hasAttachments: false,
+    };
+    store.saveInspection(itemId, report);
+    store.saveSuggestion(itemId, {
+      id: "sug-1",
+      itemId,
+      actions: ["transcode"],
+      reasons: ["Bulk transcode."],
+      warning: null,
+      category: "movie1080p",
+      estimatedSavingsBytes: 1,
+      now: { codec: "h264", quality: "HD", sizeBytes: 8, sizePerHourGb: 1 },
+      after: { codec: "hevc", quality: "HD", sizeBytes: 3, sizePerHourGb: 0.4 },
+      dismissed: false,
+      keepAudio: [],
+      stripAudio: [],
+      keepSubs: [],
+      stripSubs: [],
+    });
+    const plan: ExecutablePlan = {
+      origin: "custom", video: { kind: "copy" }, audio: [], subtitles: [], container: "mkv", writeMode: "sidecar",
+      warning: null, reasons: ["Write Matroska."], estimatedOutputBytes: 3, category: "movie1080p",
+    };
+    let endOptimize: (error: Error) => void = () => undefined;
+    const jobs = new JobService({
+      store,
+      optimizer: () => new Promise((_, reject) => { endOptimize = reject; }),
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+      decrypt: () => "",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+      reinspectChangedItem: async () => ({ ok: true }),
+    });
+    try {
+      const queued = jobs.enqueueCustom(itemId, plan);
+      expect("id" in queued).toBe(true);
+      expect(store.openSuggestionForItem(itemId)).toBeUndefined();
+      const { createLibraryReadModel } = await import("./library-read-model.ts");
+      expect(createLibraryReadModel(store).item(itemId)?.reasons).toEqual(["Write Matroska."]);
+      endOptimize(new Error("stop"));
+      if ("id" in queued) await vi.waitFor(() => expect(["failed", "cancelled"]).toContain(store.getJob(queued.id)?.status));
+    } finally {
+      jobs.stop();
+      store.close();
+    }
+  });
+
+  it("cancels a direct write before replace and leaves the original", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-direct-cancel-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const itemId = `${instanceId}:movie:10`;
+    const sourcePath = join(dir, "movie.mkv");
+    const sidecarPath = join(dir, "sidecar.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    store.upsertItem({
+      id: itemId, instanceId, arrId: 10, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: "Film", showTitle: null, season: null, episode: null, episodeTitle: null, path: sourcePath,
+      sizeBytes: 8, quality: "HD", resolution: "1080", profile: "HD", tags: [], posterRemoteUrl: null, sizeExempt: false,
+    });
+    const report: InspectionReport = {
+      sourceSig: `${sourcePath}|8`, sourceMethod: "ffprobe", listingState: "complete", durationSec: 60,
+      sizeBytes: 8, sizePerHourGb: 1, videoCodec: "h264", width: 1920, height: 1080, bitDepth: 8, hdr: "none",
+      audio: [], subtitles: [], hasChapters: false, hasAttachments: false,
+    };
+    store.saveInspection(itemId, report);
+    const plan: ExecutablePlan = {
+      origin: "custom", video: { kind: "copy" }, audio: [], subtitles: [], container: "mkv", writeMode: "direct",
+      warning: null, reasons: ["Direct"], estimatedOutputBytes: 3, category: "movie1080p",
+    };
+    let promoteCalled = false;
+    const jobs = new JobService({
+      store,
+      optimizer: async () => {
+        writeFileSync(sidecarPath, "NEW");
+        const queued = store.listJobs()[0];
+        if (queued) jobs.cancel(queued.id);
+        return { sidecarPath, output: { ...report, sizeBytes: 3 } };
+      },
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+      decrypt: () => "",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+      reinspectChangedItem: async () => ({ ok: true }),
+      promote: async () => {
+        promoteCalled = true;
+        return { replaced: true, destPath: sourcePath, savedBytes: 5, warning: null, error: null };
+      },
+    });
+    jobs.start();
+    try {
+      const queued = jobs.enqueueCustom(itemId, plan);
+      expect("id" in queued).toBe(true);
+      if (!("id" in queued)) return;
+      await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("cancelled"));
+      expect(readFileSync(sourcePath, "utf8")).toBe("ORIGINAL");
+      expect(existsSync(sidecarPath)).toBe(false);
+      expect(promoteCalled).toBe(false);
+      jobs.stop();
+      await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("cancelled"));
+    } finally {
+      store.close();
+    }
+  });
+
+  it("keeps a direct write that already replaced the library file if Cancel arrives late", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-direct-late-cancel-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const itemId = `${instanceId}:movie:10`;
+    const sourcePath = join(dir, "movie.mkv");
+    const sidecarPath = join(dir, "sidecar.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    store.upsertItem({
+      id: itemId, instanceId, arrId: 10, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: "Film", showTitle: null, season: null, episode: null, episodeTitle: null, path: sourcePath,
+      sizeBytes: 8, quality: "HD", resolution: "1080", profile: "HD", tags: [], posterRemoteUrl: null, sizeExempt: false,
+    });
+    const report: InspectionReport = {
+      sourceSig: `${sourcePath}|8`, sourceMethod: "ffprobe", listingState: "complete", durationSec: 60,
+      sizeBytes: 8, sizePerHourGb: 1, videoCodec: "h264", width: 1920, height: 1080, bitDepth: 8, hdr: "none",
+      audio: [], subtitles: [], hasChapters: false, hasAttachments: false,
+    };
+    store.saveInspection(itemId, report);
+    const plan: ExecutablePlan = {
+      origin: "custom", video: { kind: "copy" }, audio: [], subtitles: [], container: "mkv", writeMode: "direct",
+      warning: null, reasons: ["Direct"], estimatedOutputBytes: 3, category: "movie1080p",
+    };
+    const jobs = new JobService({
+      store,
+      optimizer: async () => {
+        writeFileSync(sidecarPath, "NEW");
+        return { sidecarPath, output: { ...report, sizeBytes: 3 } };
+      },
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+      decrypt: () => "",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+      reinspectChangedItem: async () => ({ ok: true }),
+      promote: async (input) => {
+        writeFileSync(input.item.path, "NEW");
+        const queued = store.listJobs()[0];
+        if (queued) jobs.cancel(queued.id);
+        return { replaced: true, destPath: input.item.path, savedBytes: 5, warning: null, error: null };
+      },
+    });
+    jobs.start();
+    try {
+      const queued = jobs.enqueueCustom(itemId, plan);
+      expect("id" in queued).toBe(true);
+      if (!("id" in queued)) return;
+      await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("succeeded"));
+      expect(readFileSync(sourcePath, "utf8")).toBe("NEW");
+    } finally {
+      jobs.stop();
+      store.close();
+    }
+  });
+
+  it("deletes the review-path sidecar when a direct write replace fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-direct-fail-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const itemId = `${instanceId}:movie:10`;
+    const sourcePath = join(dir, "movie.mkv");
+    const sidecarPath = join(dir, "sidecar.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    store.upsertItem({
+      id: itemId, instanceId, arrId: 10, arrSeriesId: null, arrEpisodeFileId: null, type: "movie",
+      title: "Film", showTitle: null, season: null, episode: null, episodeTitle: null, path: sourcePath,
+      sizeBytes: 8, quality: "HD", resolution: "1080", profile: "HD", tags: [], posterRemoteUrl: null, sizeExempt: false,
+    });
+    const report: InspectionReport = {
+      sourceSig: `${sourcePath}|8`, sourceMethod: "ffprobe", listingState: "complete", durationSec: 60,
+      sizeBytes: 8, sizePerHourGb: 1, videoCodec: "h264", width: 1920, height: 1080, bitDepth: 8, hdr: "none",
+      audio: [], subtitles: [], hasChapters: false, hasAttachments: false,
+    };
+    store.saveInspection(itemId, report);
+    const plan: ExecutablePlan = {
+      origin: "custom", video: { kind: "copy" }, audio: [], subtitles: [], container: "mkv", writeMode: "direct",
+      warning: null, reasons: ["Direct"], estimatedOutputBytes: 3, category: "movie1080p",
+    };
+    const jobs = new JobService({
+      store,
+      optimizer: async () => {
+        writeFileSync(sidecarPath, "NEW");
+        return { sidecarPath, output: { ...report, sizeBytes: 3 } };
+      },
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+      decrypt: () => "",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+      reinspectChangedItem: async () => ({ ok: true }),
+      promote: async () => ({ replaced: false, destPath: sourcePath, savedBytes: 0, warning: null, error: "disk full" }),
+    });
+    jobs.start();
+    try {
+      const queued = jobs.enqueueCustom(itemId, plan);
+      expect("id" in queued).toBe(true);
+      if (!("id" in queued)) return;
+      await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("failed"));
+      expect(readFileSync(sourcePath, "utf8")).toBe("ORIGINAL");
+      expect(existsSync(sidecarPath)).toBe(false);
+      expect(store.getJob(queued.id)?.error).toBe("disk full");
+    } finally {
+      jobs.stop();
+      store.close();
+    }
   });
 });

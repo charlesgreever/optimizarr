@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, readdir, stat, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, stat, unlink } from "node:fs/promises";
 import type { Store } from "./store.ts";
 import type { HardwareInfo, InspectionReport, Job, ReviewItem, Settings, Suggestion } from "./types.ts";
 import { displayTitle } from "./titles.ts";
@@ -8,7 +7,7 @@ import type { Optimizer } from "./optimize.ts";
 import { CancelledError, isExecutablePlan, planFromSuggestion, resolvePlan } from "./optimize.ts";
 import { aggressiveTargetBytes, missedOutputTarget } from "./size-budget.ts";
 import { classifyInterruptedKeep, KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
-import { promote, promotedPath, type PromoteInput, type PromoteResult } from "./promote.ts";
+import { clearStagedBackup, promote, promotedPath, recoverStagedReplace, type PromoteInput, type PromoteResult } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
 import { isoInspectionLooksStale } from "./inspect.ts";
@@ -90,6 +89,7 @@ export class JobService {
     if (!item) return { error: "That title is not in the library.", status: 404 };
     const busy = this.enqueueLock(item);
     if (busy) return busy;
+    this.dismissOpenSuggestionsForItem(item);
     const id = randomUUID();
     this.opts.store.insertJob({
       id,
@@ -126,6 +126,13 @@ export class JobService {
       return { error: SHARED_FILE_BUSY, status: 409 };
     }
     return undefined;
+  }
+
+  private dismissOpenSuggestionsForItem(item: NonNullable<ReturnType<Store["getItem"]>>): void {
+    for (const row of this.opts.store.itemsForPath(item.path, item.instanceId)) {
+      const open = this.opts.store.openSuggestionForItem(row.id);
+      if (open) this.opts.store.dismissSuggestion(open.id);
+    }
   }
 
   cancel(id: string): { ok: true } | { error: string; status: number } {
@@ -230,8 +237,20 @@ export class JobService {
         return;
       }
       if (plan.writeMode === "direct") {
+        const destPath = promotedPath(item.path, plan);
+        if (this.cancelled.has(id)) {
+          await safeUnlink(result.sidecarPath);
+          return;
+        }
         const outcome = await this.promoteOutput(item, result.sidecarPath, report.sizeBytes, result.output.sizeBytes, plan);
+        if (this.cancelled.has(id) && !outcome.replaced) {
+          await safeUnlink(result.sidecarPath);
+          await recoverStagedReplace(destPath);
+          if (destPath !== item.path) await recoverStagedReplace(item.path);
+          return;
+        }
         if (!outcome.replaced) {
+          await safeUnlink(result.sidecarPath);
           this.opts.store.updateJob(id, { status: "failed", error: outcome.error ?? "Direct write failed." });
           this.opts.store.addHistory(item.id, "failed", 0, this.now());
           return;
@@ -307,6 +326,8 @@ export class JobService {
       const job = this.opts.store.getJob(review.jobId);
       const plan = job ? resolvePlan(job.plan, job.writeMode) : undefined;
       const destPath = item ? promotedPath(item.path, plan) : review.sourcePath;
+      await recoverStagedReplace(destPath);
+      if (destPath !== review.sourcePath) await recoverStagedReplace(review.sourcePath);
       const destBytes = await fileSize(destPath);
       const sourceBytesOnDisk = destPath === review.sourcePath ? destBytes : await fileSize(review.sourcePath);
       const kind = classifyInterruptedKeep({
@@ -317,14 +338,13 @@ export class JobService {
       });
       if (kind === "complete") {
         await this.finalizeCompletedKeep(review, destPath);
+        await clearStagedBackup(destPath);
         continue;
       }
       if (kind === "sidecar_gone") {
         this.opts.store.updateReview(review.id, { status: "pending", error: SIDECAR_GONE });
         continue;
       }
-      await cleanupStagedPromoteFiles(review.sourcePath);
-      if (destPath !== review.sourcePath) await cleanupStagedPromoteFiles(destPath);
       this.opts.store.updateReview(review.id, { status: "pending", error: KEEP_INTERRUPTED });
     }
   }
@@ -454,8 +474,7 @@ export class JobService {
     ) {
       const extra = await assignProfile({
         kind: instance.kind,
-        url: instance.url,
-        apiKey: this.opts.decrypt(instance.secret),
+        connection: { url: instance.url, apiKey: this.opts.decrypt(instance.secret) },
         movieId: instance.kind === "radarr" ? item.arrId : undefined,
         seriesId: instance.kind === "sonarr" ? (item.arrSeriesId ?? undefined) : undefined,
         profileName: PROFILE_NAMES[plan.category],
@@ -596,19 +615,6 @@ async function fileSize(path: string): Promise<number | null> {
   } catch {
     return null;
   }
-}
-
-async function cleanupStagedPromoteFiles(libraryPath: string): Promise<void> {
-  const dir = dirname(libraryPath);
-  let names: string[] = [];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return;
-  }
-  await Promise.all(names
-    .filter((name) => name.endsWith(".opt-new") || name.endsWith(".opt-old"))
-    .map((name) => unlink(join(dir, name)).catch(() => undefined)));
 }
 
 function appendWarning(current: string | null, next: string | null): string | null {

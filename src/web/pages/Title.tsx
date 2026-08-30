@@ -12,6 +12,8 @@ import {
   canQueueCustomPlan,
   isImageSubtitle,
   isUntaggedTrack,
+  MISSING_WHISPER_LID,
+  untaggedAudioNeedsLanguageIdHint,
   formatClipClock,
   parseClipClock,
   titleOptimizeLocked,
@@ -374,6 +376,9 @@ export function TitlePage() {
                       </button>
                     )}
                   </div>
+                  {untaggedAudioNeedsLanguageIdHint(track, languageIdAvailable, locked) && (
+                    <p className="help m-0 w-full basis-full">{MISSING_WHISPER_LID}</p>
+                  )}
                   {lid && lid.trackIndex === track.index && !lid.listening && (
                     <div className="w-full basis-full space-y-2 text-sm text-muted">
                       {lid.ok && lid.languageName && (

@@ -336,7 +336,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 ## Further Notes
 
 - This PRD supersedes GitHub issue #1 and the retired `plans/optimizarr.md`. Follow-up issues #2 through #19 are folded in as first-class v1 behavior, except household Homepage wiring (#14) and except storage-aware copy, multi-segment, and auto-Keep, which are dropped. GitHub issue #35 (Report a bug) is shipped behavior: a GitHub new-issue form with route and job context. The operator attaches a screenshot on GitHub when one would help. GitHub issue #41 (Arr webhooks) is shipped behavior: token-gated `POST /api/hooks/arr` starts library sync and inspect. The handler does not enqueue; optional Queue new Arr imports may enqueue a sidecar after inspect.
-- The current open-issue audit, fixed-issue evidence, and remaining implementation sequence live in [open-issues.md](../plans/open-issues.md).
+- The 2026-08-21 open-issue audit and fixed-issue evidence live in [open-issues.md](../plans/open-issues.md). Remaining implementation after the 2026-08-29 review lives in [review-follow-up.md](../plans/review-follow-up.md).
 - First install target is ubuntuserver, which already runs Radarr, Sonarr, Plex, Jellyfin, and an NVIDIA stack. CUDA is the on-box encode path; VAAPI remains required for portable installs.
 - Media lives on the Synology Plex share mounted at the same network path the Arrs use. The review path must also live on the NAS but outside those library roots.
 - The operator already has working HEVC NVENC and English-only remux habits. Polisharr should feel like that workflow with a library, suggestions, review, and a running savings tally, not a blank ffmpeg form.

@@ -59,7 +59,7 @@ export async function deleteArrFileAndSearch(
 }
 
 async function radarrMovieFileId(input: PreferredLanguageSearch, httpFetch: typeof fetch): Promise<number | null> {
-  const payload = await fetchJson(`${trimUrl(input.url)}/api/v3/movie/${input.arrId}`, input.apiKey, httpFetch);
+  const payload = await fetchJson({ url: input.url, apiKey: input.apiKey }, `/api/v3/movie/${input.arrId}`, httpFetch);
   const row = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
   const file = row.movieFile && typeof row.movieFile === "object" ? row.movieFile as Record<string, unknown> : {};
   return typeof file.id === "number" && Number.isSafeInteger(file.id) ? file.id : null;

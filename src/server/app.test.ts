@@ -77,7 +77,11 @@ describe("public HTTP behavior", () => {
     const ctx = await setup();
     apps.push(ctx);
     const res = await ctx.app.app.request("/api/health");
-    expect(await res.json()).toEqual({ ok: true, service: "polisharr" });
+    const body = await res.json() as { ok: boolean; service: string; version: string };
+    expect(body).toEqual({ ok: true, service: "polisharr", version: body.version });
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+/);
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version: string };
+    expect(body.version).toBe(pkg.version);
   });
 
   it("bounds library pages and loads episodes for one series", async () => {
@@ -1279,6 +1283,82 @@ describe("public HTTP behavior", () => {
     expect(empty.status).toBe(400);
     const body = (await empty.json()) as { errors?: Array<{ field: string }> };
     expect(body.errors?.[0]?.field).toBe("plan");
+  });
+
+  it("removes the automatic suggestion when a custom plan is queued", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as {
+      items: Array<{ id: string; reasons: string[]; suggestion: { id: string } | null }>;
+    };
+    const id = movies.items[0]?.id ?? "";
+    const suggestionId = movies.items[0]?.suggestion?.id;
+    expect(suggestionId).toBeTruthy();
+    const queued = await ctx.app.app.request(`/api/library/items/${id}/queue`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ draft: { video: { mode: "quality", quality: 22 } } }),
+    });
+    expect(queued.status).toBe(200);
+    const suggestions = (await (await ctx.app.app.request("/api/suggestions", { headers })).json()) as { items: Array<{ id: string }> };
+    expect(suggestions.items.some((row) => row.id === suggestionId)).toBe(false);
+    const after = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as {
+      items: Array<{ id: string; reasons: string[]; suggestion: { id: string } | null }>;
+    };
+    expect(after.items[0]?.suggestion).toBeNull();
+    const jobs = (await (await ctx.app.app.request("/api/jobs", { headers })).json()) as { items: Array<{ status: string }> };
+    if (jobs.items.some((job) => job.status === "queued" || job.status === "running" || job.status === "held")) {
+      expect(after.items[0]?.reasons.some((reason) => /encoder quality/i.test(reason) || /quality/i.test(reason))).toBe(true);
+    }
+    const bulk = await ctx.app.app.request("/api/queue", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ suggestionId }),
+    });
+    expect(bulk.status).toBe(400);
+  });
+
+  it("rejects downscale on a copy-mode custom plan without a type assertion", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    const setupRes = await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const headers = { cookie: cookie(setupRes) };
+    await ctx.app.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await ctx.app.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ languageConfirmed: true, preferredLanguage: "eng", reviewPath: join(ctx.dir, "review") }),
+    });
+    await ctx.app.app.request("/api/library/refresh", { method: "POST", headers });
+    await ctx.app.inspectPending();
+    const movies = (await (await ctx.app.app.request("/api/library/movies", { headers })).json()) as { items: Array<{ id: string }> };
+    const id = movies.items[0]?.id ?? "";
+    const res = await ctx.app.app.request(`/api/library/items/${id}/plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ draft: { video: { mode: "copy", downscale1080p: true } } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors?: Array<{ field: string }> };
+    expect(body.errors?.[0]?.field).toBe("video.downscale1080p");
   });
 
   it("ends inspect after unreadable files and does not leave pending work", async () => {

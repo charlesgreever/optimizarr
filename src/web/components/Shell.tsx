@@ -19,7 +19,7 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Icons.settings },
 ];
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, version }: { children: React.ReactNode; version?: string }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [inspect, setInspect] = useState<InspectState | null>(null);
@@ -105,7 +105,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       >
         <div className="flex items-center gap-3 px-6 py-6">
           <b className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-semibold text-white">P</b>
-          <strong className="text-base font-semibold text-gray-800 dark:text-white/90">Polisharr</strong>
+          <div className="min-w-0">
+            <strong className="block text-base font-semibold text-gray-800 dark:text-white/90">Polisharr</strong>
+            {version && <span className="text-xs font-medium text-gray-400">{version}</span>}
+          </div>
         </div>
         <nav className="flex flex-col gap-1 overflow-y-auto px-4 pb-6">
           <h2 className="mb-2 px-3 text-xs font-medium uppercase tracking-wide text-gray-400">Menu</h2>
@@ -181,7 +184,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {headerWorkLine(inspecting, inspect?.pending ?? 0, work.runningTitle)}
           </div>
           <ThemeToggle />
-          <ReportBug inspect={inspect} />
+          <ReportBug inspect={inspect} version={version} />
         </header>
         {inspecting && (
           <div className="inspect-banner mx-4 mt-4 md:mx-6">
@@ -206,7 +209,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ReportBug({ inspect }: { inspect: InspectState | null }) {
+function ReportBug({ inspect, version }: { inspect: InspectState | null; version?: string }) {
   const location = useLocation();
   const [busy, setBusy] = useState(false);
 
@@ -216,7 +219,7 @@ function ReportBug({ inspect }: { inspect: InspectState | null }) {
       const jobs = await api.jobs();
       const running = jobs.items.find((job) => job.status === "running") ?? null;
       window.open(
-        buildReportIssueUrl(kind, { route: location.pathname, inspect, running }),
+        buildReportIssueUrl(kind, { route: location.pathname, inspect, running, version }),
         "_blank",
         "noopener,noreferrer",
       );

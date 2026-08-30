@@ -64,11 +64,12 @@ export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => v
           className={`${iconBtn} ${item.sizeExempt ? "border-brand-200 bg-brand-50 text-brand-500 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400" : ""}`}
           type="button"
           title={item.sizeExempt ? "Clear size exemption" : "Exempt size"}
-          aria-label={item.sizeExempt ? "Clear size exemption" : "Exempt size"}
+          aria-label={item.sizeExempt ? "Clear exemption" : "Exempt"}
           aria-pressed={item.sizeExempt}
           onClick={() => void run(item.sizeExempt ? "Cleared exemption." : "Size cap exemption saved.", () => api.exempt(item.id, !item.sizeExempt))}
         >
           {Icons.exempt({ width: 14, height: 14 })}
+          {item.sizeExempt ? "Clear exemption" : "Exempt"}
         </button>
       </div>
       {msg && <p className="text-xs text-muted">{msg}</p>}

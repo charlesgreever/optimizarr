@@ -15,6 +15,8 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
       </div>
       <form
         className="auth-card"
+        method="post"
+        action={setup ? "/api/auth/setup" : "/api/auth/login"}
         onSubmit={(e) => {
           e.preventDefault();
           const run = setup ? api.setup : api.login;
@@ -37,8 +39,14 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
         <label>
           Username
           <input
+            id="username"
+            name="username"
             placeholder="Username"
+            type="text"
             autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
@@ -46,6 +54,8 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
         <label>
           Password
           <input
+            id="password"
+            name="password"
             placeholder="Password"
             type="password"
             autoComplete={setup ? "new-password" : "current-password"}

@@ -6,7 +6,7 @@ Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub is
 
 - **List HTTP:** `src/server/app.test.ts` bounds Movies, Suggestions, Queue, Review, Errors, History, and Series pages; returns summary-first Series data; fetches one show's episodes; preserves global movie sorting; and verifies dense public labels and reasons.
 - **List UI:** `src/web/library-row.test.ts`, `src/web/library-pages.test.ts`, `use-paged-list.ts`, the primary list pages, and `LibraryMediaCells.tsx` cover shared row semantics, page merging, one-request guards, retained polled pages, retained expansions, refresh invalidation, retry, and legacy-focus paging. The production build verifies the routed React surface.
-- **Plan:** `src/server/custom-plan.test.ts` and the custom-plan HTTP tests in `src/server/app.test.ts` cover validation, estimates, write mode, suggestion negation, and queue locks.
+- **Plan:** `src/server/custom-plan.test.ts` and the custom-plan HTTP tests in `src/server/app.test.ts` cover validation, estimates, write mode, and queue locks. Suggestion negation after a custom queue is still a remaining gap (stories 45 and 61).
 - **Runner:** `src/server/optimize.test.ts` covers safe operands, ISO remux, size and quality modes, downscale, AAC replacement/downmix, output duration, and progress.
 - **Inspect/Suggest:** `src/server/inspect.test.ts`, `inspection-runner.test.ts`, `suggest.test.ts`, and the ISO HTTP tests in `app.test.ts` cover ISO/non-ISO inspection, automatic-operation settings, and post-promote inspection.
 - **Promote/Profile:** `src/server/promote.test.ts`, `jobs.test.ts`, `arr-profiles.test.ts`, `types.test.ts`, and `store.test.ts` cover sidecar/direct promotion, follow-up warnings, eligibility, explicit profile sync, settings migration, and fake Radarr/Sonarr traffic.
@@ -60,7 +60,7 @@ Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub is
 | 42 | Plan + hardware tests verify HEVC default and AV1 capability gating. |
 | 43 | Plan verifies HDR metadata warning retention. |
 | 44 | Empty-plan validation and routed title button state prevent blank Queue work. |
-| 45 | Plan HTTP verifies a custom queue negates the automatic suggestion. |
+| 45 | Custom-queue HTTP and job tests dismiss the automatic suggestion. See [review-follow-up.md](../plans/review-follow-up.md) phase 2. |
 | 46 | App HTTP verifies a second active job/Keep is rejected. |
 | 47 | Title HTTP state and routed title controls surface unreadable/uninspected reasons. |
 | 48 | Plan accepts intentional custom work independently of bulk size exemption. |
@@ -76,13 +76,13 @@ Verification date: 2026-08-21. This matrix closes the evidence gate in GitHub is
 | 58 | Inspect + Plan verify listing failure is distinct and still custom-queueable. |
 | 59 | Inspect verifies ordinary containers retain ffprobe behavior. |
 | 60 | Runner/Promote and ISO Keep HTTP verify the finished normal video receives an integrity probe. |
-| 61 | Custom-queue HTTP removes the old open suggestion immediately. |
+| 61 | Custom queue dismisses the open suggestion immediately. See [review-follow-up.md](../plans/review-follow-up.md) phase 2. |
 | 62 | Plan and Store verify custom jobs default to sidecar. |
 | 63 | Store migration and Settings HTTP verify the global direct-write switch. |
 | 64 | Plan verifies a per-title write-mode override. |
 | 65 | Plan reasons, job persistence, and routed title UI expose the effective write mode. |
 | 66 | Jobs/Promote verify direct write probes, replaces, and skips Review. |
-| 67 | Promote verifies a failed staged write preserves the original. |
+| 67 | Failed direct write leaves the original and deletes the review-path sidecar. Cancel before replace does not promote. See [review-follow-up.md](../plans/review-follow-up.md) phase 1. |
 | 68 | Promote + inspection-runner verify Keep refreshes integrations and reinspects before completion. |
 | 69 | Jobs verifies direct write uses the same post-promote reinspection path. |
 | 70 | Jobs/Promote verify follow-up failures remain visible without rolling back the replacement. |
@@ -122,9 +122,13 @@ The authenticated HTTP regression test seeds multiple pages and asserts bounded 
 
 Times are a single local run and are diagnostic, not a timing assertion. Cardinality and continuation fields are the durable regression gate. The first Series response contains no episode paths or episode rows.
 
+## Remaining gaps (2026-08-29)
+
+The 2026-08-21 gate closed issue #26 against the code at that date. The 2026-08-29 follow-up in [review-follow-up.md](../plans/review-follow-up.md) is implemented in the working tree: stories 45, 61, 54j, and 67, v1 story 4 (`/setup`), and GitHub issues #42 and #43. Re-run `gh issue list --state open` before closing #42 and #43.
+
 ## Integrated Gate
 
 - `npm test`: 20 files, 115 tests passed.
 - `npm run typecheck`: passed.
 - `npm run build`: passed.
-- Standards/spec review: passed against the repository's engineering rules and the v2 PRD. The review corrected Queue removal retaining Review promotion data, global Movies sorting across pages, legacy Series focus paging, and Series refresh collapse retention.
+- Standards/spec review: passed against the repository's engineering rules and the v2 PRD as of 2026-08-21. The review corrected Queue removal retaining Review promotion data, global Movies sorting across pages, legacy Series focus paging, and Series refresh collapse retention. The 2026-08-29 review listed remaining stories in the section above.

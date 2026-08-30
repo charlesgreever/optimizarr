@@ -208,6 +208,6 @@ Output is still a **sidecar** on the review path by default. Settings has a glob
 
 - This PRD is the v2 spec. It does not replace issue #20. After accept, implementation should follow this document plus v1 where v2 is silent.
 - Close #22, #23, #24, and #25 against the v2 work rather than re-specifying them in competing issues.
-- Issue #38 supersedes the earlier expanded-by-default Series behavior. The current open-issue audit and remaining work live in [open-issues.md](../plans/open-issues.md).
+- Issue #38 supersedes the earlier expanded-by-default Series behavior. The 2026-08-21 open-issue audit lives in [open-issues.md](../plans/open-issues.md). Remaining implementation after the 2026-08-29 review lives in [review-follow-up.md](../plans/review-follow-up.md).
 - First deploy remains ubuntuserver with the same NAS paths and NVIDIA GPU as v1.
 - Direct write is a loaded gun: shipped off, labeled in Settings and on the title page, and tested for failure leaving the original file.

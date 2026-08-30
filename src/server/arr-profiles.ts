@@ -142,16 +142,15 @@ export async function syncProfiles(opts: {
 
 export async function assignProfile(opts: {
   kind: "radarr" | "sonarr";
-  url: string;
-  apiKey: string;
+  connection: { url: string; apiKey: string };
   movieId?: number;
   seriesId?: number;
   profileName: string;
   currentQuality?: string;
   fetch: typeof fetch;
 }): Promise<string | null> {
-  const base = opts.url.replace(/\/+$/, "");
-  const headers = { "X-Api-Key": opts.apiKey, "Content-Type": "application/json" };
+  const base = opts.connection.url.replace(/\/+$/, "");
+  const headers = { "X-Api-Key": opts.connection.apiKey, "Content-Type": "application/json" };
   const listed = await opts.fetch(`${base}/api/v3/qualityprofile`, { headers });
   if (!listed.ok) return "Could not list quality profiles.";
   const profiles = parseProfiles(await listed.json());

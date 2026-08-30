@@ -1,5 +1,17 @@
 // @vitest-environment happy-dom
 import { createElement } from "react";
+
+if (typeof localStorage === "undefined") {
+  const memory = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); },
+      removeItem: (key: string) => { memory.delete(key); },
+      clear: () => { memory.clear(); },
+    },
+  });
+}
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";

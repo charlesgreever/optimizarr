@@ -5,7 +5,7 @@ Polisharr is a companion container for Radarr and Sonarr. It inspects the same l
 This tree is a greenfield rewrite. Do not import the previous application code.
 
 **PRD:** [docs/v2 prd.md](docs/v2%20prd.md) (v2). The rewrite PRD is [docs/prd.md](docs/prd.md).
-**Plan:** [plans/v2-implementation-plan.md](plans/v2-implementation-plan.md). Review-gap work: [plans/review-gap-remediation.md](plans/review-gap-remediation.md). Home and Settings restyle: [plans/home-settings-title-ui.md](plans/home-settings-title-ui.md).
+**Plan:** remaining work is [plans/review-follow-up.md](plans/review-follow-up.md). Shipped v2 work: [plans/v2-implementation-plan.md](plans/v2-implementation-plan.md). Earlier review-gap work: [plans/review-gap-remediation.md](plans/review-gap-remediation.md).
 **Engineering standard:** [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md)
 **Prose standard:** [CODING_STANDARDS.md](CODING_STANDARDS.md)
 
@@ -69,7 +69,7 @@ Recreate the container after you change GPU settings. To compile this tree inste
 
 ### 4. First run
 
-Open `http://localhost:7373` (or the host address you published). Create the admin account. In Settings, add Radarr and Sonarr, set a review folder that sits outside the movie and show libraries, and confirm your preferred language. Optional: add a webhook so new imports show up immediately ([Webhooks from Radarr and Sonarr](#webhooks-from-radarr-and-sonarr)).
+Open `http://localhost:7373` (or the host address you published). Create the admin account. Polisharr then collects preferred language, a review folder (where finished copies wait for Keep, outside movie and show libraries), and at least one enabled Radarr or Sonarr. Plex and Jellyfin can wait; add them later in Settings. Optional: add a webhook so new imports show up immediately ([Webhooks from Radarr and Sonarr](#webhooks-from-radarr-and-sonarr)). The sidebar shows the running version from `package.json`.
 
 Under **Default suggestion operations**, **Convert MP4 to MKV** is off by default. When enabled, Polisharr uses `mkvmerge` to create an MKV before any hardware encode. An MP4 that needs no other work gets a remux-only suggestion.
 

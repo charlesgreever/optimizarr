@@ -9,9 +9,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => req<{ ok: boolean }>("/api/health"),
+  health: () => req<{ ok: boolean; service?: string; version?: string }>("/api/health"),
   work: () => req<{ queued: number; queueActive: number; review: number; runningTitle: string | null }>("/api/work"),
-  status: () => req<{ authenticated: boolean; firstRun: FirstRun }>("/api/auth/status"),
+  status: () => req<{ authenticated: boolean; firstRun: FirstRun; version?: string }>("/api/auth/status"),
   setup: (username: string, password: string) => req("/api/auth/setup", { method: "POST", body: JSON.stringify({ username, password }) }),
   login: (username: string, password: string) => req("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout: () => req("/api/auth/logout", { method: "POST" }),
@@ -22,7 +22,7 @@ export const api = {
   changePassword: (username: string, password: string) =>
     req("/api/auth/password", { method: "POST", body: JSON.stringify({ username, password }) }),
   hardware: () => req<Hardware>("/api/hardware"),
-  saveInstance: (body: Record<string, unknown>) => req("/api/integrations", { method: "POST", body: JSON.stringify(body) }),
+  saveInstance: (body: Record<string, unknown>) => req<{ ok: true; id: string }>("/api/integrations", { method: "POST", body: JSON.stringify(body) }),
   testInstance: (id: string) => req<{ ok: boolean; message?: string }>(`/api/integrations/${id}/test`, { method: "POST" }),
   deleteInstance: (id: string) => req(`/api/integrations/${id}`, { method: "DELETE" }),
   refresh: () => req<{ errors: string[] }>("/api/library/refresh", { method: "POST" }),

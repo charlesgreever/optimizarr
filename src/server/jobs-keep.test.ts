@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { JobService } from "./jobs.ts";
+import { stagedBackupPath, stagedNewPath } from "./promote.ts";
 import { KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
 import { Store } from "./store.ts";
 import type { InspectionReport, ReviewItem } from "./types.ts";
@@ -19,7 +20,7 @@ describe("interrupted Keep recovery", () => {
     const ctx = setup();
     writeFileSync(ctx.sourcePath, "ORIGINAL!");
     writeFileSync(ctx.sidecarPath, "SIDECAR!!!");
-    writeFileSync(join(ctx.dir, "1.opt-new"), "partial");
+    writeFileSync(stagedNewPath(ctx.sourcePath), "partial");
     ctx.store.insertReview({
       id: "rev-1",
       jobId: "job-1",
@@ -37,7 +38,7 @@ describe("interrupted Keep recovery", () => {
     await ctx.jobs.recoverInterruptedKeeps();
     const review = ctx.store.getReview("rev-1");
     expect(review).toMatchObject({ status: "pending", error: KEEP_INTERRUPTED });
-    expect(existsSync(join(ctx.dir, "1.opt-new"))).toBe(false);
+    expect(existsSync(stagedNewPath(ctx.sourcePath))).toBe(false);
 
     const keep = await ctx.jobs.keep("rev-1");
     expect(keep).toEqual({ accepted: true });
@@ -94,6 +95,40 @@ describe("interrupted Keep recovery", () => {
     const keep = await ctx.jobs.keep("rev-1");
     expect(keep).toMatchObject({ error: SIDECAR_GONE, status: 409 });
     expect(ctx.store.getReview("rev-1")?.status).toBe("pending");
+    ctx.close();
+  });
+
+  it("restores the original from .opt-old when Keep crashed mid-replace", async () => {
+    const ctx = setup();
+    const neighbor = join(ctx.dir, "other.mkv.opt-old");
+    writeFileSync(neighbor, "NEIGHBOR-ORIGINAL");
+    writeFileSync(stagedBackupPath(ctx.sourcePath), "ORIGINAL!");
+    writeFileSync(stagedNewPath(ctx.sourcePath), "SIDECAR!!!");
+    writeFileSync(ctx.sidecarPath, "SIDECAR!!!");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "keeping",
+      flagged: false,
+      flagReason: null,
+      sourcePath: ctx.sourcePath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(9, 10),
+      error: null,
+    });
+
+    await ctx.jobs.recoverInterruptedKeeps();
+    expect(readFileSync(ctx.sourcePath, "utf8")).toBe("ORIGINAL!");
+    expect(existsSync(stagedBackupPath(ctx.sourcePath))).toBe(false);
+    expect(existsSync(stagedNewPath(ctx.sourcePath))).toBe(false);
+    expect(readFileSync(neighbor, "utf8")).toBe("NEIGHBOR-ORIGINAL");
+    expect(ctx.store.getReview("rev-1")).toMatchObject({ status: "pending", error: KEEP_INTERRUPTED });
+
+    const discarded = await ctx.jobs.discard("rev-1");
+    expect(discarded).toEqual({ accepted: true });
+    expect(readFileSync(ctx.sourcePath, "utf8")).toBe("ORIGINAL!");
     ctx.close();
   });
 

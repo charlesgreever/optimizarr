@@ -7,6 +7,7 @@ describe("report issue", () => {
       route: "/queue",
       inspect: { pending: 12, walking: true, failed: 2 },
       running: { displayTitle: "A title", phase: "transcoding", progress: 0.47, status: "running" },
+      version: "0.2.1",
     });
     expect(url.startsWith("https://github.com/charlesgreever/polisharr/issues/new?")).toBe(true);
     const parsed = new URL(url);
@@ -14,6 +15,7 @@ describe("report issue", () => {
     expect(parsed.searchParams.get("title")).toBe("Bug: Polisharr");
     const body = parsed.searchParams.get("body") ?? "";
     expect(body).toContain("Route: /queue");
+    expect(body).toContain("Version: 0.2.1");
     expect(body).toContain("Inspect leftovers: 12");
     expect(body).toContain("transcoding");
     expect(body).toContain("47%");

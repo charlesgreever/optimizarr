@@ -2,7 +2,7 @@
 
 This plan turns [v2 prd.md](../docs/v2%20prd.md) into bounded implementation tasks for an AI coding agent. The agent must also read [prd.md](../docs/prd.md), [ENGINEERING_STANDARDS.md](../ENGINEERING_STANDARDS.md), and [CODING_STANDARDS.md](../CODING_STANDARDS.md) before changing code or user-facing copy. The v2 PRD wins where it conflicts with v1.
 
-The implementation has shipped most of this plan. [open-issues.md](open-issues.md) records the 2026-08-21 audit, closure evidence, and the bounded work that remains for issues #24, #25, #26, #33, and #38.
+The implementation has shipped this plan, including issues #24, #25, #26, #33, and #38. [open-issues.md](open-issues.md) records the 2026-08-21 audit and closure evidence. Remaining work after the 2026-08-29 review, including GitHub issues #42 and #43, lives in [review-follow-up.md](review-follow-up.md).
 
 ## Delivery rules
 
