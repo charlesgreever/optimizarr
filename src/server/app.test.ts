@@ -487,6 +487,34 @@ describe("public HTTP behavior", () => {
     expect(await filtered.json()).toEqual({ queued: 0, skipped: 3 });
   });
 
+  it("signs in from a browser form post and redirects home", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "username=ada&password=secret12",
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+    expect(res.headers.get("set-cookie") ?? "").toMatch(/polisharr=/);
+  });
+
+  it("sends a failed browser login back to /login without a session cookie", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    await ctx.app.app.request("/api/auth/setup", { method: "POST", body: JSON.stringify({ username: "ada", password: "secret12" }) });
+    const res = await ctx.app.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "username=ada&password=nope",
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/login?error=1");
+    expect(res.headers.get("set-cookie") ?? "").not.toMatch(/polisharr=/);
+  });
+
   it("rejects a wrong login with one generic error", async () => {
     const ctx = await setup();
     apps.push(ctx);

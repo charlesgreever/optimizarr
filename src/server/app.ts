@@ -49,6 +49,22 @@ const execFileAsync = promisify(execFile);
 const SESSION_TTL = 14 * 24 * 60 * 60 * 1000;
 const GENERIC_LOGIN = "Username or password is wrong.";
 
+function isBrowserForm(c: Context): boolean {
+  const type = (c.req.header("content-type") ?? "").toLowerCase();
+  return type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data");
+}
+
+async function readUserPass(c: Context): Promise<{ username?: string; password?: string }> {
+  if (isBrowserForm(c)) {
+    const body = await c.req.parseBody();
+    return {
+      username: typeof body.username === "string" ? body.username : undefined,
+      password: typeof body.password === "string" ? body.password : undefined,
+    };
+  }
+  return c.req.json<{ username?: string; password?: string }>();
+}
+
 export type AppOptions = {
   env: Env;
   store?: Store;
@@ -171,23 +187,36 @@ export function createApp(opts: AppOptions) {
   });
 
   app.post("/api/auth/setup", async (c) => {
-    if (store.userCount() > 0) return c.json({ error: "An administrator already exists." }, 409);
-    const body = await c.req.json<{ username?: string; password?: string }>();
-    if (!body.username || !body.password) return c.json({ error: "Username and password are required." }, 400);
+    const html = isBrowserForm(c);
+    if (store.userCount() > 0) {
+      if (html) return c.redirect("/login?error=1", 303);
+      return c.json({ error: "An administrator already exists." }, 409);
+    }
+    const body = await readUserPass(c);
+    if (!body.username || !body.password) {
+      if (html) return c.redirect("/login?error=1", 303);
+      return c.json({ error: "Username and password are required." }, 400);
+    }
     const hash = await argon2.hash(body.password, { type: argon2.argon2id });
     store.createUser(body.username, hash);
     const sid = store.createSession(store.onlyUser()!.id, SESSION_TTL, opts.clock?.() ?? Date.now());
     setCookie(c, "polisharr", sid, cookieOpts);
+    if (html) return c.redirect("/", 303);
     return c.json({ ok: true });
   });
 
   app.post("/api/auth/login", async (c) => {
-    const body = await c.req.json<{ username?: string; password?: string }>();
+    const html = isBrowserForm(c);
+    const body = await readUserPass(c);
     const user = body.username ? store.findUser(body.username) : undefined;
     const ok = user ? await argon2.verify(user.passwordHash, body.password ?? "") : false;
-    if (!user || !ok) return c.json({ error: GENERIC_LOGIN }, 401);
+    if (!user || !ok) {
+      if (html) return c.redirect("/login?error=1", 303);
+      return c.json({ error: GENERIC_LOGIN }, 401);
+    }
     const sid = store.createSession(user.id, SESSION_TTL, opts.clock?.() ?? Date.now());
     setCookie(c, "polisharr", sid, cookieOpts);
+    if (html) return c.redirect("/", 303);
     return c.json({ ok: true });
   });
 

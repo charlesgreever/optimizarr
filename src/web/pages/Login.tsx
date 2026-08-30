@@ -1,21 +1,11 @@
-import { useState, type FormEvent } from "react";
-import { api, type FirstRun } from "../api";
+import { useSearchParams } from "react-router-dom";
+import { type FirstRun } from "../api";
 import { ThemeToggle } from "../components/ThemeToggle";
 
-export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: () => void }) {
-  const [error, setError] = useState("");
+export function LoginPage({ firstRun }: { firstRun: FirstRun; onReady?: () => void }) {
+  const [params] = useSearchParams();
   const setup = !firstRun.hasAdmin;
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const username = String(data.get("username") ?? "");
-    const password = String(data.get("password") ?? "");
-    const run = setup ? api.setup : api.login;
-    void run(username, password)
-      .then(onReady)
-      .catch((err: Error) => setError(err.message));
-  }
+  const error = params.get("error") ? "Username or password is wrong." : "";
 
   return (
     <main className="auth-page relative">
@@ -23,11 +13,11 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
         <ThemeToggle />
       </div>
       <form
+        id="polisharr-login"
         className="auth-card"
         method="post"
         action={setup ? "/api/auth/setup" : "/api/auth/login"}
         autoComplete="on"
-        onSubmit={submit}
       >
         <div className="mb-8 flex items-center gap-3">
           <b className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-semibold text-white">P</b>
@@ -40,32 +30,30 @@ export function LoginPage({ firstRun, onReady }: { firstRun: FirstRun; onReady: 
             ? "This account is the only login. Choose a password you can remember; Polisharr stores a hash, not the password itself."
             : "Use the administrator account created on first run."}
         </p>
-        <label htmlFor="username">
-          Username
-          <input
-            id="username"
-            name="username"
-            placeholder="Username"
-            type="text"
-            inputMode="text"
-            autoComplete="username"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </label>
-        <label htmlFor="password">
-          Password
-          <input
-            id="password"
-            name="password"
-            placeholder="Password"
-            type="password"
-            autoComplete={setup ? "new-password" : "current-password"}
-          />
-        </label>
+        <label htmlFor="username">Username</label>
+        <input
+          id="username"
+          name="username"
+          placeholder="Username"
+          type="text"
+          inputMode="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+        />
+        <label htmlFor="password">Password</label>
+        <input
+          id="password"
+          name="password"
+          placeholder="Password"
+          type="password"
+          autoComplete={setup ? "new-password" : "current-password"}
+          required
+        />
         {error && <div className="form-error">{error}</div>}
-        <button type="submit">{setup ? "Create account" : "Sign in"}</button>
+        <button type="submit" name="submit">{setup ? "Create account" : "Sign in"}</button>
       </form>
     </main>
   );

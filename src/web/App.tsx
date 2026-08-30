@@ -22,11 +22,12 @@ export function App() {
     void api.status().then(setAuth).catch(() => setAuth({ authenticated: false, firstRun: emptyFirst() }));
   }, []);
 
-  if (!auth) return <div className="auth-page"><p className="help">Loading Polisharr…</p></div>;
-  if (!auth.firstRun.hasAdmin || !auth.authenticated) {
+  const signedOut = !auth || !auth.firstRun.hasAdmin || !auth.authenticated;
+  if (signedOut) {
+    const firstRun = auth?.firstRun ?? { hasAdmin: true, languageConfirmed: false, hasReviewPath: false, hasArr: false, complete: false };
     return (
       <Routes>
-        <Route path="/login" element={<LoginPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />} />
+        <Route path="/login" element={<LoginPage firstRun={firstRun} />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
