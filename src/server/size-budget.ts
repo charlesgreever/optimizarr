@@ -1,11 +1,13 @@
-import type { InspectionReport } from "./types.ts";
-
 /** Fraction of the GB/hr cap a file may exceed before Polisharr treats it as over. */
 export const SIZE_CAP_TOLERANCE = 0.05;
 const ENCODER_SLACK = 0.08;
 const MUX_OVERHEAD_BYTES = 8_000_000;
 const MIN_VIDEO_BPS = 800_000;
 const MAX_VIDEO_BPS = 300_000_000;
+const BITMAP_SUBTITLE_BPS = 40_000;
+
+export type AudioBitrateTrack = { codec: string; channels: number; title?: string };
+export type SubtitleSizeTrack = { codec: string };
 
 export function exceedsSizeCap(sizePerHourGb: number, cap: number): boolean {
   return sizePerHourGb > cap * (1 + SIZE_CAP_TOLERANCE);
@@ -44,8 +46,60 @@ export function typicalAudioBitrateBps(track: { codec: string; channels: number;
   return 256_000;
 }
 
-export function copiedAudioBitrateBps(report: InspectionReport): number {
-  return report.audio.reduce((sum, track) => sum + typicalAudioBitrateBps(track), 0);
+export function copiedAudioBitrateBps(tracks: AudioBitrateTrack[]): number {
+  return tracks.reduce((sum, track) => sum + typicalAudioBitrateBps(track), 0);
+}
+
+export function typicalSubtitleBitrateBps(track: SubtitleSizeTrack): number {
+  if (/pgs|dvd_sub|dvb_sub|xsub|vobsub|hdmv/i.test(track.codec)) return BITMAP_SUBTITLE_BPS;
+  return 0;
+}
+
+export function bytesForBitrate(bps: number, durationSec: number): number {
+  if (!(bps > 0) || !(durationSec > 0)) return 0;
+  return Math.round((bps / 8) * durationSec);
+}
+
+export function remainingSizeAfterTrackPlan(input: {
+  sizeBytes: number;
+  durationSec: number;
+  stripAudio: AudioBitrateTrack[];
+  stripSubs?: SubtitleSizeTrack[];
+  extraAudioBitrateBps?: number;
+}): { remainingBytes: number; remainingSizePerHourGb: number } {
+  const strippedAudio = copiedAudioBitrateBps(input.stripAudio);
+  const strippedSubs = (input.stripSubs ?? []).reduce((sum, track) => sum + typicalSubtitleBitrateBps(track), 0);
+  const extra = input.extraAudioBitrateBps ?? 0;
+  const remainingBytes = Math.max(
+    0,
+    input.sizeBytes - bytesForBitrate(strippedAudio, input.durationSec) - bytesForBitrate(strippedSubs, input.durationSec) + bytesForBitrate(extra, input.durationSec),
+  );
+  const hours = input.durationSec > 0 ? input.durationSec / 3600 : 0;
+  return {
+    remainingBytes,
+    remainingSizePerHourGb: hours > 0 ? remainingBytes / 1024 ** 3 / hours : 0,
+  };
+}
+
+export function audioFillsSizeCap(input: {
+  targetBytes: number;
+  durationSec: number;
+  audioBitrateBps: number;
+}): boolean {
+  if (!(input.durationSec > 1) || !(input.targetBytes > 0)) return false;
+  const audioBytes = bytesForBitrate(input.audioBitrateBps, input.durationSec);
+  const usable = Math.max(0, input.targetBytes * (1 - ENCODER_SLACK) - audioBytes - MUX_OVERHEAD_BYTES);
+  const bitrate = Math.round((usable * 8) / input.durationSec);
+  return bitrate < MIN_VIDEO_BPS;
+}
+
+export function raisedTargetBytes(input: {
+  capBytes: number;
+  durationSec: number;
+  audioBitrateBps: number;
+}): number {
+  const audioBytes = bytesForBitrate(input.audioBitrateBps, input.durationSec);
+  return Math.max(input.capBytes, Math.round((input.capBytes + audioBytes + MUX_OVERHEAD_BYTES) / (1 - ENCODER_SLACK)));
 }
 
 export function videoBitrateForTarget(input: {

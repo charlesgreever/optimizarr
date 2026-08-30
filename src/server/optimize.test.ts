@@ -24,6 +24,7 @@ import {
   planFromSuggestion,
   scaleProgress,
   assertReviewCapacity,
+  shouldSkipSizeEncode,
 } from "./optimize.ts";
 import { videoBitrateForTarget } from "./size-budget.ts";
 import type { OptimizeRequest } from "./optimize.ts";
@@ -506,6 +507,21 @@ describe("ffmpeg encode arguments", () => {
     if (plan.video.kind === "size") expect(plan.video.targetBytes).toBe(4_000_000_000);
   });
 
+  it("uses After bytes as the encode target and marks size-only encodes skippable", () => {
+    const plan = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode"],
+      mustEncode: false,
+      now: { codec: "hevc", quality: "Bluray-1080p", sizeBytes: 16_000_000_000, sizePerHourGb: 8 },
+      after: { codec: "hevc", quality: null, sizeBytes: 5_000_000_000, sizePerHourGb: 2.5 },
+    });
+    expect(plan.video.kind).toBe("size");
+    if (plan.video.kind === "size") {
+      expect(plan.video.targetBytes).toBe(5_000_000_000);
+      expect(plan.video.mustEncode).toBe(false);
+    }
+  });
+
   it("builds a VAAPI encode graph instead of NVENC when that is the usable backend", () => {
     const plan = planFromSuggestion({ ...suggestion, actions: ["transcode"] });
     const args = encodeArgs(source, "/tmp/out.mkv", {
@@ -910,6 +926,297 @@ describe("ISO remux and custom audio arguments", () => {
     expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mkv", encodeOnly)).toEqual(["encode"]);
     expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mp4", encodeOnly)).toEqual(["encode"]);
     expect(optimizeSteps("/mnt/nas/Shows/Curious George S04E14.mp4", remuxOnly)).toEqual(["mux"]);
+  });
+
+  it("skips a size-only encode when the working file already meets the cap", () => {
+    const plan = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode", "tracks"],
+      mustEncode: false,
+      now: { codec: "hevc", quality: "Bluray-1080p", sizeBytes: 16_000_000_000, sizePerHourGb: 8 },
+      after: { codec: "hevc", quality: null, sizeBytes: 5_000_000_000, sizePerHourGb: 2.5 },
+    });
+    expect(shouldSkipSizeEncode(plan, {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 7200,
+      sizeBytes: 4_000_000_000,
+      sizePerHourGb: 2,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [{ index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false }],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    })).toBe(true);
+  });
+
+  it("skips a size-only encode when kept TrueHD fills the cap, and still encodes when the codec must change", () => {
+    const durationSec = 7492.96;
+    const working: InspectionReport = {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec,
+      sizeBytes: 30_000_000_000,
+      sizePerHourGb: 14,
+      videoCodec: "h264",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [
+        { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+        { index: 2, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+        { index: 3, language: "eng", channels: 2, codec: "ac3", title: "", untagged: false, commentary: false },
+      ],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    const sizeOnly = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode", "tracks"],
+      mustEncode: false,
+      now: { codec: "hevc", quality: "BR-DISK", sizeBytes: 39_392_987_136, sizePerHourGb: 17.63 },
+      after: { codec: "hevc", quality: null, sizeBytes: Math.round(2.5 * (durationSec / 3600) * 1024 ** 3), sizePerHourGb: 2.5 },
+    });
+    const mustEncode = planFromSuggestion({
+      ...suggestion,
+      actions: ["transcode", "tracks"],
+      mustEncode: true,
+      now: { codec: "h264", quality: "BR-DISK", sizeBytes: 39_392_987_136, sizePerHourGb: 17.63 },
+      after: { codec: "hevc", quality: null, sizeBytes: Math.round(2.5 * (durationSec / 3600) * 1024 ** 3), sizePerHourGb: 2.5 },
+    });
+    expect(shouldSkipSizeEncode(sizeOnly, working)).toBe(true);
+    expect(shouldSkipSizeEncode(mustEncode, working)).toBe(false);
+  });
+
+  it("muxes extra tracks and finishes without ffmpeg when a size-only encode no longer fits", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "polisharr-skip-encode-"));
+    try {
+      const sourcePath = join(dir, "batman.mkv");
+      const reviewDir = join(dir, "review");
+      const mkvmerge = join(dir, "mkvmerge.cjs");
+      const ffprobe = join(dir, "ffprobe.cjs");
+      const ffmpeg = join(dir, "ffmpeg.cjs");
+      await writeFile(sourcePath, "source");
+      await writeFile(ffmpeg, [
+        "#!/usr/bin/env node",
+        "process.stderr.write('should not encode');",
+        "process.exit(2);",
+      ].join("\n"));
+      await writeFile(mkvmerge, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "if (args.includes('-J')) {",
+        "  process.stdout.write(JSON.stringify({ tracks: [{ id: 0, type: 'video' }, { id: 1, type: 'audio' }, { id: 2, type: 'audio' }] }));",
+        "  process.exit(0);",
+        "}",
+        "fs.writeFileSync(args[args.indexOf('-o') + 1], 'muxed');",
+        "process.stdout.write('Progress: 100%\\n');",
+      ].join("\n"));
+      await writeFile(ffprobe, [
+        "#!/usr/bin/env node",
+        "process.stdout.write(JSON.stringify({",
+        "  format: { duration: '3600' },",
+        "  streams: [",
+        "    { index: 0, codec_type: 'video', codec_name: 'hevc', width: 1920, height: 1080, bits_per_raw_sample: '8' },",
+        "    { index: 1, codec_type: 'audio', codec_name: 'ac3', channels: 6, tags: { language: 'eng' } }",
+        "  ]",
+        "}));",
+      ].join("\n"));
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755), chmod(ffmpeg, 0o755)]);
+      const optimizer = ffmpegOptimizer({ capacity: async () => 10 * 1024 ** 3 });
+      const result = await optimizer({
+        sourcePath,
+        reviewDir,
+        plan: planFromSuggestion({
+          ...suggestion,
+          actions: ["transcode", "tracks"],
+          mustEncode: false,
+          keepAudio: [1],
+          stripAudio: [2],
+          keepSubs: [],
+          stripSubs: [],
+          now: { codec: "hevc", quality: "Bluray-1080p", sizeBytes: 8_000_000_000, sizePerHourGb: 8 },
+          after: { codec: "hevc", quality: null, sizeBytes: 2_500_000_000, sizePerHourGb: 2.5 },
+        }),
+        report: {
+          sourceSig: "batman.mkv|8",
+          sourceMethod: "ffprobe",
+          listingState: "complete",
+          durationSec: 3600,
+          sizeBytes: 8_000_000_000,
+          sizePerHourGb: 8,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+            { index: 2, language: "spa", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+          ],
+          subtitles: [],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "none",
+        ffmpeg,
+        ffprobe,
+        mkvmerge,
+        conservative: false,
+      });
+      expect(result.output.videoCodec).toBe("hevc");
+      expect(result.output.audio).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("raises the size target so a required codec encode can run after TrueHD fills the cap", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "polisharr-raise-encode-"));
+    try {
+      const sourcePath = join(dir, "batman.mkv");
+      const reviewDir = join(dir, "review");
+      const mkvmerge = join(dir, "mkvmerge.cjs");
+      const ffprobe = join(dir, "ffprobe.cjs");
+      const ffmpeg = join(dir, "ffmpeg.cjs");
+      await writeFile(sourcePath, "source");
+      await writeFile(ffmpeg, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const dest = process.argv.at(-1);",
+        "fs.writeFileSync(dest, 'encoded');",
+      ].join("\n"));
+      await writeFile(mkvmerge, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "if (args.includes('-J')) {",
+        "  process.stdout.write(JSON.stringify({ tracks: [{ id: 0, type: 'video' }, { id: 1, type: 'audio' }] }));",
+        "  process.exit(0);",
+        "}",
+        "fs.writeFileSync(args[args.indexOf('-o') + 1], 'muxed');",
+        "process.stdout.write('Progress: 100%\\n');",
+      ].join("\n"));
+      await writeFile(ffprobe, [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const encoded = fs.readFileSync(process.argv.at(-1), 'utf8') === 'encoded';",
+        "process.stdout.write(JSON.stringify({",
+        "  format: { duration: '7492.96' },",
+        "  streams: [",
+        "    { index: 0, codec_type: 'video', codec_name: encoded ? 'hevc' : 'h264', width: 1920, height: 1080, bits_per_raw_sample: '8' },",
+        "    { index: 1, codec_type: 'audio', codec_name: 'truehd', channels: 8, tags: { language: 'eng' } }",
+        "  ]",
+        "}));",
+      ].join("\n"));
+      await Promise.all([chmod(mkvmerge, 0o755), chmod(ffprobe, 0o755), chmod(ffmpeg, 0o755)]);
+      const optimizer = ffmpegOptimizer({ capacity: async () => 80 * 1024 ** 3 });
+      const durationSec = 7492.96;
+      const result = await optimizer({
+        sourcePath,
+        reviewDir,
+        plan: planFromSuggestion({
+          ...suggestion,
+          actions: ["transcode", "tracks"],
+          mustEncode: true,
+          keepAudio: [1],
+          stripAudio: [2],
+          keepSubs: [],
+          stripSubs: [],
+          now: { codec: "h264", quality: "BR-DISK", sizeBytes: 39_392_987_136, sizePerHourGb: 17.63 },
+          after: { codec: "hevc", quality: null, sizeBytes: Math.round(2.5 * (durationSec / 3600) * 1024 ** 3), sizePerHourGb: 2.5 },
+        }),
+        report: {
+          sourceSig: "batman.mkv|1",
+          sourceMethod: "ffprobe",
+          listingState: "complete",
+          durationSec,
+          sizeBytes: 39_392_987_136,
+          sizePerHourGb: 17.63,
+          videoCodec: "h264",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+            { index: 2, language: "spa", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+          ],
+          subtitles: [],
+          hasChapters: false,
+          hasAttachments: false,
+        },
+        target: "hevc",
+        backend: "cuda",
+        ffmpeg,
+        ffprobe,
+        mkvmerge,
+        conservative: false,
+      });
+      expect(result.output.videoCodec).toBe("hevc");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still refuses a custom size target that kept audio already fills", () => {
+    const durationSec = 7492.96;
+    const req = {
+      sourcePath: "/tmp/in.mkv",
+      reviewDir: "/tmp/review",
+      plan: {
+        origin: "custom" as const,
+        video: {
+          kind: "size" as const,
+          codec: "hevc" as const,
+          targetBytes: Math.round(2.5 * (durationSec / 3600) * 1024 ** 3),
+          downscale1080p: false,
+          bitDepth: 8,
+        },
+        audio: [{ op: "keep" as const, index: 1 }],
+        subtitles: [],
+        container: "mkv" as const,
+        writeMode: "sidecar" as const,
+        warning: null,
+        reasons: ["Target 2.5 GB/hr"],
+        estimatedOutputBytes: Math.round(2.5 * (durationSec / 3600) * 1024 ** 3),
+        category: "movie1080p" as const,
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "ffprobe" as const,
+        listingState: "complete" as const,
+        durationSec,
+        sizeBytes: 39_392_987_136,
+        sizePerHourGb: 17.63,
+        videoCodec: "h264",
+        width: 1920,
+        height: 1080,
+        bitDepth: 8,
+        hdr: "none" as const,
+        audio: [{ index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false }],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc" as const,
+      backend: "cuda" as const,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    };
+    expect(() => nvencBitrate(req, req.plan.video)).toThrow(/Kept audio is about/);
   });
 
   it("builds AAC from a selected source stream", () => {

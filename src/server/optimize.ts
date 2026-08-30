@@ -5,7 +5,13 @@ import { promisify } from "node:util";
 import { isIsoPath, MAX_FEATURE_SEC, parseFfprobe } from "./inspect.ts";
 import type { ExecutablePlan, InspectionReport, Suggestion, WriteMode } from "./types.ts";
 import { keepWritesLanguage, planHasVideoTranscode } from "./types.ts";
-import { copiedAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
+import {
+  audioFillsSizeCap,
+  copiedAudioBitrateBps,
+  exceedsSizeCap,
+  raisedTargetBytes,
+  videoBitrateForTarget,
+} from "./size-budget.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -47,16 +53,19 @@ export function planFromSuggestion(suggestion: Suggestion, writeMode: WriteMode 
   const hours = Math.max(suggestion.now.sizePerHourGb && suggestion.now.sizeBytes
     ? suggestion.now.sizeBytes / (suggestion.now.sizePerHourGb * 1024 ** 3)
     : 1, 0.1);
-  const capBytes = Math.round((suggestion.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3);
   const nowBytes = suggestion.now.sizeBytes ?? 0;
-  const currentBytes = nowBytes > 0 ? nowBytes : capBytes;
-  const targetBytes = Math.min(capBytes, currentBytes);
+  const afterBytes = suggestion.after.sizeBytes;
+  const plannedBytes = afterBytes != null && afterBytes > 0
+    ? afterBytes
+    : Math.round((suggestion.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3);
+  const currentBytes = nowBytes > 0 ? nowBytes : plannedBytes;
+  const targetBytes = Math.min(plannedBytes, currentBytes);
   const codec = suggestion.after.codec?.toLowerCase() === "av1" ? "av1" : "hevc";
   const stereoSource = suggestion.keepAudio[0] ?? 0;
   return {
     origin: "bulk",
     video: transcode
-      ? { kind: "size", codec, targetBytes, downscale1080p: false, bitDepth: 8 }
+      ? { kind: "size", codec, targetBytes, downscale1080p: false, bitDepth: 8, mustEncode: suggestion.mustEncode !== false }
       : { kind: "copy" },
     audio: [
       ...suggestion.keepAudio.map((index) => ({ op: "keep" as const, index })),
@@ -85,14 +94,40 @@ export function resolvePlan(value: Suggestion | ExecutablePlan | undefined, writ
   return planFromSuggestion(value, writeMode);
 }
 
+export function shouldSkipSizeEncode(plan: ExecutablePlan, working: InspectionReport): boolean {
+  if (plan.video.kind !== "size") return false;
+  if (plan.video.mustEncode !== false) return false;
+  const durationSec = Math.max(working.durationSec, 1);
+  const hours = durationSec / 3600;
+  const capGbPerHour = hours > 0 ? plan.video.targetBytes / 1024 ** 3 / hours : 0;
+  if (!exceedsSizeCap(working.sizePerHourGb, capGbPerHour)) return true;
+  return audioFillsSizeCap({
+    targetBytes: plan.video.targetBytes,
+    durationSec,
+    audioBitrateBps: copiedAudioBitrateBps(working.audio),
+  });
+}
+
+function sizePlanForWorkingFile(plan: ExecutablePlan, working: InspectionReport): ExecutablePlan {
+  if (plan.video.kind !== "size") return plan;
+  const durationSec = Math.max(working.durationSec, 1);
+  const audioBitrateBps = copiedAudioBitrateBps(working.audio);
+  if (!audioFillsSizeCap({ targetBytes: plan.video.targetBytes, durationSec, audioBitrateBps })) return plan;
+  if (plan.origin === "custom") return plan;
+  return {
+    ...plan,
+    video: {
+      ...plan.video,
+      targetBytes: raisedTargetBytes({ capBytes: plan.video.targetBytes, durationSec, audioBitrateBps }),
+    },
+  };
+}
+
 export type CapacityProbe = (path: string) => Promise<number>;
 
 export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Optimizer {
   return async (req) => {
     const plan = resolvePlan(req.plan ?? req.suggestion);
-    if (req.backend === "none" && planHasVideoTranscode(plan)) {
-      throw new Error("Hardware encode is unavailable. Polisharr will not fall back to a software encode.");
-    }
     await mkdir(req.reviewDir, { recursive: true });
     const plannedBytes = plan.estimatedOutputBytes ?? req.report.sizeBytes;
     await assertReviewCapacity(req.reviewDir, Math.max(req.report.sizeBytes, plannedBytes) + 256 * 1024 ** 2, options.capacity);
@@ -137,28 +172,36 @@ export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Opt
       }
       if (planHasVideoTranscode(plan)) {
         if (req.isCancelled?.()) throw new CancelledError();
-        emit("transcoding", 0.45);
         const encodeReport = await probeOutput(req.ffprobe, current);
-        const encoded = join(workDir, `${Date.now()}-enc.mkv`);
-        temps.push(encoded);
-        const encodePlan = plan.video.kind === "copy"
-          ? plan
-          : { ...plan, video: { ...plan.video, bitDepth: encodeReport.bitDepth || plan.video.bitDepth } };
         const durationReport = isoRemuxIsShort(req.report.durationSec, encodeReport.durationSec)
           ? req.report
           : encodeReport.durationSec > 1
             ? encodeReport
             : req.report;
-        const durationSec = Math.max(durationReport.durationSec, 1);
-        await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }), {
-          onLog: req.onLog,
-          onChunk: (text) => {
-            const sec = parseFfmpegProgress(text);
-            if (sec != null) emit("transcoding", scaleProgress(0.45, 0.92, sec / durationSec));
-          },
-          isCancelled: req.isCancelled,
-        });
-        current = encoded;
+        if (!shouldSkipSizeEncode(plan, durationReport)) {
+          if (req.backend === "none") {
+            throw new Error("Hardware encode is unavailable. Polisharr will not fall back to a software encode.");
+          }
+          emit("transcoding", 0.45);
+          const encoded = join(workDir, `${Date.now()}-enc.mkv`);
+          temps.push(encoded);
+          const encodePlan = sizePlanForWorkingFile(
+            plan.video.kind === "copy"
+              ? plan
+              : { ...plan, video: { ...plan.video, bitDepth: encodeReport.bitDepth || plan.video.bitDepth } },
+            durationReport,
+          );
+          const durationSec = Math.max(durationReport.durationSec, 1);
+          await run(req.ffmpeg, encodeArgs(current, encoded, { ...req, plan: encodePlan, report: durationReport }), {
+            onLog: req.onLog,
+            onChunk: (text) => {
+              const sec = parseFfmpegProgress(text);
+              if (sec != null) emit("transcoding", scaleProgress(0.45, 0.92, sec / durationSec));
+            },
+            isCancelled: req.isCancelled,
+          });
+          current = encoded;
+        }
       }
       emit("finishing", 0.95);
       if (current !== sidecarPath) await copyFile(current, sidecarPath);
@@ -661,7 +704,7 @@ export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"
   return videoBitrateForTarget({
     targetBytes,
     durationSec,
-    audioBitrateBps: copiedAudioBitrateBps(req.report),
+    audioBitrateBps: copiedAudioBitrateBps(req.report.audio),
   });
 }
 

@@ -8,7 +8,14 @@ import type {
   VideoTarget,
 } from "./types.ts";
 import { normalizeLang } from "./inspect.ts";
-import { exceedsSizeCap } from "./size-budget.ts";
+import {
+  audioFillsSizeCap,
+  copiedAudioBitrateBps,
+  exceedsSizeCap,
+  raisedTargetBytes,
+  remainingSizeAfterTrackPlan,
+  typicalAudioBitrateBps,
+} from "./size-budget.ts";
 import { soleNonPreferredAudio } from "./arr-search.ts";
 
 export type SuggestInput = {
@@ -45,7 +52,6 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const { item, report, settings } = input;
   const category = sizeCategory(item, report);
   const cap = settings.sizeCaps[category];
-  const overCap = exceedsSizeCap(report.sizePerHourGb, cap);
   const lang = normalizeLang(settings.preferredLanguage);
   const onlyWrongLanguage = soleNonPreferredAudio(report.audio, lang);
   const keepAudio = onlyWrongLanguage
@@ -62,11 +68,34 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const alreadyStereo = report.audio.some((t) => t.channels <= 2 && (t.language === lang || t.language === "und"));
   const layoutNeedsStereo = report.audio.some((t) => t.channels > 6 || /atmos|truehd|eac3/i.test(`${t.codec} ${t.title}`));
   const addStereo = (input.forceStereo || (settings.suggestionDefaults.addStereo && layoutNeedsStereo)) && !alreadyStereo;
+  const extraAudioBitrateBps = addStereo ? typicalAudioBitrateBps({ codec: "aac", channels: 2 }) : 0;
+  const hours = report.durationSec > 0 ? report.durationSec / 3600 : 0;
+  const scoredBytes = hours > 0 && report.sizePerHourGb > 0
+    ? Math.round(report.sizePerHourGb * hours * 1024 ** 3)
+    : report.sizeBytes;
+  const remaining = remainingSizeAfterTrackPlan({
+    sizeBytes: scoredBytes,
+    durationSec: report.durationSec,
+    stripAudio,
+    stripSubs,
+    extraAudioBitrateBps,
+  });
+  const remainingGbPerHour = stripAudio.length === 0 && stripSubs.length === 0 && extraAudioBitrateBps === 0
+    ? report.sizePerHourGb
+    : remaining.remainingSizePerHourGb;
+  const overCap = exceedsSizeCap(remainingGbPerHour, cap);
+  const keptAudioBps = copiedAudioBitrateBps(keepAudio) + extraAudioBitrateBps;
+  const capBytes = Math.round(cap * hours * 1024 ** 3);
+  const audioBound = audioFillsSizeCap({
+    targetBytes: capBytes,
+    durationSec: report.durationSec,
+    audioBitrateBps: keptAudioBps,
+  });
   const codec = report.videoCodec.toLowerCase();
   const alreadyAv1 = codec.includes("av1");
   const belowHevc = !codecIsAtLeastHevc(report.videoCodec);
   const target: VideoTarget = input.videoTarget === "av1" && input.av1Available ? "av1" : "hevc";
-  const transcodeForCap = settings.suggestionDefaults.transcodeToSizeCap && overCap && (belowHevc || /hevc|h265/.test(codec));
+  const transcodeForCap = settings.suggestionDefaults.transcodeToSizeCap && overCap && !audioBound && (belowHevc || /hevc|h265/.test(codec));
   const transcodeForCodec = settings.suggestionDefaults.transcodeBelowHevc && belowHevc;
   const transcode =
     !alreadyAv1 &&
@@ -85,12 +114,16 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   if (actions.length === 0) return null;
 
   const reasons: string[] = [];
-  if (transcode && overCap) {
-    reasons.push(`Over the size cap: ${report.sizePerHourGb.toFixed(2)} GB/hr now, ${cap.toFixed(2)} GB/hr allowed.`);
+  if (transcode && transcodeForCap) {
+    reasons.push(
+      extraTracks
+        ? `Over the size cap after dropping extra languages: ${remainingGbPerHour.toFixed(2)} GB/hr left, ${cap.toFixed(2)} GB/hr allowed.`
+        : `Over the size cap: ${remainingGbPerHour.toFixed(2)} GB/hr now, ${cap.toFixed(2)} GB/hr allowed.`,
+    );
   }
   if (transcode && transcodeForCodec) {
     reasons.push(`This video is ${codecLabel(report.videoCodec)}. Re-encode to ${target.toUpperCase()}.`);
-  } else if (transcode && input.forceTranscode && !overCap) {
+  } else if (transcode && input.forceTranscode && !transcodeForCap) {
     reasons.push(`Re-encode to ${target.toUpperCase()} because you asked to force this title.`);
   }
   if (remux && /\.iso$/i.test(item.path)) reasons.push("Convert the disc image to MKV.");
@@ -107,11 +140,33 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   if (transcode && (report.hdr === "dolby_vision" || report.hdr === "hdr10plus")) {
     warnings.push("Dolby Vision or HDR10+ metadata may be lost when this file is re-encoded.");
   }
+  if (audioBound && (overCap || transcode)) {
+    warnings.push(
+      `The soundtrack you keep already uses the ${cap.toFixed(2)} GB/hr size cap, so Polisharr will not re-encode just to meet that cap.`,
+    );
+  }
   const warning = warnings.length > 0 ? warnings.join(" ") : null;
 
   const afterCodec = transcode ? target.toUpperCase() : report.videoCodec;
-  const encodeGbPerHour = transcode ? Math.min(report.sizePerHourGb, cap) : null;
-  const estimated = transcode && overCap ? Math.max(0, report.sizeBytes - Math.round(cap * (report.durationSec / 3600) * 1024 ** 3)) : null;
+  let encodeGbPerHour: number | null = null;
+  let afterBytes: number | null = null;
+  let estimated: number | null = null;
+  if (transcode && transcodeForCap) {
+    encodeGbPerHour = cap;
+    afterBytes = capBytes;
+    estimated = Math.max(0, report.sizeBytes - capBytes);
+  } else if (transcode && audioBound) {
+    const raised = raisedTargetBytes({
+      capBytes,
+      durationSec: report.durationSec,
+      audioBitrateBps: keptAudioBps,
+    });
+    afterBytes = Math.min(raised, report.sizeBytes);
+    encodeGbPerHour = hours > 0 ? afterBytes / 1024 ** 3 / hours : cap;
+    estimated = Math.max(0, report.sizeBytes - afterBytes);
+  } else if (transcode) {
+    encodeGbPerHour = Math.min(remainingGbPerHour, cap);
+  }
 
   return {
     id: "",
@@ -130,7 +185,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     after: {
       codec: afterCodec,
       quality: null,
-      sizeBytes: transcode ? (estimated != null ? report.sizeBytes - estimated : null) : null,
+      sizeBytes: afterBytes,
       sizePerHourGb: encodeGbPerHour,
     },
     dismissed: false,
@@ -138,6 +193,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     stripAudio: stripAudio.map((t) => t.index),
     keepSubs: keepSubs.map((t) => t.index),
     stripSubs: stripSubs.map((t) => t.index),
+    mustEncode: transcode ? Boolean(input.forceTranscode || transcodeForCodec) : undefined,
   };
 }
 

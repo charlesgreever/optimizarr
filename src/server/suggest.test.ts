@@ -502,4 +502,201 @@ describe("suggestion engine", () => {
     expect(suggestion?.reasons.some((reason) => reason.includes("H.264"))).toBe(true);
     expect(suggestion?.after.sizePerHourGb).toBe(6);
   });
+
+  describe("size after planned track cleanup", () => {
+    const bluray1080p: LibraryItem = {
+      ...movie,
+      quality: "Bluray-1080p",
+      resolution: "1080",
+      path: "/mnt/nas/Movies/Example (1997)/Example.mkv",
+    };
+
+    function extraLanguageAudio(startIndex: number, count: number): InspectionReport["audio"] {
+      const langs = ["spa", "fra", "deu", "ita", "jpn", "rus", "pol", "hun"];
+      return Array.from({ length: count }, (_, i) => ({
+        index: startIndex + i,
+        language: langs[i % langs.length]!,
+        channels: 6,
+        codec: "ac3",
+        title: "",
+        untagged: false,
+        commentary: false,
+      }));
+    }
+
+    it("does not transcode HEVC that is over the cap only because of extra languages", () => {
+      const suggestion = buildSuggestion({
+        item: bluray1080p,
+        report: report({
+          durationSec: 3600,
+          sizeBytes: Math.round(3.5 * 1024 ** 3),
+          sizePerHourGb: 3.5,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+            ...extraLanguageAudio(2, 8),
+          ],
+          subtitles: [
+            { index: 10, language: "eng", codec: "subrip", title: "", untagged: false, forced: false, sdh: false },
+            { index: 11, language: "spa", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+          ],
+        }),
+        settings: DEFAULT_SETTINGS,
+        sizeExempt: false,
+        excluded: false,
+        videoTarget: "hevc",
+        av1Available: false,
+      });
+      expect(suggestion?.actions).toEqual(["tracks"]);
+      expect(suggestion?.actions ?? []).not.toContain("transcode");
+      expect(suggestion?.after.sizeBytes).toBeNull();
+      expect(suggestion?.after.sizePerHourGb).toBeNull();
+    });
+
+    it("transcodes when the file is still over the cap after extra languages drop", () => {
+      const suggestion = buildSuggestion({
+        item: bluray1080p,
+        report: report({
+          durationSec: 3600,
+          sizeBytes: Math.round(16 * 1024 ** 3),
+          sizePerHourGb: 16,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+            { index: 2, language: "spa", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+          ],
+          subtitles: [{ index: 3, language: "spa", codec: "subrip", title: "", untagged: false, forced: false, sdh: false }],
+        }),
+        settings: DEFAULT_SETTINGS,
+        sizeExempt: false,
+        excluded: false,
+        videoTarget: "hevc",
+        av1Available: false,
+      });
+      expect(suggestion?.actions).toEqual(["transcode", "tracks"]);
+      expect(suggestion?.reasons.some((reason) => /after dropping extra languages/i.test(reason))).toBe(true);
+      expect(suggestion?.reasons.some((reason) => reason.includes("2.50"))).toBe(true);
+      expect(suggestion?.after.sizePerHourGb).toBe(2.5);
+      expect(suggestion?.mustEncode).toBe(false);
+    });
+
+    it("skips a size transcode when kept TrueHD already fills the 1080p cap", () => {
+      const suggestion = buildSuggestion({
+        item: bluray1080p,
+        report: report({
+          durationSec: 7492.96,
+          sizeBytes: 39_392_987_136,
+          sizePerHourGb: 17.626583022551593,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+            { index: 2, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+            { index: 3, language: "eng", channels: 2, codec: "ac3", title: "", untagged: false, commentary: false },
+            ...extraLanguageAudio(4, 8),
+          ],
+          subtitles: [
+            { index: 12, language: "eng", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+            { index: 13, language: "spa", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+          ],
+        }),
+        settings: DEFAULT_SETTINGS,
+        sizeExempt: false,
+        excluded: false,
+        videoTarget: "hevc",
+        av1Available: false,
+      });
+      expect(suggestion?.actions).toEqual(["tracks"]);
+      expect(suggestion?.after.sizeBytes).toBeNull();
+      expect(suggestion?.after.sizePerHourGb).toBeNull();
+      expect(suggestion?.warning).toMatch(/soundtrack you keep already uses the 2\.50 GB\/hr size cap/i);
+    });
+
+    it("still transcodes H.264 when TrueHD fills the cap and the codec toggle is on", () => {
+      const suggestion = buildSuggestion({
+        item: bluray1080p,
+        report: report({
+          durationSec: 7492.96,
+          sizeBytes: 39_392_987_136,
+          sizePerHourGb: 17.626583022551593,
+          videoCodec: "h264",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+            { index: 2, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+            { index: 3, language: "eng", channels: 2, codec: "ac3", title: "", untagged: false, commentary: false },
+            ...extraLanguageAudio(4, 8),
+          ],
+          subtitles: [
+            { index: 12, language: "eng", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+            { index: 13, language: "spa", codec: "hdmv_pgs_subtitle", title: "", untagged: false, forced: false, sdh: false },
+          ],
+        }),
+        settings: {
+          ...DEFAULT_SETTINGS,
+          suggestionDefaults: {
+            ...DEFAULT_SETTINGS.suggestionDefaults,
+            transcodeBelowHevc: true,
+          },
+        },
+        sizeExempt: false,
+        excluded: false,
+        videoTarget: "hevc",
+        av1Available: false,
+      });
+      expect(suggestion?.actions).toContain("transcode");
+      expect(suggestion?.actions).toContain("tracks");
+      expect(suggestion?.mustEncode).toBe(true);
+      expect(suggestion?.after.sizePerHourGb).not.toBe(2.5);
+      expect(suggestion?.after.sizeBytes).toBeGreaterThan(2.5 * (7492.96 / 3600) * 1024 ** 3);
+      expect(suggestion?.reasons.some((reason) => /size cap/i.test(reason))).toBe(false);
+      expect(suggestion?.reasons.some((reason) => reason.includes("H.264"))).toBe(true);
+      expect(suggestion?.warning).toMatch(/soundtrack you keep already uses the 2\.50 GB\/hr size cap/i);
+    });
+
+    it("forces a transcode on an audio-bound title with a raised target", () => {
+      const suggestion = buildSuggestion({
+        item: bluray1080p,
+        report: report({
+          durationSec: 7492.96,
+          sizeBytes: 39_392_987_136,
+          sizePerHourGb: 17.626583022551593,
+          videoCodec: "hevc",
+          width: 1920,
+          height: 1080,
+          bitDepth: 8,
+          hdr: "none",
+          audio: [
+            { index: 1, language: "eng", channels: 8, codec: "truehd", title: "", untagged: false, commentary: false },
+            { index: 2, language: "eng", channels: 2, codec: "ac3", title: "", untagged: false, commentary: false },
+          ],
+          subtitles: [],
+        }),
+        settings: DEFAULT_SETTINGS,
+        sizeExempt: false,
+        excluded: false,
+        forceTranscode: true,
+        videoTarget: "hevc",
+        av1Available: false,
+      });
+      expect(suggestion?.actions).toEqual(["transcode"]);
+      expect(suggestion?.mustEncode).toBe(true);
+      expect(suggestion?.after.sizePerHourGb).not.toBe(2.5);
+      expect(suggestion?.reasons.some((reason) => /force/i.test(reason))).toBe(true);
+    });
+  });
 });

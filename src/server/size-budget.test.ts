@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { aggressiveTargetBytes, copiedAudioBitrateBps, exceedsSizeCap, missedOutputTarget, typicalAudioBitrateBps, videoBitrateForTarget } from "./size-budget.ts";
-import type { InspectionReport } from "./types.ts";
+import {
+  aggressiveTargetBytes,
+  audioFillsSizeCap,
+  copiedAudioBitrateBps,
+  exceedsSizeCap,
+  missedOutputTarget,
+  raisedTargetBytes,
+  remainingSizeAfterTrackPlan,
+  typicalAudioBitrateBps,
+  videoBitrateForTarget,
+} from "./size-budget.ts";
 
 describe("size budget", () => {
   it("flags a custom size-mode output against the typed target, not only GB/hour", () => {
@@ -30,23 +39,28 @@ describe("size budget", () => {
   it("reserves more video bitrate for a TrueHD Atmos movie than a flat 80 MB pad", () => {
     const durationSec = 7139.5;
     const targetBytes = 8 * (durationSec / 3600) * 1024 ** 3;
-    const report = {
-      audio: [
-        { codec: "truehd", channels: 8, title: "Atmos" },
-        { codec: "aac", channels: 2, title: "" },
-        { codec: "ac3", channels: 6, title: "" },
-        { codec: "truehd", channels: 8, title: "TrueHD" },
-      ],
-    } as InspectionReport;
-    const withAudio = videoBitrateForTarget({
+    const allAudio = [
+      { codec: "truehd", channels: 8, title: "Atmos" },
+      { codec: "aac", channels: 2, title: "" },
+      { codec: "ac3", channels: 6, title: "" },
+      { codec: "truehd", channels: 8, title: "TrueHD" },
+    ];
+    const kept = [allAudio[0]!, allAudio[1]!];
+    const withAll = videoBitrateForTarget({
       targetBytes,
       durationSec,
-      audioBitrateBps: copiedAudioBitrateBps(report),
+      audioBitrateBps: copiedAudioBitrateBps(allAudio),
+    });
+    const withKept = videoBitrateForTarget({
+      targetBytes,
+      durationSec,
+      audioBitrateBps: copiedAudioBitrateBps(kept),
     });
     const withoutAudio = videoBitrateForTarget({ targetBytes, durationSec, audioBitrateBps: 0 });
     expect(typicalAudioBitrateBps({ codec: "truehd", channels: 8 })).toBe(5_000_000);
-    expect(withAudio).toBeLessThan(withoutAudio * 0.6);
-    expect(withAudio).toBeGreaterThan(800_000);
+    expect(withAll).toBeLessThan(withoutAudio * 0.6);
+    expect(withKept).toBeGreaterThan(withAll);
+    expect(withKept).toBeGreaterThan(800_000);
   });
 
   it("refuses a size target that the kept audio already fills", () => {
@@ -55,5 +69,64 @@ describe("size budget", () => {
       durationSec: 7200,
       audioBitrateBps: 5_000_000,
     })).toThrow(/Kept audio is about 4\.2 GB/);
+  });
+
+  it("scores remaining size after extra-language audio is dropped, not the original blob", () => {
+    const extra = Array.from({ length: 8 }, () => ({ codec: "ac3", channels: 6, title: "" }));
+    const remaining = remainingSizeAfterTrackPlan({
+      sizeBytes: Math.round(3.5 * 1024 ** 3),
+      durationSec: 3600,
+      stripAudio: extra,
+      stripSubs: Array.from({ length: 12 }, () => ({ codec: "hdmv_pgs_subtitle" })),
+    });
+    expect(remaining.remainingBytes).toBeLessThan(3.5 * 1024 ** 3);
+    expect(remaining.remainingSizePerHourGb).toBeLessThan(2.5);
+    expect(exceedsSizeCap(3.5, 2.5)).toBe(true);
+    expect(exceedsSizeCap(remaining.remainingSizePerHourGb, 2.5)).toBe(false);
+  });
+
+  it("does not pretend extra PGS tracks shrink a file under the cap", () => {
+    const remaining = remainingSizeAfterTrackPlan({
+      sizeBytes: Math.round(8 * 1024 ** 3),
+      durationSec: 3600,
+      stripAudio: [],
+      stripSubs: Array.from({ length: 20 }, () => ({ codec: "hdmv_pgs_subtitle" })),
+    });
+    expect(remaining.remainingSizePerHourGb).toBeGreaterThan(7);
+  });
+
+  it("treats Batman-style TrueHD as filling a 1080p cap and a single AC3 as not", () => {
+    const durationSec = 7492.96;
+    const capBytes = Math.round(2.5 * (durationSec / 3600) * 1024 ** 3);
+    const truehdPlusAc3 = copiedAudioBitrateBps([
+      { codec: "truehd", channels: 8, title: "" },
+      { codec: "ac3", channels: 6, title: "" },
+      { codec: "ac3", channels: 2, title: "" },
+    ]);
+    expect(audioFillsSizeCap({
+      targetBytes: capBytes,
+      durationSec,
+      audioBitrateBps: truehdPlusAc3,
+    })).toBe(true);
+    expect(audioFillsSizeCap({
+      targetBytes: capBytes,
+      durationSec,
+      audioBitrateBps: typicalAudioBitrateBps({ codec: "ac3", channels: 6 }),
+    })).toBe(false);
+  });
+
+  it("raises the cap by kept audio so a codec encode still has room for video", () => {
+    const durationSec = 7492.96;
+    const capBytes = Math.round(2.5 * (durationSec / 3600) * 1024 ** 3);
+    const audioBitrateBps = copiedAudioBitrateBps([
+      { codec: "truehd", channels: 8, title: "" },
+      { codec: "ac3", channels: 6, title: "" },
+      { codec: "ac3", channels: 2, title: "" },
+    ]);
+    const raised = raisedTargetBytes({ capBytes, durationSec, audioBitrateBps });
+    expect(raised).toBeGreaterThan(capBytes);
+    const bitrate = videoBitrateForTarget({ targetBytes: raised, durationSec, audioBitrateBps });
+    expect(bitrate).toBeGreaterThanOrEqual(800_000);
+    expect(bitrate).toBeGreaterThan(4_000_000);
   });
 });
