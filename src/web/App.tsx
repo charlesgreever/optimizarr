@@ -24,7 +24,12 @@ export function App() {
 
   if (!auth) return <div className="auth-page"><p className="help">Loading Polisharr…</p></div>;
   if (!auth.firstRun.hasAdmin || !auth.authenticated) {
-    return <LoginPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />;
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
   if (!auth.firstRun.complete) {
     return <SetupPage firstRun={auth.firstRun} onReady={() => void api.status().then(setAuth)} />;
@@ -44,6 +49,7 @@ export function App() {
         <Route path="/errors" element={<ErrorsPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/settings" element={<SettingsPage firstRun={auth.firstRun} onChange={() => void api.status().then(setAuth)} />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

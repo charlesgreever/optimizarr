@@ -10,10 +10,15 @@ describe("login form", () => {
       onReady: () => undefined,
     }));
     expect(html).toContain("method=\"post\"");
+    expect(html).toContain("autoComplete=\"on\"");
     expect(html).toContain("name=\"username\"");
     expect(html).toContain("name=\"password\"");
+    expect(html).toContain("id=\"username\"");
+    expect(html).toContain("id=\"password\"");
+    expect(html).toContain("for=\"username\"");
+    expect(html).toContain("for=\"password\"");
     expect(html).toContain("autoComplete=\"username\"");
     expect(html).toContain("autoComplete=\"current-password\"");
-    expect(html).toContain("autoCapitalize=\"none\"");
+    expect(html).not.toContain("value=\"");
   });
 });
