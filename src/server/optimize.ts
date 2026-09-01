@@ -692,10 +692,11 @@ export function subtitleEncodeArgs(report: InspectionReport): string[] {
 }
 
 function sizeModeRateControl(backend: OptimizeRequest["backend"], bitrate: string): string[] {
+  const bufsize = String(Number(bitrate) * 2);
   if (backend === "vaapi") {
-    return ["-rc_mode", "CBR", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate];
+    return ["-rc_mode", "CBR", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bufsize];
   }
-  return ["-rc", "cbr", "-rc-lookahead", "32", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate];
+  return ["-rc", "cbr", "-multipass", "qres", "-rc-lookahead", "32", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bufsize];
 }
 
 export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"] | undefined): number {
@@ -707,10 +708,12 @@ export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"
   const targetBytes = video?.kind === "size"
     ? video.targetBytes
     : (req.suggestion?.after.sizePerHourGb ?? 2.5) * hours * 1024 ** 3;
+  const codec = video && video.kind !== "copy" ? video.codec : req.target;
   return videoBitrateForTarget({
     targetBytes,
     durationSec,
     audioBitrateBps: copiedAudioBitrateBps(req.report.audio),
+    codec: codec === "av1" ? "av1" : "hevc",
   });
 }
 

@@ -2,6 +2,8 @@
 export const SIZE_CAP_TOLERANCE = 0.05;
 /** Fraction of the file-size target left unused so CBR/VBR overshoot still lands under the cap. */
 const ENCODER_SLACK = 0.2;
+/** NVENC AV1 CBR still overshot requested bitrate by ~1.6x (2.48 GB/hr sidecar vs ~2.0 GB/hr cap). */
+const AV1_BITRATE_SCALE = 0.7;
 const MUX_OVERHEAD_BYTES = 8_000_000;
 const MIN_VIDEO_BPS = 800_000;
 const MAX_VIDEO_BPS = 300_000_000;
@@ -107,10 +109,11 @@ export function videoBitrateForTarget(input: {
   targetBytes: number;
   durationSec: number;
   audioBitrateBps: number;
+  codec?: "hevc" | "av1";
 }): number {
   const audioBytes = (input.audioBitrateBps / 8) * input.durationSec;
   const usable = Math.max(0, input.targetBytes * (1 - ENCODER_SLACK) - audioBytes - MUX_OVERHEAD_BYTES);
-  const bitrate = Math.round((usable * 8) / input.durationSec);
+  let bitrate = Math.round((usable * 8) / input.durationSec);
   if (bitrate > MAX_VIDEO_BPS) {
     const gb = (input.targetBytes / 1024 ** 3).toFixed(1);
     const minutes = Math.max(1, Math.round(input.durationSec / 60));
@@ -125,5 +128,6 @@ export function videoBitrateForTarget(input: {
       `Kept audio is about ${audioGb.toFixed(1)} GB; a ${targetGb.toFixed(1)} GB target leaves too little room for video. Exempt this title or drop extra lossless tracks.`,
     );
   }
+  if (input.codec === "av1") bitrate = Math.max(MIN_VIDEO_BPS, Math.round(bitrate * AV1_BITRATE_SCALE));
   return bitrate;
 }

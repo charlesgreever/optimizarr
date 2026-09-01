@@ -519,12 +519,13 @@ describe("ffmpeg encode arguments", () => {
       },
     });
     expect(hevc[hevc.indexOf("-rc") + 1]).toBe("cbr");
+    expect(hevc[hevc.indexOf("-multipass") + 1]).toBe("qres");
     expect(hevc[hevc.indexOf("-rc-lookahead") + 1]).toBe("32");
-    expect(hevc[hevc.indexOf("-bufsize") + 1]).toBe(hevc[hevc.indexOf("-b:v") + 1]);
+    expect(hevc[hevc.indexOf("-bufsize") + 1]).toBe(String(Number(hevc[hevc.indexOf("-b:v") + 1]) * 2));
     expect(av1).toContain("av1_nvenc");
     expect(av1[av1.indexOf("-rc") + 1]).toBe("cbr");
-    expect(av1[av1.indexOf("-b:v") + 1]).toBe(hevc[hevc.indexOf("-b:v") + 1]);
-    expect(av1[av1.indexOf("-bufsize") + 1]).toBe(av1[av1.indexOf("-b:v") + 1]);
+    expect(Number(av1[av1.indexOf("-b:v") + 1])).toBe(Math.round(Number(hevc[hevc.indexOf("-b:v") + 1]) * 0.7));
+    expect(av1[av1.indexOf("-bufsize") + 1]).toBe(String(Number(av1[av1.indexOf("-b:v") + 1]) * 2));
   });
 
   it("does not pass HEVC main10 when encoding 10-bit AV1", () => {
@@ -817,7 +818,7 @@ describe("ffmpeg encode arguments", () => {
     const expected = videoBitrateForTarget({ targetBytes, durationSec, audioBitrateBps: 0 });
     expect(bitrate).toBe(expected);
     expect(args[args.indexOf("-maxrate") + 1]).toBe(String(expected));
-    expect(args[args.indexOf("-bufsize") + 1]).toBe(String(expected));
+    expect(args[args.indexOf("-bufsize") + 1]).toBe(String(expected * 2));
     expect(args[args.indexOf("-rc") + 1]).toBe("cbr");
     expect(bitrate).toBeGreaterThan(15_000_000);
     expect(bitrate).toBeLessThan(25_000_000);
