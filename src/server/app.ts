@@ -312,9 +312,7 @@ export function createApp(opts: AppOptions) {
     }
     const suggestionsChanged = suggestionSettingsChanged(current, next);
     store.saveSettings(next);
-    if (suggestionsChanged) {
-      for (const item of store.listItems()) recomputeSuggestion(item.id);
-    }
+    if (suggestionsChanged) recomputeAllSuggestions();
     return c.json({ ok: true, settings: next, firstRun: firstRunState() });
   });
 
@@ -385,6 +383,7 @@ export function createApp(opts: AppOptions) {
 
   app.post("/api/library/refresh", async (c) => {
     const result = await sync.refresh();
+    recomputeAllSuggestions();
     return c.json({ ...result, inspect: store.getInspectState() });
   });
 
@@ -418,10 +417,14 @@ export function createApp(opts: AppOptions) {
     return store.saveSuggestion(itemId, suggestion) ?? null;
   }
 
+  function recomputeAllSuggestions(): void {
+    for (const item of store.listItems()) recomputeSuggestion(item.id);
+  }
+
   let lastHardware: HardwareInfo = { backend: "none", cuda: false, vaapi: false, av1: false, reason: null };
   void hardware().then((h) => {
     lastHardware = h;
-    for (const suggestion of store.listSuggestions()) recomputeSuggestion(suggestion.itemId);
+    recomputeAllSuggestions();
   });
 
   function isExcluded(item: ReturnType<Store["getItem"]>): boolean {
@@ -830,7 +833,7 @@ export function createApp(opts: AppOptions) {
     }
     if (typeof raw.value !== "string" || !raw.value.trim()) return c.json({ error: "Enter a value to exclude." }, 400);
     const id = store.addExclusion(raw.kind, raw.value.trim());
-    for (const item of store.listItems()) recomputeSuggestion(item.id);
+    recomputeAllSuggestions();
     return c.json({ ok: true, id, exclusions: store.listExclusions() });
   });
 
@@ -839,7 +842,7 @@ export function createApp(opts: AppOptions) {
       return c.json({ error: "That exclusion does not exist." }, 404);
     }
     store.deleteExclusion(c.req.param("id"));
-    for (const item of store.listItems()) recomputeSuggestion(item.id);
+    recomputeAllSuggestions();
     return c.json({ ok: true, exclusions: store.listExclusions() });
   });
 

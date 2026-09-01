@@ -1282,6 +1282,156 @@ describe("public HTTP behavior", () => {
     expect(ctx.probeCalls()).toBe(probesBeforeSave);
   });
 
+  it("suggests AV1 for already-inspected HEVC on library refresh", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: true, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      fetch: (async (url: string) => {
+        if (String(url).includes("/movie")) {
+          return new Response(JSON.stringify([{
+            id: 10,
+            title: "Already HEVC",
+            path: "/mnt/nas/movies/hevc.mkv",
+            sizeOnDisk: 1_000_000_000,
+            movieFile: { path: "/mnt/nas/movies/hevc.mkv", size: 1_000_000_000, quality: { quality: { name: "Bluray-1080p" } } },
+            images: [],
+          }]));
+        }
+        if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: join(dir, "review"),
+        videoTarget: "av1",
+        suggestionDefaults: {
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: false,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      }),
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    expect(((await (await created.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(0);
+
+    created.store.saveSettings({
+      ...created.store.getSettings(),
+      suggestionDefaults: { ...created.store.getSettings().suggestionDefaults, transcodeBelowHevc: true },
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
+      items: Array<{ after?: { codec?: string }; reasons?: string[] }>;
+    };
+    expect(suggestions.items).toHaveLength(1);
+    expect(suggestions.items[0]?.after?.codec).toBe("AV1");
+    expect(suggestions.items[0]?.reasons?.some((reason) => reason.includes("HEVC") && reason.includes("AV1"))).toBe(true);
+  });
+
+  it("suggests AV1 for already-inspected HEVC once the GPU lists an AV1 encoder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    let releaseHardware: ((hw: HardwareInfo) => void) | undefined;
+    const hardwareReady = new Promise<HardwareInfo>((resolve) => {
+      releaseHardware = resolve;
+    });
+    const created = createApp({
+      env,
+      hardware: () => hardwareReady,
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      fetch: (async (url: string) => {
+        if (String(url).includes("/movie")) {
+          return new Response(JSON.stringify([{
+            id: 10,
+            title: "Already HEVC",
+            path: "/mnt/nas/movies/hevc.mkv",
+            sizeOnDisk: 1_000_000_000,
+            movieFile: { path: "/mnt/nas/movies/hevc.mkv", size: 1_000_000_000, quality: { quality: { name: "Bluray-1080p" } } },
+            images: [],
+          }]));
+        }
+        if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: join(dir, "review"),
+        videoTarget: "av1",
+        suggestionDefaults: {
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: true,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      }),
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    expect(((await (await created.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(0);
+
+    releaseHardware?.({ backend: "cuda", cuda: true, vaapi: false, av1: true, reason: null });
+    await vi.waitFor(async () => {
+      const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
+        items: Array<{ after?: { codec?: string } }>;
+      };
+      expect(suggestions.items).toHaveLength(1);
+      expect(suggestions.items[0]?.after?.codec).toBe("AV1");
+    });
+  });
+
   it("rejects a do-nothing custom plan with a field error", async () => {
     const ctx = await setup();
     apps.push(ctx);

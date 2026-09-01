@@ -12,7 +12,7 @@ Three independent bugs. Each phase can ship alone.
 - **Sync routing:** Movie categories go only to Radarr. TV categories go only to Sonarr. Settings still previews all five caps; that preview is not an Arr write.
 - **Keep auto-assign:** Already picks the matching profile name for the title. Do not change assign-on-Keep in this work.
 - **Leftovers:** Do not delete Polisharr-named profiles that an earlier unscoped sync already created on the wrong Arr. The operator removes those in Radarr or Sonarr.
-- **Encode Target sweep:** The stored suggestion-default key stays `transcodeBelowHevc`. The checkbox copy and the suggestion predicate follow Encode Target: HEVC flags pre-HEVC codecs; AV1 also flags HEVC. Already-AV1 files are never suggested back to HEVC or re-encoded.
+- **Encode Target sweep:** The stored suggestion-default key stays `transcodeBelowHevc`. The checkbox copy and the suggestion predicate follow Encode Target: HEVC flags pre-HEVC codecs; AV1 also flags HEVC. Already-AV1 files are never suggested back to HEVC or re-encoded. Library refresh and GPU detection recompute every inspected title, including files that were healthy under the previous rule.
 - **AV1 size encodes:** CUDA size-mode uses explicit VBR so AV1 honors the same bitrate cap as HEVC. Do not pass HEVC `main10` to AV1.
 - **Tests:** Fake Arr HTTP and encode argument arrays. No live Radarr, Sonarr, or GPU. Assert which profile names are POSTed or PUT, not private SQL.
 
@@ -96,6 +96,7 @@ CUDA size-mode encode arguments set VBR rate control for both HEVC and AV1 so th
 - [x] With the box on and target HEVC, under-cap H.264 is suggested for HEVC; under-cap HEVC is not.
 - [x] With the box on and target AV1, under-cap HEVC is suggested for AV1; already-AV1 is not.
 - [x] Size-exempt titles still skip this transcode.
+- [x] Library refresh and GPU detection recompute already-inspected titles, so under-cap HEVC can become an AV1 suggestion without a new probe.
 - [x] CUDA size-mode AV1 arguments include VBR and the same `-b:v` as HEVC for the same target bytes.
 - [x] 10-bit AV1 arguments do not include `main10`.
 - [x] `npm test` and `npm run typecheck` pass.
