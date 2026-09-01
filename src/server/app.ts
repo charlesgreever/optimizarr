@@ -289,6 +289,7 @@ export function createApp(opts: AppOptions) {
       if (!full?.secret) continue;
       results.push(await syncProfiles({
         instanceId: inst.id,
+        kind: inst.kind,
         url: inst.url,
         apiKey: decryptSecret(secret, full.secret),
         caps: settings.sizeCaps,

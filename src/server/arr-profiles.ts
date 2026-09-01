@@ -1,5 +1,8 @@
-import type { SizeCaps, SizeCategory } from "./types.ts";
+import type { ArrKind, SizeCaps, SizeCategory } from "./types.ts";
 import { DEFAULT_SIZE_CAPS } from "./types.ts";
+
+const RADARR_CATEGORIES: SizeCategory[] = ["movie1080p", "movie4kSdr", "movie4kHdr"];
+const SONARR_CATEGORIES: SizeCategory[] = ["tv1080p", "tv4k"];
 
 export const PROFILE_NAMES: Record<SizeCategory, string> = {
   movie1080p: "Polisharr Movie 1080p",
@@ -26,6 +29,11 @@ export function profilePreviews(caps: SizeCaps = DEFAULT_SIZE_CAPS): ProfilePrev
       mbPerMin: Math.round(((gbPerHour * 1024) / 60) * 10) / 10,
     };
   });
+}
+
+export function profilesForArrKind(kind: ArrKind, caps: SizeCaps = DEFAULT_SIZE_CAPS): ProfilePreview[] {
+  const wanted = kind === "radarr" ? RADARR_CATEGORIES : SONARR_CATEGORIES;
+  return profilePreviews(caps).filter((preview) => wanted.includes(preview.category));
 }
 
 export type ProfileRecord = {
@@ -94,6 +102,7 @@ export type SyncResult = {
 
 export async function syncProfiles(opts: {
   instanceId: string;
+  kind: ArrKind;
   url: string;
   apiKey: string;
   caps: SizeCaps;
@@ -108,7 +117,7 @@ export async function syncProfiles(opts: {
     return result;
   }
   const existing = parseProfiles(await listed.json());
-  for (const preview of profilePreviews(opts.caps)) {
+  for (const preview of profilesForArrKind(opts.kind, opts.caps)) {
     const found = findNamedProfile(existing, preview.name);
     if (found) {
       const desired = configuredProfile(found.raw, preview.name, preview.category);

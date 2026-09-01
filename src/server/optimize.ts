@@ -655,12 +655,13 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     args.push("-vf", "scale=1920:1080");
   }
   args.push("-c:v", encoder);
-  if (tenBit) args.push("-profile:v", "main10");
+  if (tenBit && codec !== "av1") args.push("-profile:v", "main10");
   if (video?.kind === "quality") {
     if (req.backend === "vaapi") args.push("-qp", String(video.quality));
     else args.push("-cq", String(video.quality), "-rc", "vbr");
   } else {
     const bitrate = String(nvencBitrate(req, video));
+    if (req.backend !== "vaapi") args.push("-rc", "vbr");
     args.push("-b:v", bitrate, "-maxrate", bitrate, "-bufsize", String(Number(bitrate) * 2));
   }
   if (req.backend !== "vaapi") args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");

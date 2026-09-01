@@ -453,6 +453,53 @@ describe("suggestion engine", () => {
     expect(exempt).toBeNull();
   });
 
+  it("suggests AV1 for under-cap HEVC when Encode Target is AV1 and below-target is on", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      videoTarget: "av1" as const,
+      suggestionDefaults: {
+        ...DEFAULT_SETTINGS.suggestionDefaults,
+        transcodeToSizeCap: false,
+        transcodeBelowHevc: true,
+        removeNonPreferredSubtitles: false,
+        removeNonPreferredAudio: false,
+        addStereo: false,
+      },
+    };
+    const hevc = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "av1",
+      av1Available: true,
+    });
+    const av1 = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "av1", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: false,
+      excluded: false,
+      videoTarget: "av1",
+      av1Available: true,
+    });
+    const exempt = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc", hdr: "none", audio: [], subtitles: [] }),
+      settings,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "av1",
+      av1Available: true,
+    });
+    expect(hevc?.actions).toEqual(["transcode"]);
+    expect(hevc?.after.codec).toBe("AV1");
+    expect(hevc?.reasons.some((reason) => reason.includes("HEVC") && reason.includes("AV1"))).toBe(true);
+    expect(av1).toBeNull();
+    expect(exempt).toBeNull();
+  });
+
   it("uses AV1 as the bulk target when Settings and hardware allow it", () => {
     const suggestion = buildSuggestion({
       item: movie,

@@ -126,6 +126,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         </div>
         <SuggestionDefaultsSettings
           value={data.suggestionDefaults}
+          videoTarget={data.videoTarget}
           onChange={(suggestionDefaults) => setData({ ...data, suggestionDefaults })}
           onSave={save}
         />

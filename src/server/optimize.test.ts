@@ -456,6 +456,119 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("p010le");
   });
 
+  it("uses VBR so CUDA size-mode AV1 honors the same bitrate as HEVC", () => {
+    const targetBytes = 5 * 1024 ** 3;
+    const durationSec = 3600;
+    const report: InspectionReport = {
+      sourceSig: "p|1",
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec,
+      sizeBytes: 12_000_000_000,
+      sizePerHourGb: 12,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    const base = {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      report,
+      backend: "cuda" as const,
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    };
+    const hevc = encodeArgs(source, "/tmp/out.mkv", {
+      ...base,
+      target: "hevc",
+      plan: {
+        origin: "bulk",
+        video: { kind: "size", codec: "hevc", targetBytes, downscale1080p: false, bitDepth: 8 },
+        audio: [],
+        subtitles: [],
+        container: "mkv",
+        writeMode: "sidecar",
+        warning: null,
+        reasons: [],
+        estimatedOutputBytes: targetBytes,
+        category: "movie1080p",
+      },
+    });
+    const av1 = encodeArgs(source, "/tmp/out.mkv", {
+      ...base,
+      target: "av1",
+      plan: {
+        origin: "bulk",
+        video: { kind: "size", codec: "av1", targetBytes, downscale1080p: false, bitDepth: 8 },
+        audio: [],
+        subtitles: [],
+        container: "mkv",
+        writeMode: "sidecar",
+        warning: null,
+        reasons: [],
+        estimatedOutputBytes: targetBytes,
+        category: "movie1080p",
+      },
+    });
+    expect(hevc[hevc.indexOf("-rc") + 1]).toBe("vbr");
+    expect(av1).toContain("av1_nvenc");
+    expect(av1[av1.indexOf("-rc") + 1]).toBe("vbr");
+    expect(av1[av1.indexOf("-b:v") + 1]).toBe(hevc[hevc.indexOf("-b:v") + 1]);
+  });
+
+  it("does not pass HEVC main10 when encoding 10-bit AV1", () => {
+    const args = encodeArgs(source, "/tmp/out.mkv", {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      plan: {
+        origin: "bulk",
+        video: { kind: "size", codec: "av1", targetBytes: 5 * 1024 ** 3, downscale1080p: false, bitDepth: 10 },
+        audio: [],
+        subtitles: [],
+        container: "mkv",
+        writeMode: "sidecar",
+        warning: null,
+        reasons: [],
+        estimatedOutputBytes: 5 * 1024 ** 3,
+        category: "movie1080p",
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "ffprobe",
+        listingState: "complete",
+        durationSec: 3600,
+        sizeBytes: 12_000_000_000,
+        sizePerHourGb: 12,
+        videoCodec: "hevc",
+        width: 1920,
+        height: 1080,
+        bitDepth: 10,
+        hdr: "none",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "av1",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    expect(args).toContain("av1_nvenc");
+    expect(args).toContain("p010le");
+    expect(args).not.toContain("main10");
+  });
+
   it("uses quality controls instead of bitrate for quality mode", () => {
     const plan = planFromSuggestion(suggestion);
     const qualityReq = {

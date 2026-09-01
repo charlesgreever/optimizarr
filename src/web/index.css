@@ -369,10 +369,20 @@ textarea {
   padding: 10px 11px;
 }
 
+select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
 .dark input,
 .dark select,
 .dark textarea {
   background: rgb(255 255 255 / 0.03);
+}
+
+.dark select option {
+  background: var(--panel);
+  color: var(--text);
 }
 
 input:focus-visible,

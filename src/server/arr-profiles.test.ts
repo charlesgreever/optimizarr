@@ -52,6 +52,7 @@ describe("Arr profile HTTP", () => {
     const putBodies: Record<string, unknown>[] = [];
     const result = await syncProfiles({
       instanceId: "radarr",
+      kind: "radarr",
       url: "http://radarr",
       apiKey: "k",
       caps,
@@ -94,13 +95,18 @@ describe("Arr profile HTTP", () => {
 
   it("creates missing Polisharr profiles and never searches", async () => {
     const calls: string[] = [];
+    const posted: string[] = [];
     const result = await syncProfiles({
       instanceId: "radarr",
+      kind: "radarr",
       url: "http://radarr:7878",
       apiKey: "k",
       caps,
       fetch: (async (url, init) => {
         calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (String(url).endsWith("/qualityprofile") && init?.method === "POST") {
+          posted.push((JSON.parse(String(init.body)) as { name: string }).name);
+        }
         if (String(url).endsWith("/qualityprofile") && !init?.method) {
           return new Response(JSON.stringify([{ id: 1, name: "HD-1080p", upgradeAllowed: true, items: [] }]));
         }
@@ -110,9 +116,41 @@ describe("Arr profile HTTP", () => {
         return new Response(JSON.stringify({ id: 20, name: "Polisharr Movie 1080p", upgradeAllowed: false, items: [] }), { status: 200 });
       }) as typeof fetch,
     });
-    expect(result.created).toHaveLength(5);
+    expect(result.created).toEqual([
+      "Polisharr Movie 1080p",
+      "Polisharr Movie 4K SDR",
+      "Polisharr Movie 4K HDR",
+    ]);
+    expect(posted).toEqual(result.created);
+    expect(posted.some((name) => /TV/.test(name))).toBe(false);
     expect(calls.some((c) => /command|search/i.test(c))).toBe(false);
     expect(parseProfiles([{ id: 3, name: "Polisharr Movie 1080p" }])[0]?.id).toBe(3);
+  });
+
+  it("creates only TV Polisharr profiles on Sonarr", async () => {
+    const posted: string[] = [];
+    const result = await syncProfiles({
+      instanceId: "sonarr",
+      kind: "sonarr",
+      url: "http://sonarr:8989",
+      apiKey: "k",
+      caps,
+      fetch: (async (url, init) => {
+        if (String(url).endsWith("/qualityprofile") && init?.method === "POST") {
+          posted.push((JSON.parse(String(init.body)) as { name: string }).name);
+        }
+        if (String(url).endsWith("/qualityprofile") && !init?.method) {
+          return new Response(JSON.stringify([{ id: 1, name: "HD-1080p", upgradeAllowed: true, items: [] }]));
+        }
+        if (String(url).endsWith("/qualityprofile/schema")) {
+          return new Response(JSON.stringify({ name: "", upgradeAllowed: false, items: [] }));
+        }
+        return new Response(JSON.stringify({ id: 21, name: "Polisharr TV 1080p", upgradeAllowed: false, items: [] }), { status: 200 });
+      }) as typeof fetch,
+    });
+    expect(result.created).toEqual(["Polisharr TV 1080p", "Polisharr TV 4K"]);
+    expect(posted).toEqual(result.created);
+    expect(posted.some((name) => /Movie/.test(name))).toBe(false);
   });
 
   it("assigns a movie using an existing no-upgrade profile without creating one", async () => {

@@ -7,4 +7,8 @@ export function sizeCapLabel(key: string): string {
   return key;
 }
 
+export function transcodeBelowTargetLabel(target: "hevc" | "av1"): string {
+  return `Transcode video below Target Encode (${target === "av1" ? "AV1" : "HEVC"})`;
+}
+
 export const FIELD_CONTROL = "h-10 w-full";

@@ -96,7 +96,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const belowHevc = !codecIsAtLeastHevc(report.videoCodec);
   const target: VideoTarget = input.videoTarget === "av1" && input.av1Available ? "av1" : "hevc";
   const transcodeForCap = settings.suggestionDefaults.transcodeToSizeCap && overCap && !audioBound && (belowHevc || /hevc|h265/.test(codec));
-  const transcodeForCodec = settings.suggestionDefaults.transcodeBelowHevc && belowHevc;
+  const transcodeForCodec = settings.suggestionDefaults.transcodeBelowHevc && codecIsBelowEncodeTarget(report.videoCodec, target);
   const transcode =
     !alreadyAv1 &&
     !input.sizeExempt &&
@@ -201,9 +201,18 @@ export function codecIsAtLeastHevc(codec: string): boolean {
   return /hevc|h265|av1/i.test(codec);
 }
 
+export function codecIsBelowEncodeTarget(codec: string, target: VideoTarget): boolean {
+  const value = codec.toLowerCase();
+  if (value.includes("av1")) return false;
+  if (target === "hevc") return !/hevc|h265/.test(value);
+  return true;
+}
+
 export function codecLabel(codec: string): string {
   const value = codec.toLowerCase();
   if (/h264|avc/.test(value)) return "H.264";
+  if (/hevc|h265/.test(value)) return "HEVC";
+  if (/av1/.test(value)) return "AV1";
   if (/mpeg2/.test(value)) return "MPEG-2";
   if (/vc1|wmv3/.test(value)) return "VC-1";
   if (/mpeg4|xvid|divx/.test(value)) return "MPEG-4";

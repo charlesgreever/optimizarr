@@ -1,4 +1,5 @@
 import type { SettingsPayload } from "../api";
+import { transcodeBelowTargetLabel } from "../settings-copy";
 
 type SuggestionDefaults = SettingsPayload["suggestionDefaults"];
 
@@ -6,10 +7,12 @@ export function SuggestionDefaultsSettings({
   value,
   onChange,
   onSave,
+  videoTarget = "hevc",
 }: {
   value: SuggestionDefaults;
   onChange: (value: SuggestionDefaults) => void;
   onSave: () => void;
+  videoTarget?: "hevc" | "av1";
 }) {
   const checkbox = (field: keyof SuggestionDefaults, label: string) => (
     <label className="flex items-center gap-2 text-sm">
@@ -29,12 +32,12 @@ export function SuggestionDefaultsSettings({
       {checkbox("removeNonPreferredAudio", "Remove non-preferred audio tracks")}
       {checkbox("addStereo", "Add stereo from surround audio")}
       {checkbox("transcodeToSizeCap", "Transcode files over their size cap")}
-      {checkbox("transcodeBelowHevc", "Transcode video below HEVC")}
+      {checkbox("transcodeBelowHevc", transcodeBelowTargetLabel(videoTarget))}
       {checkbox("convertMp4ToMkv", "Convert MP4 to MKV")}
       {checkbox("convertIsoToMkv", "Convert ISO to MKV")}
       {checkbox("searchPreferredLanguage", "Suggest a Radarr or Sonarr search when the only audio is not preferred")}
       {checkbox("queueNewImports", "Queue new Arr imports automatically")}
-      <p className="help">These choices control automatic Suggestions. Force, Add stereo, and custom title plans stay available. Transcode video below HEVC flags H.264, MPEG-2, VC-1, and similar codecs even when the file is under its size cap. Encode Target chooses HEVC or AV1 when the GPU can encode AV1. A preferred-language search still waits for a confirm on the title and does not delete a file until you agree. Queue new Arr imports inspects a new or upgraded file and queues its suggestion as a sidecar. Keep still replaces the library file and does not queue that file again. A later Arr upgrade still can. Turning that on does not queue your existing library.</p>
+      <p className="help">These choices control automatic Suggestions. Force, Add stereo, and custom title plans stay available. Transcode video below Target Encode flags H.264, MPEG-2, VC-1, and similar codecs even when the file is under its size cap. When Encode Target is AV1, it also flags HEVC. Encode Target chooses HEVC or AV1 when the GPU can encode AV1. A preferred-language search still waits for a confirm on the title and does not delete a file until you agree. Queue new Arr imports inspects a new or upgraded file and queues its suggestion as a sidecar. Keep still replaces the library file and does not queue that file again. A later Arr upgrade still can. Turning that on does not queue your existing library.</p>
       <button className="btn" type="button" onClick={onSave}>Save suggestion defaults</button>
     </div>
   );

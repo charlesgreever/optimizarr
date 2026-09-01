@@ -33,6 +33,7 @@ export type SuggestionDefaults = {
   removeNonPreferredAudio: boolean;
   addStereo: boolean;
   transcodeToSizeCap: boolean;
+  /** Copy and suggestion predicate follow Encode Target; the stored key is historical. */
   transcodeBelowHevc: boolean;
   convertMp4ToMkv: boolean;
   convertIsoToMkv: boolean;
