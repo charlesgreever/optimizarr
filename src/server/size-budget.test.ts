@@ -12,6 +12,15 @@ import {
 } from "./size-budget.ts";
 
 describe("size budget", () => {
+  it("aims video bitrate 20% under the file target so encoder overshoot still fits", () => {
+    const durationSec = 3600;
+    const targetBytes = 2.5 * 1024 ** 3;
+    const bitrate = videoBitrateForTarget({ targetBytes, durationSec, audioBitrateBps: 0 });
+    const raw = (targetBytes * 8) / durationSec;
+    expect(bitrate / raw).toBeGreaterThan(0.79);
+    expect(bitrate / raw).toBeLessThan(0.81);
+  });
+
   it("flags a custom size-mode output against the typed target, not only GB/hour", () => {
     expect(missedOutputTarget({
       outputBytes: 6 * 1024 ** 3,

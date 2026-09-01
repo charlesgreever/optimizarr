@@ -1,6 +1,7 @@
 /** Fraction of the GB/hr cap a file may exceed before Polisharr treats it as over. */
 export const SIZE_CAP_TOLERANCE = 0.05;
-const ENCODER_SLACK = 0.08;
+/** Fraction of the file-size target left unused so CBR/VBR overshoot still lands under the cap. */
+const ENCODER_SLACK = 0.2;
 const MUX_OVERHEAD_BYTES = 8_000_000;
 const MIN_VIDEO_BPS = 800_000;
 const MAX_VIDEO_BPS = 300_000_000;

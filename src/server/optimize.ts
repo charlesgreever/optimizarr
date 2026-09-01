@@ -660,9 +660,7 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     if (req.backend === "vaapi") args.push("-qp", String(video.quality));
     else args.push("-cq", String(video.quality), "-rc", "vbr");
   } else {
-    const bitrate = String(nvencBitrate(req, video));
-    if (req.backend !== "vaapi") args.push("-rc", "vbr");
-    args.push("-b:v", bitrate, "-maxrate", bitrate, "-bufsize", String(Number(bitrate) * 2));
+    args.push(...sizeModeRateControl(req.backend, String(nvencBitrate(req, video))));
   }
   if (req.backend !== "vaapi") args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");
   args.push("-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
@@ -691,6 +689,13 @@ export function subtitleEncodeArgs(report: InspectionReport): string[] {
   if (flags.length === 0 || flags.every((text) => !text)) return ["-c:s", "copy"];
   if (flags.every(Boolean)) return ["-c:s", "srt"];
   return flags.flatMap((text, index) => ["-c:s:" + String(index), text ? "srt" : "copy"]);
+}
+
+function sizeModeRateControl(backend: OptimizeRequest["backend"], bitrate: string): string[] {
+  if (backend === "vaapi") {
+    return ["-rc_mode", "CBR", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate];
+  }
+  return ["-rc", "cbr", "-rc-lookahead", "32", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate];
 }
 
 export function nvencBitrate(req: OptimizeRequest, video: ExecutablePlan["video"] | undefined): number {

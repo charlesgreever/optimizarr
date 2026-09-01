@@ -456,7 +456,7 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("p010le");
   });
 
-  it("uses VBR so CUDA size-mode AV1 honors the same bitrate as HEVC", () => {
+  it("uses CBR so CUDA size-mode AV1 and HEVC share a hard bitrate cap", () => {
     const targetBytes = 5 * 1024 ** 3;
     const durationSec = 3600;
     const report: InspectionReport = {
@@ -518,10 +518,13 @@ describe("ffmpeg encode arguments", () => {
         category: "movie1080p",
       },
     });
-    expect(hevc[hevc.indexOf("-rc") + 1]).toBe("vbr");
+    expect(hevc[hevc.indexOf("-rc") + 1]).toBe("cbr");
+    expect(hevc[hevc.indexOf("-rc-lookahead") + 1]).toBe("32");
+    expect(hevc[hevc.indexOf("-bufsize") + 1]).toBe(hevc[hevc.indexOf("-b:v") + 1]);
     expect(av1).toContain("av1_nvenc");
-    expect(av1[av1.indexOf("-rc") + 1]).toBe("vbr");
+    expect(av1[av1.indexOf("-rc") + 1]).toBe("cbr");
     expect(av1[av1.indexOf("-b:v") + 1]).toBe(hevc[hevc.indexOf("-b:v") + 1]);
+    expect(av1[av1.indexOf("-bufsize") + 1]).toBe(av1[av1.indexOf("-b:v") + 1]);
   });
 
   it("does not pass HEVC main10 when encoding 10-bit AV1", () => {
@@ -814,7 +817,8 @@ describe("ffmpeg encode arguments", () => {
     const expected = videoBitrateForTarget({ targetBytes, durationSec, audioBitrateBps: 0 });
     expect(bitrate).toBe(expected);
     expect(args[args.indexOf("-maxrate") + 1]).toBe(String(expected));
-    expect(args[args.indexOf("-bufsize") + 1]).toBe(String(expected * 2));
+    expect(args[args.indexOf("-bufsize") + 1]).toBe(String(expected));
+    expect(args[args.indexOf("-rc") + 1]).toBe("cbr");
     expect(bitrate).toBeGreaterThan(15_000_000);
     expect(bitrate).toBeLessThan(25_000_000);
   });
