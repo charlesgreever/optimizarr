@@ -2,8 +2,8 @@
 export const SIZE_CAP_TOLERANCE = 0.05;
 /** Fraction of the file-size target left unused so CBR/VBR overshoot still lands under the cap. */
 const ENCODER_SLACK = 0.2;
-/** NVENC AV1 CBR still overshot requested bitrate by ~1.6x (2.48 GB/hr sidecar vs ~2.0 GB/hr cap). */
-const AV1_BITRATE_SCALE = 0.7;
+/** NVENC AV1 CBR: 1.0→2.48 GB/hr, 0.7→2.20 GB/hr vs a ~2.0 GB/hr cap. Scale is not 1:1. */
+const AV1_BITRATE_SCALE = 0.5;
 const MUX_OVERHEAD_BYTES = 8_000_000;
 const MIN_VIDEO_BPS = 800_000;
 const MAX_VIDEO_BPS = 300_000_000;

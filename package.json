@@ -1,6 +1,6 @@
 {
   "name": "polisharr",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "private": true,
   "type": "module",
   "description": "Companion Arr app that inspects Radarr/Sonarr libraries and optimizes media",

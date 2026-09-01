@@ -524,7 +524,7 @@ describe("ffmpeg encode arguments", () => {
     expect(hevc[hevc.indexOf("-bufsize") + 1]).toBe(String(Number(hevc[hevc.indexOf("-b:v") + 1]) * 2));
     expect(av1).toContain("av1_nvenc");
     expect(av1[av1.indexOf("-rc") + 1]).toBe("cbr");
-    expect(Number(av1[av1.indexOf("-b:v") + 1])).toBe(Math.round(Number(hevc[hevc.indexOf("-b:v") + 1]) * 0.7));
+    expect(Number(av1[av1.indexOf("-b:v") + 1])).toBe(Math.round(Number(hevc[hevc.indexOf("-b:v") + 1]) * 0.5));
     expect(av1[av1.indexOf("-bufsize") + 1]).toBe(String(Number(av1[av1.indexOf("-b:v") + 1]) * 2));
   });
 
