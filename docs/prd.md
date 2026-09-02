@@ -63,6 +63,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 33a. As a library owner, I want each series header to show how many episodes are healthy and how many still have suggestions, so that I can scan a show without expanding it.
 33b. As a library owner, I want an Encode target dropdown on each series header that applies to every episode, including later imports, so that a show can use a different codec than Settings.
 33c. As a library owner, I want a Preferred audio dropdown on each series header (house default, prefer stereo, or keep surround), so that a kids show with 5.1 becomes stereo-only without changing the house Atmos-add rule.
+33d. As a library owner, I want the series header healthy and suggestion counts to update when I change Encode target or Preferred audio, so that I can see the new work without expanding the show or refreshing the library.
 34. As a library owner, I want posters synced from the Arr APIs and served through Polisharr, so that the browser never needs an Arr API key.
 35. As a library owner, I want a missing poster to be a neutral placeholder, so that a broken image does not break the table.
 36. As a library owner, I want each title to show which Arr instance it came from, so that a 4K copy and a 1080p copy are not mixed up.

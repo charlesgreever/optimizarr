@@ -537,7 +537,7 @@ export function createApp(opts: AppOptions) {
     if (raw !== null && raw !== "" && !target) return c.json({ error: "Encode target must be HEVC, AV1, or house default." }, 400);
     store.setItemVideoTarget(item.id, target);
     recomputeSuggestion(item.id);
-    return c.json({ ok: true, item: library.item(item.id, true)! });
+    return c.json({ ok: true, item: library.item(item.id, true)!, ...store.movieHealth() });
   });
 
   app.post("/api/library/series/:instanceId/:seriesId/video-target", async (c) => {
@@ -554,7 +554,7 @@ export function createApp(opts: AppOptions) {
     if (raw !== null && raw !== "" && !target) return c.json({ error: "Encode target must be HEVC, AV1, or house default." }, 400);
     store.setSeriesVideoTarget(instanceId, seriesId, target);
     for (const episode of episodes) recomputeSuggestion(episode.id);
-    return c.json({ ok: true, videoTarget: target });
+    return c.json({ ok: true, videoTarget: target, ...store.seriesHealth(instanceId, seriesId) });
   });
 
   app.post("/api/library/series/:instanceId/:seriesId/audio-mix", async (c) => {
@@ -571,7 +571,7 @@ export function createApp(opts: AppOptions) {
     if (raw !== null && raw !== "" && !mix) return c.json({ error: "Audio mix must be stereo, surround, or house default." }, 400);
     store.setSeriesAudioMix(instanceId, seriesId, mix);
     for (const episode of episodes) recomputeSuggestion(episode.id);
-    return c.json({ ok: true, audioMix: mix });
+    return c.json({ ok: true, audioMix: mix, ...store.seriesHealth(instanceId, seriesId) });
   });
 
   app.get("/api/library/items/:id", async (c) => {

@@ -1499,8 +1499,10 @@ describe("public HTTP behavior", () => {
       body: JSON.stringify({ videoTarget: "av1" }),
     });
     expect(saved.status).toBe(200);
-    const body = (await saved.json()) as { item?: { videoTarget?: string } };
+    const body = (await saved.json()) as { item?: { videoTarget?: string }; healthyCount?: number; suggestionCount?: number };
     expect(body.item?.videoTarget).toBe("av1");
+    expect(body.healthyCount).toBe(0);
+    expect(body.suggestionCount).toBe(1);
     const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
       items: Array<{ after?: { codec?: string } }>;
     };
@@ -1585,11 +1587,13 @@ describe("public HTTP behavior", () => {
       body: JSON.stringify({ videoTarget: "av1" }),
     });
     expect(saved.status).toBe(200);
-    expect(((await saved.json()) as { videoTarget?: string }).videoTarget).toBe("av1");
+    expect(await saved.json()).toMatchObject({ videoTarget: "av1", healthyCount: 0, suggestionCount: 1 });
     const series = (await (await created.app.request("/api/library/series", { headers })).json()) as {
-      items: Array<{ videoTarget?: string | null }>;
+      items: Array<{ videoTarget?: string | null; healthyCount?: number; suggestionCount?: number }>;
     };
     expect(series.items[0]?.videoTarget).toBe("av1");
+    expect(series.items[0]?.healthyCount).toBe(0);
+    expect(series.items[0]?.suggestionCount).toBe(1);
     const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
       items: Array<{ after?: { codec?: string } }>;
     };
@@ -1673,6 +1677,7 @@ describe("public HTTP behavior", () => {
       body: JSON.stringify({ audioMix: "stereo" }),
     });
     expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ audioMix: "stereo", healthyCount: 0, suggestionCount: 1 });
     const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
       items: Array<{
         reasons?: string[];

@@ -100,14 +100,9 @@ export function SeriesPage() {
             houseVideoTarget={houseVideoTarget}
             av1Available={av1Available}
             onMsg={setMsg}
-            onVideoTarget={(videoTarget) => {
+            onPatch={(patch) => {
               setSummaries((current) => current.map((row) => (
-                row.key === summary.key ? { ...row, videoTarget } : row
-              )));
-            }}
-            onAudioMix={(audioMix) => {
-              setSummaries((current) => current.map((row) => (
-                row.key === summary.key ? { ...row, audioMix } : row
+                row.key === summary.key ? { ...row, ...patch } : row
               )));
             }}
           />
@@ -132,8 +127,7 @@ function SeriesGroup({
   houseVideoTarget,
   av1Available,
   onMsg,
-  onVideoTarget,
-  onAudioMix,
+  onPatch,
 }: {
   summary: SeriesSummary;
   focusId: string | null;
@@ -141,8 +135,7 @@ function SeriesGroup({
   houseVideoTarget: "hevc" | "av1";
   av1Available: boolean;
   onMsg: (msg: string) => void;
-  onVideoTarget: (videoTarget: "hevc" | "av1" | null) => void;
-  onAudioMix: (audioMix: "stereo" | "surround" | null) => void;
+  onPatch: (patch: Partial<SeriesSummary>) => void;
 }) {
   const [open, setOpen] = useState(Boolean(focusId));
   const [episodes, setEpisodes] = useState<LibraryRow[]>([]);
@@ -279,8 +272,12 @@ function SeriesGroup({
           houseTarget={houseVideoTarget}
           av1Available={av1Available}
           onChange={(videoTarget) => {
-            void api.setSeriesVideoTarget(summary.instanceId, summary.arrSeriesId, videoTarget).then(() => {
-              onVideoTarget(videoTarget);
+            void api.setSeriesVideoTarget(summary.instanceId, summary.arrSeriesId, videoTarget).then((result) => {
+              onPatch({
+                videoTarget,
+                healthyCount: result.healthyCount,
+                suggestionCount: result.suggestionCount,
+              });
               onMsg("Encode target saved.");
               if (open) void refreshLoaded();
             }).catch((cause: Error) => onMsg(cause.message));
@@ -289,8 +286,12 @@ function SeriesGroup({
         <AudioMixSelect
           value={summary.audioMix ?? null}
           onChange={(audioMix) => {
-            void api.setSeriesAudioMix(summary.instanceId, summary.arrSeriesId, audioMix).then(() => {
-              onAudioMix(audioMix);
+            void api.setSeriesAudioMix(summary.instanceId, summary.arrSeriesId, audioMix).then((result) => {
+              onPatch({
+                audioMix,
+                healthyCount: result.healthyCount,
+                suggestionCount: result.suggestionCount,
+              });
               onMsg("Preferred audio saved.");
               if (open) void refreshLoaded();
             }).catch((cause: Error) => onMsg(cause.message));

@@ -119,14 +119,14 @@ export const api = {
   stereo: (id: string) => req(`/api/library/items/${id}/stereo`, { method: "POST" }),
   exempt: (id: string, exempt: boolean) => req(`/api/library/items/${id}/exempt`, { method: "POST", body: JSON.stringify({ exempt }) }),
   setItemVideoTarget: (id: string, videoTarget: "hevc" | "av1" | null) =>
-    req<{ item: LibraryRow }>(`/api/library/items/${id}/video-target`, { method: "POST", body: JSON.stringify({ videoTarget }) }),
+    req<{ item: LibraryRow; healthyCount: number; suggestionCount: number }>(`/api/library/items/${id}/video-target`, { method: "POST", body: JSON.stringify({ videoTarget }) }),
   setSeriesVideoTarget: (instanceId: string, seriesId: number, videoTarget: "hevc" | "av1" | null) =>
-    req<{ videoTarget: "hevc" | "av1" | null }>(
+    req<{ videoTarget: "hevc" | "av1" | null; healthyCount: number; suggestionCount: number }>(
       `/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/video-target`,
       { method: "POST", body: JSON.stringify({ videoTarget }) },
     ),
   setSeriesAudioMix: (instanceId: string, seriesId: number, audioMix: "stereo" | "surround" | null) =>
-    req<{ audioMix: "stereo" | "surround" | null }>(
+    req<{ audioMix: "stereo" | "surround" | null; healthyCount: number; suggestionCount: number }>(
       `/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/audio-mix`,
       { method: "POST", body: JSON.stringify({ audioMix }) },
     ),

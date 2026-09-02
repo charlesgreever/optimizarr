@@ -20,11 +20,13 @@ export function LibraryMediaHeaders({ onQuality, onSize }: { onQuality?: () => v
 export function LibraryMediaCells({
   item,
   onDone,
+  onHealth,
   houseVideoTarget,
   av1Available,
 }: {
   item: LibraryRow;
   onDone: () => void;
+  onHealth?: (health: { healthyCount: number; suggestionCount: number }) => void;
   houseVideoTarget?: "hevc" | "av1";
   av1Available?: boolean;
 }) {
@@ -43,6 +45,7 @@ export function LibraryMediaCells({
         <RowActions
           item={item}
           onDone={onDone}
+          onHealth={onHealth}
           houseVideoTarget={houseVideoTarget}
           av1Available={av1Available}
         />

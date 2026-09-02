@@ -176,6 +176,10 @@ export function MoviesPage() {
                   <LibraryMediaCells
                     item={item}
                     onDone={() => void refreshLoaded()}
+                    onHealth={(health) => {
+                      setHealthyCount(health.healthyCount);
+                      setSuggestionCount(health.suggestionCount);
+                    }}
                     houseVideoTarget={houseVideoTarget}
                     av1Available={av1Available}
                   />

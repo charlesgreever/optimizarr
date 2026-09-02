@@ -12,11 +12,13 @@ const queueBtn =
 export function RowActions({
   item,
   onDone,
+  onHealth,
   houseVideoTarget = "hevc",
   av1Available = false,
 }: {
   item: LibraryRow;
   onDone: () => void;
+  onHealth?: (health: { healthyCount: number; suggestionCount: number }) => void;
   houseVideoTarget?: "hevc" | "av1";
   av1Available?: boolean;
 }) {
@@ -88,7 +90,13 @@ export function RowActions({
           value={item.videoTarget ?? null}
           houseTarget={houseVideoTarget}
           av1Available={av1Available}
-          onChange={(videoTarget) => void run("Encode target saved.", () => api.setItemVideoTarget(item.id, videoTarget))}
+          onChange={(videoTarget) => {
+            void api.setItemVideoTarget(item.id, videoTarget).then((result) => {
+              setMsg("Encode target saved.");
+              onHealth?.(result);
+              onDone();
+            }).catch((error: Error) => setMsg(error.message));
+          }}
         />
       )}
       {msg && <p className="text-xs text-muted">{msg}</p>}

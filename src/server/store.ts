@@ -489,6 +489,29 @@ export class Store {
     };
   }
 
+  seriesHealth(instanceId: string, arrSeriesId: number): { episodeCount: number; healthyCount: number; suggestionCount: number } {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS episode_count,
+              SUM(CASE WHEN EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
+                  THEN 1 ELSE 0 END) AS suggestion_count,
+              SUM(CASE WHEN EXISTS (SELECT 1 FROM inspections ins WHERE ins.item_id = i.id)
+                    AND NOT EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
+                    AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.path = i.path)
+                  THEN 1 ELSE 0 END) AS healthy_count
+       FROM library_items i
+       WHERE i.type = 'episode' AND i.instance_id = ? AND i.arr_series_id = ?`,
+    ).get(instanceId, arrSeriesId) as {
+      episode_count: number;
+      suggestion_count: number | null;
+      healthy_count: number | null;
+    };
+    return {
+      episodeCount: Number(row.episode_count),
+      healthyCount: Number(row.healthy_count ?? 0),
+      suggestionCount: Number(row.suggestion_count ?? 0),
+    };
+  }
+
   librarySnapshot(id: string): LibrarySnapshot | undefined {
     const row = this.db.prepare(
       `SELECT i.*, inst.name AS instance_name, ins.report AS inspection_report,
