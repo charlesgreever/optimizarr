@@ -190,6 +190,8 @@ export type Suggestion = {
   stripAudio: number[];
   keepSubs: number[];
   stripSubs: number[];
+  /** Stream index to downmix when add_stereo is set. Missing means the first kept audio track. */
+  stereoSource?: number;
   /** When false, the job may skip video encode after mux if remaining size meets the cap or kept audio fills it. Missing means encode (older jobs). */
   mustEncode?: boolean;
 };

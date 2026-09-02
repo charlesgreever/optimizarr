@@ -22,7 +22,10 @@ export function suggestionTrackComparison(report: InspectionReport | null, sugge
     ...report.audio.filter((track) => keptAudio.has(track.index)).map(audioTrackLabel),
     ...report.subtitles.filter((track) => keptSubs.has(track.index)).map(subtitleTrackLabel),
   ];
-  if (suggestion.actions.includes("add_stereo")) afterTracks.push("Audio: AAC 2.0 (added)");
+  if (suggestion.actions.includes("add_stereo")) {
+    const replaced = suggestion.stereoSource != null && suggestion.stripAudio.includes(suggestion.stereoSource);
+    afterTracks.push(replaced ? "Audio: AAC 2.0 (replaced)" : "Audio: AAC 2.0 (added)");
+  }
   return {
     nowTracks: [...report.audio.map(audioTrackLabel), ...report.subtitles.map(subtitleTrackLabel)],
     afterTracks,

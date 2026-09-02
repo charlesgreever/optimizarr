@@ -62,7 +62,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 33. As a library owner, I want Optimize all episodes to skip healthy, unread, dismissed, and pending-review episodes, and to tell me how many were queued and how many were skipped, so that I do not invent work or stack jobs.
 33a. As a library owner, I want each series header to show how many episodes are healthy and how many still have suggestions, so that I can scan a show without expanding it.
 33b. As a library owner, I want an Encode target dropdown on each series header that applies to every episode, including later imports, so that a show can use a different codec than Settings.
-33c. As a library owner, I want a Preferred audio dropdown on each series header (house default, prefer stereo, or keep surround), so that a kids show with 5.1 can get stereo without changing the house Atmos rule.
+33c. As a library owner, I want a Preferred audio dropdown on each series header (house default, prefer stereo, or keep surround), so that a kids show with 5.1 becomes stereo-only without changing the house Atmos-add rule.
 34. As a library owner, I want posters synced from the Arr APIs and served through Polisharr, so that the browser never needs an Arr API key.
 35. As a library owner, I want a missing poster to be a neutral placeholder, so that a broken image does not break the table.
 36. As a library owner, I want each title to show which Arr instance it came from, so that a 4K copy and a 1080p copy are not mixed up.
@@ -138,10 +138,10 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 96. As a library owner, I want exemption to apply only to that movie or that episode, so that marking one Ted Lasso episode archival does not exempt the whole show.
 97. As a library owner, I want to clear an exemption from the same row, so that I can later decide the file should meet the cap after all.
 98. As a TV watcher, I want a stereo AAC track suggested when the file has Atmos or more than 5.1, so that a TV without surround can play dialogue.
-98a. As a TV watcher, I want Prefer stereo on a series to suggest AAC stereo whenever the episode is surround (more than 2 channels), so that 5.1 kids shows get a TV mix.
+98a. As a TV watcher, I want Prefer stereo on a series to replace surround with AAC stereo and drop the original mix whenever the episode is surround (more than 2 channels), so that 5.1 kids shows become stereo-only.
 98b. As a TV watcher, I want Keep surround on a series to skip automatic stereo for that show, so that a surround-first title is not nagged.
 99. As a TV watcher, I want adding AAC stereo available on any file that is not already stereo, so that I can add it even when Polisharr did not auto-suggest it.
-100. As a TV watcher, I want the original surround or Atmos track left in the file, so that the living-room AVR still gets the fancy mix.
+100. As a TV watcher, I want house default and Keep surround to leave the original surround or Atmos track in the file, so that the living-room AVR still gets the fancy mix.
 101. As a library owner, I want chapters and attachments copied when we mux or transcode, so that extras and fonts do not disappear.
 102. As a library owner, I want track cleanup and stereo mux to use MKVtoolnix (`mkvmerge`), so that those jobs finish faster than an ffmpeg remux.
 103. As a library owner, I want the AAC stereo stream itself created with ffmpeg and then merged with `mkvmerge`, so that mux stays fast and the TV still gets stereo.

@@ -61,7 +61,9 @@ export function planFromSuggestion(suggestion: Suggestion, writeMode: WriteMode 
   const currentBytes = nowBytes > 0 ? nowBytes : plannedBytes;
   const targetBytes = Math.min(plannedBytes, currentBytes);
   const codec = suggestion.after.codec?.toLowerCase() === "av1" ? "av1" : "hevc";
-  const stereoSource = suggestion.keepAudio[0] ?? 0;
+  const addStereo = suggestion.actions.includes("add_stereo");
+  const stereoSource = suggestion.stereoSource ?? suggestion.keepAudio[0] ?? suggestion.stripAudio[0] ?? 0;
+  const replaceSource = addStereo && suggestion.stripAudio.includes(stereoSource) ? stereoSource : null;
   return {
     origin: "bulk",
     video: transcode
@@ -69,10 +71,12 @@ export function planFromSuggestion(suggestion: Suggestion, writeMode: WriteMode 
       : { kind: "copy" },
     audio: [
       ...suggestion.keepAudio.map((index) => ({ op: "keep" as const, index })),
-      ...suggestion.stripAudio.map((index) => ({ op: "remove" as const, index })),
-      ...(suggestion.actions.includes("add_stereo")
-        ? [{ op: "add_downmix" as const, index: stereoSource, channels: 2 }]
-        : []),
+      ...suggestion.stripAudio.filter((index) => index !== replaceSource).map((index) => ({ op: "remove" as const, index })),
+      ...(replaceSource != null
+        ? [{ op: "replace_downmix" as const, index: replaceSource, channels: 2 }]
+        : addStereo
+          ? [{ op: "add_downmix" as const, index: stereoSource, channels: 2 }]
+          : []),
     ],
     subtitles: [
       ...suggestion.keepSubs.map((index) => ({ op: "keep" as const, index })),
@@ -343,6 +347,7 @@ export function muxPlanArgs(
   const editsSubtitles = plan.subtitles.some((op) => op.op === "remove");
   const args = ["-o", dest];
   if (editsAudio && audio.length) args.push("--audio-tracks", [...new Set(audio)].join(","));
+  else if (editsAudio) args.push("--no-audio");
   if (editsSubtitles && keepSubs.length) args.push("--subtitle-tracks", keepSubs.join(","));
   else if (editsSubtitles) args.push("--no-subtitles");
   for (const op of plan.audio) {

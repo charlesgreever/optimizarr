@@ -92,6 +92,22 @@ describe("mkvmerge arguments", () => {
     expect(langAt).toBeLessThan(stereoAt);
   });
 
+  it("replaces the only surround track with stereo instead of keeping the original mix", () => {
+    const plan = planFromSuggestion({
+      ...suggestion,
+      actions: ["tracks", "add_stereo"],
+      keepAudio: [],
+      stripAudio: [1],
+      stereoSource: 1,
+    });
+    expect(plan.audio).toEqual([{ op: "replace_downmix", index: 1, channels: 2 }]);
+    const args = muxPlanArgs(source, "/tmp/out.mkv", plan, [{ path: "/tmp/stereo.aac", language: "eng" }]);
+    expect(args).toContain("--no-audio");
+    expect(args).not.toContain("--audio-tracks");
+    expect(args.indexOf("--no-audio")).toBeLessThan(args.indexOf(source));
+    expect(args.indexOf("/tmp/stereo.aac")).toBeGreaterThan(args.indexOf(source));
+  });
+
   it("does not expose an unquoted command line when a tool fails", () => {
     const message = formatToolError("mkvmerge", {
       message: `Command failed: mkvmerge -o out.mkv ${source}`,

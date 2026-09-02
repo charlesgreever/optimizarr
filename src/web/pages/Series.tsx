@@ -82,7 +82,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={refreshed} />
       </PageHead>
-      <Help>Series loads show headers first. Expand one show to load its episodes. Encode target on a show chooses HEVC or AV1 for automatic Suggestions on every episode, including later imports. Preferred audio can ask for a stereo track on surround episodes, which is useful for kids TVs, or keep surround only. House default follows Settings. Each header shows how many episodes are healthy and how many still have suggestions. Exempt on an episode keeps that file off the size cap so Polisharr only offers language cleanup and stereo. Optimize all episodes queues that show without expanding it.</Help>
+      <Help>Series loads show headers first. Expand one show to load its episodes. Encode target on a show chooses HEVC or AV1 for automatic Suggestions on every episode, including later imports. Prefer stereo replaces surround with AAC stereo and drops the original mix, which is useful for kids TVs. Keep surround turns that off. House default follows Settings, which adds stereo for Atmos and keeps the original mix. Each header shows how many episodes are healthy and how many still have suggestions. Exempt on an episode keeps that file off the size cap so Polisharr only offers language cleanup and stereo. Optimize all episodes queues that show without expanding it.</Help>
       {summaries.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">

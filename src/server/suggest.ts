@@ -56,26 +56,37 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const cap = settings.sizeCaps[category];
   const lang = normalizeLang(settings.preferredLanguage);
   const onlyWrongLanguage = soleNonPreferredAudio(report.audio, lang);
-  const keepAudio = onlyWrongLanguage
+  let keepAudio = onlyWrongLanguage
     ? report.audio.filter((track) => track.channels > 0)
     : settings.suggestionDefaults.removeNonPreferredAudio
       ? report.audio.filter((t) => shouldKeepAudio(t, lang, report.audio.length))
       : report.audio;
-  const stripAudio = report.audio.filter((t) => !keepAudio.includes(t));
+  const languageStrip = report.audio.filter((t) => !keepAudio.includes(t));
+  let stripAudio = languageStrip;
   const keepSubs = settings.suggestionDefaults.removeNonPreferredSubtitles
     ? report.subtitles.filter((t) => t.language === lang || (t.untagged && report.subtitles.length === 1))
     : report.subtitles;
   const stripSubs = report.subtitles.filter((t) => !keepSubs.includes(t));
+  const surroundToReplace = input.audioMix === "stereo" ? keepAudio.filter((track) => track.channels > 2) : [];
+  if (surroundToReplace.length) {
+    keepAudio = keepAudio.filter((track) => track.channels <= 2);
+    stripAudio = [...stripAudio, ...surroundToReplace];
+  }
   const extraTracks = stripAudio.length + stripSubs.length > 0;
-  const alreadyStereo = report.audio.some((t) => t.channels <= 2 && (t.language === lang || t.language === "und"));
-  const addStereo = shouldSuggestStereo({
-    audio: report.audio,
-    lang,
-    addStereoDefault: settings.suggestionDefaults.addStereo,
-    audioMix: input.audioMix,
-    forceStereo: input.forceStereo,
-    alreadyStereo,
-  });
+  const alreadyStereo = keepAudio.some((t) => t.channels <= 2 && (t.language === lang || t.language === "und"));
+  const addStereo = surroundToReplace.length
+    ? !alreadyStereo
+    : shouldSuggestStereo({
+      audio: report.audio,
+      lang,
+      addStereoDefault: settings.suggestionDefaults.addStereo,
+      audioMix: input.audioMix,
+      forceStereo: input.forceStereo,
+      alreadyStereo,
+    });
+  const stereoSource = addStereo
+    ? surroundToReplace[0]?.index ?? keepAudio.find((track) => track.channels > 2)?.index ?? keepAudio[0]?.index
+    : undefined;
   const extraAudioBitrateBps = addStereo ? typicalAudioBitrateBps({ codec: "aac", channels: 2 }) : 0;
   const hours = report.durationSec > 0 ? report.durationSec / 3600 : 0;
   const scoredBytes = hours > 0 && report.sizePerHourGb > 0
@@ -136,9 +147,15 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   }
   if (remux && /\.iso$/i.test(item.path)) reasons.push("Convert the disc image to MKV.");
   else if (remux) reasons.push("Convert the MP4 container to MKV before any video encode.");
-  if (stripAudio.length) reasons.push("Drop audio tracks that are not in your preferred language.");
+  if (languageStrip.length) reasons.push("Drop audio tracks that are not in your preferred language.");
   if (stripSubs.length) reasons.push("Drop subtitle tracks that are not in your preferred language.");
-  if (addStereo) reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");
+  if (surroundToReplace.length && addStereo) {
+    reasons.push("Replace surround audio with AAC stereo so a TV can play dialogue.");
+  } else if (surroundToReplace.length) {
+    reasons.push("Drop surround audio and keep the stereo track.");
+  } else if (addStereo) {
+    reasons.push("Add an AAC stereo track so a TV can play dialogue without surround.");
+  }
   if (searchLanguage) reasons.push("The only audio track is not in your preferred language.");
 
   const warnings: string[] = [];
@@ -201,6 +218,7 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     stripAudio: stripAudio.map((t) => t.index),
     keepSubs: keepSubs.map((t) => t.index),
     stripSubs: stripSubs.map((t) => t.index),
+    stereoSource,
     mustEncode: transcode ? Boolean(input.forceTranscode || transcodeForCodec) : undefined,
   };
 }

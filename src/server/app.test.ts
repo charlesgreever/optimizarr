@@ -1674,10 +1674,21 @@ describe("public HTTP behavior", () => {
     });
     expect(saved.status).toBe(200);
     const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
-      items: Array<{ reasons?: string[] }>;
+      items: Array<{
+        reasons?: string[];
+        keepAudio?: number[];
+        stripAudio?: number[];
+        actions?: string[];
+        after?: { tracks?: string[] };
+      }>;
     };
     expect(suggestions.items).toHaveLength(1);
-    expect(suggestions.items[0]?.reasons?.some((reason) => /stereo/i.test(reason))).toBe(true);
+    expect(suggestions.items[0]?.actions).toEqual(expect.arrayContaining(["tracks", "add_stereo"]));
+    expect(suggestions.items[0]?.keepAudio).toEqual([]);
+    expect(suggestions.items[0]?.stripAudio).toEqual([1]);
+    expect(suggestions.items[0]?.reasons?.some((reason) => /Replace surround/i.test(reason))).toBe(true);
+    expect(suggestions.items[0]?.after?.tracks?.some((track) => /AAC 2\.0/i.test(track))).toBe(true);
+    expect(suggestions.items[0]?.after?.tracks?.some((track) => /5\.1|ac3/i.test(track))).toBe(false);
   });
 
   it("rejects a do-nothing custom plan with a field error", async () => {

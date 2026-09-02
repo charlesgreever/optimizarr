@@ -156,8 +156,38 @@ describe("suggestion engine", () => {
       audioMix: "surround",
     });
     expect(house?.actions ?? []).not.toContain("add_stereo");
-    expect(kids?.actions).toEqual(["add_stereo"]);
+    expect(kids?.actions).toEqual(["tracks", "add_stereo"]);
+    expect(kids?.keepAudio).toEqual([]);
+    expect(kids?.stripAudio).toEqual([1]);
+    expect(kids?.stereoSource).toBe(1);
+    expect(kids?.reasons.some((reason) => /Replace surround/i.test(reason))).toBe(true);
     expect(surround?.actions ?? []).not.toContain("add_stereo");
+  });
+
+  it("drops surround and keeps existing stereo when the series prefers stereo", () => {
+    const suggestion = buildSuggestion({
+      item: movie,
+      report: report({
+        sizePerHourGb: 1,
+        videoCodec: "hevc",
+        audio: [
+          { index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false },
+          { index: 2, language: "eng", channels: 2, codec: "aac", title: "", untagged: false, commentary: false },
+        ],
+        subtitles: [],
+      }),
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+      audioMix: "stereo",
+    });
+    expect(suggestion?.actions).toEqual(["tracks"]);
+    expect(suggestion?.keepAudio).toEqual([2]);
+    expect(suggestion?.stripAudio).toEqual([1]);
+    expect(suggestion?.actions).not.toContain("add_stereo");
+    expect(suggestion?.reasons.some((reason) => /Drop surround/i.test(reason))).toBe(true);
   });
 
   it("keeps non-preferred audio when automatic audio cleanup is disabled", () => {
