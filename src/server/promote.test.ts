@@ -13,6 +13,19 @@ describe("promotion", () => {
     writeFileSync(output, "NEW-SIDECAR-BYTES");
     await replaceLibraryFile(output, original);
     expect(readFileSync(original, "utf8")).toBe("NEW-SIDECAR-BYTES");
+    expect(existsSync(`${original}.opt-new`)).toBe(false);
+    expect(existsSync(`${original}.opt-old`)).toBe(false);
+  });
+
+  it("replaces a library file whose name contains an ampersand without leaving a sibling staging file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-promote-amp-"));
+    const original = join(dir, "Paw Patrol - S12E10 - Search & Rescue - kitties [WEBDL-1080p EAC3 5.1 AtotIK].mkv");
+    const output = join(dir, "sidecar.mkv");
+    writeFileSync(original, "ORIGINAL-BYTES");
+    writeFileSync(output, "NEW-SIDECAR-BYTES");
+    await replaceLibraryFile(output, original);
+    expect(readFileSync(original, "utf8")).toBe("NEW-SIDECAR-BYTES");
+    expect(existsSync(`${original}.opt-new`)).toBe(false);
   });
 
   it("keeps the original when the staged copy cannot be created", async () => {

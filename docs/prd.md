@@ -192,6 +192,7 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 145. As a library owner, I want to prevent a second job on a title that already has a pending sidecar, so that I do not stack competing outputs.
 146. As a library owner, I want a review UI that compares source vs sidecar metadata (size, codec, duration, tracks, size/hour), so that I can decide Keep or Discard.
 147. As a library owner, I want Keep to replace the original in the library path and delete the old file, so that I do not keep doubles.
+147a. As a library owner, I want Keep to copy the sidecar onto the library path without creating a `.opt-new` sibling in the show folder, so that a Sonarr rescan cannot steal the staging file and fail Keep with a missing-file error.
 148. As a library owner, I want Keep to ask Radarr or Sonarr to refresh the file and then run its renamer, so that codec tokens in the filename (`H264`, `EAC3 5.1`) match the new video and audio, including an extension change to `.mkv`.
 149. As a library owner, I want Keep to notify every configured Plex and Jellyfin that the item changed, so that I do not have to empty trash or analyze by hand.
 150. As a library owner, I want a failed notify after a successful Keep to report the notify failure without rolling back the file replace, so that I do not undo a good promote because Plex was down.

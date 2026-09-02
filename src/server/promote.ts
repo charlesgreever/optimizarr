@@ -56,27 +56,31 @@ export async function clearStagedBackup(destPath: string): Promise<void> {
   await unlink(stagedBackupPath(destPath)).catch(() => undefined);
 }
 
+function isMissing(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
+
 export async function replaceLibraryFile(outputPath: string, destPath: string, originalPath = destPath): Promise<void> {
-  const staged = stagedNewPath(destPath);
+  // Move the original aside, then copy the sidecar onto dest. Do not write dest.opt-new
+  // in the Arr library folder: a series refresh can pick that sibling up and the rename fails with ENOENT.
   const backup = stagedBackupPath(destPath);
-  await copyFile(outputPath, staged);
+  let destMoved = false;
   try {
     await rename(destPath, backup);
-  } catch {
-    // Destination may be a new extension that does not exist yet.
+    destMoved = true;
+  } catch (error) {
+    if (!isMissing(error)) throw error;
   }
   try {
-    await rename(staged, destPath);
+    await copyFile(outputPath, destPath);
   } catch (error) {
-    try {
-      await rename(backup, destPath);
-    } catch {
-      // Best effort restore.
+    if (destMoved) {
+      await rename(backup, destPath).catch(() => undefined);
     }
-    await unlink(staged).catch(() => undefined);
     throw error;
   }
   await unlink(backup).catch(() => undefined);
+  await unlink(stagedNewPath(destPath)).catch(() => undefined);
   if (outputPath !== destPath) await unlink(outputPath).catch(() => undefined);
   if (originalPath !== destPath) await unlink(originalPath).catch(() => undefined);
 }
