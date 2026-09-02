@@ -12,7 +12,7 @@ The first implementation proved the product is right and the execution is not. S
 
 ## Solution
 
-Polisharr is a portable companion container that syncs one or more Radarr and Sonarr libraries over their APIs, using the same network paths those apps report. It inspects each file in the background, compares it to tunable size-per-hour caps (movie vs TV, 1080p vs 4K, HDR vs SDR), and suggests work: transcode to HEVC (AV1 when hardware allows), strip non-preferred and untagged tracks, and add an AAC stereo track when the file is not already stereo.
+Polisharr is a portable companion container that syncs one or more Radarr and Sonarr libraries over their APIs, using the same network paths those apps report. It inspects each file in the background, compares it to tunable size-per-hour caps (movie vs TV, 1080p vs 4K, HDR vs SDR), and suggests work: transcode to HEVC (AV1 when hardware allows), strip non-preferred and untagged tracks, and add an AAC stereo track when the file is not already stereo. A movie or a series can pick HEVC or AV1 independently of the house Encode Target. A series can Prefer stereo on surround episodes, including 5.1, or Keep surround.
 
 I land on a Home dashboard that shows files optimized, space saved, and what still needs attention. I browse Movies and Series as sortable tables with posters. Each row shows the plan for that title. I can act on that row: queue work, add stereo, or mark a sticky size-cap exemption so an archival copy keeps the large video and still gets language cleanup and stereo. Suggestions remains the filtered work list of everything that still needs work. Errors lists every file that could not be read, with the path and the reason.
 
@@ -55,11 +55,14 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 28. As a library owner, I want each row to show current codec, bit depth, resolution, HDR type, quality, size, size-per-hour, audio, and subtitles, so that I can see why it was flagged.
 29. As a library owner, I want each row to show the optimization plan for that title in plain language, so that I do not have to open Suggestions to learn what Polisharr would do.
 30. As a library owner, I want to queue work, add stereo, force a suggestion, or set a size-cap exemption from the movie or episode row, so that I can act where I already am.
+30a. As a library owner, I want an Encode target dropdown on each movie row and movie title page (house default, HEVC, or AV1), so that one film can use AV1 while Settings still suggest HEVC.
 31. As a library owner, I want episode rows to offer the same actions as movie rows, so that Series is not a read-only tree.
 31b. As a library owner, I want two Sonarr episodes that share one file to produce one optimize job and one Review sidecar, and I want both episode rows to say they share that file, so that I do not encode or Keep the same MKV twice.
 32. As a library owner, I want an Optimize all episodes control on the series header, so that I can queue every episode of that show that already has open work.
 33. As a library owner, I want Optimize all episodes to skip healthy, unread, dismissed, and pending-review episodes, and to tell me how many were queued and how many were skipped, so that I do not invent work or stack jobs.
 33a. As a library owner, I want each series header to show how many episodes are healthy and how many still have suggestions, so that I can scan a show without expanding it.
+33b. As a library owner, I want an Encode target dropdown on each series header that applies to every episode, including later imports, so that a show can use a different codec than Settings.
+33c. As a library owner, I want a Preferred audio dropdown on each series header (house default, prefer stereo, or keep surround), so that a kids show with 5.1 can get stereo without changing the house Atmos rule.
 34. As a library owner, I want posters synced from the Arr APIs and served through Polisharr, so that the browser never needs an Arr API key.
 35. As a library owner, I want a missing poster to be a neutral placeholder, so that a broken image does not break the table.
 36. As a library owner, I want each title to show which Arr instance it came from, so that a 4K copy and a 1080p copy are not mixed up.
@@ -135,6 +138,8 @@ The UI follows Arr information architecture with a Vision UI-inspired dark glass
 96. As a library owner, I want exemption to apply only to that movie or that episode, so that marking one Ted Lasso episode archival does not exempt the whole show.
 97. As a library owner, I want to clear an exemption from the same row, so that I can later decide the file should meet the cap after all.
 98. As a TV watcher, I want a stereo AAC track suggested when the file has Atmos or more than 5.1, so that a TV without surround can play dialogue.
+98a. As a TV watcher, I want Prefer stereo on a series to suggest AAC stereo whenever the episode is surround (more than 2 channels), so that 5.1 kids shows get a TV mix.
+98b. As a TV watcher, I want Keep surround on a series to skip automatic stereo for that show, so that a surround-first title is not nagged.
 99. As a TV watcher, I want adding AAC stereo available on any file that is not already stereo, so that I can add it even when Polisharr did not auto-suggest it.
 100. As a TV watcher, I want the original surround or Atmos track left in the file, so that the living-room AVR still gets the fancy mix.
 101. As a library owner, I want chapters and attachments copied when we mux or transcode, so that extras and fonts do not disappear.

@@ -23,6 +23,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Home shows a Status strip, large files-optimized and space-saved tiles, and links into Suggestions, Queue, Review, and Errors. Direct write counts in the tallies the same way Keep does.
 - Settings uses stacked labels and everyday size-cap names. Title-page audio actions keep a fixed-width dropdown so Keep and Replace with downmix do not jump.
 - Series headers show episode total, how many are healthy, and how many still have suggestions. Movies shows the same three counts for the whole Radarr library, not just the loaded page.
+- Lets a movie or a whole show pick HEVC or AV1 for automatic Suggestions without changing the house Encode Target. A series header can Prefer stereo (including 5.1 kids shows) or Keep surround.
 - Suggestion, Errors, and Queue titles open the same detail page as Movies and Series
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in. mkvmerge and ffmpeg run with a UTF-8 locale so titles such as 烧烤 are not truncated.
@@ -81,6 +82,22 @@ Under **Default suggestion operations**, **Convert MP4 to MKV** is off by defaul
 | `PORT` | `7373` | Listen port |
 | `POLISHARR_WIDGET_KEY` | unset | Optional Homepage widget key |
 | `POLISHARR_TRUST_PROXY` | unset | Set to `1` only behind a trusted reverse proxy |
+
+## Encode target and preferred audio
+
+Settings **Target** under Encode is the house codec for automatic Suggestions: HEVC, or AV1 when the GPU can encode it. **Transcode video below Target Encode** flags H.264, MPEG-2, VC-1, and similar codecs even when the file is under its size cap. When the target is AV1, it also flags HEVC. Already-AV1 files stay as they are.
+
+Each movie row and that movie's title page have **Encode target**. Pick HEVC, AV1, or **House default** to follow Settings. Saving recomputes the automatic suggestion for that film. The Codec control on a custom title plan is only for the job you queue there.
+
+A series header has the same **Encode target**. It applies to every episode of that show, including files Sonarr imports later. Episode rows have no codec dropdown.
+
+Series headers also have **Preferred audio**:
+
+- **House default** follows Settings **Add stereo from surround audio**. The house rule suggests AAC stereo for Atmos, TrueHD, EAC3, or more than 5.1.
+- **Prefer stereo** suggests AAC stereo on any surround episode, including 5.1 kids shows. The original mix stays in the file.
+- **Keep surround** turns automatic stereo off for that show.
+
+Add stereo on a row still works for one episode. Queue still writes a sidecar. Keep still replaces the library file.
 
 ## Run locally
 
