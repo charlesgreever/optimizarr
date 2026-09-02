@@ -51,26 +51,4 @@ export async function testJellyfin(url: string, token: string, httpFetch: typeof
   }
 }
 
-export async function refreshArr(
-  kind: "radarr" | "sonarr",
-  url: string,
-  apiKey: string,
-  arrId: number,
-  httpFetch: typeof fetch,
-): Promise<string | null> {
-  try {
-    const path = kind === "radarr" ? `/api/v3/command` : `/api/v3/command`;
-    const body = kind === "radarr"
-      ? { name: "RefreshMovie", movieIds: [arrId] }
-      : { name: "RefreshSeries", seriesId: arrId };
-    const res = await httpFetch(`${trimUrl(url)}${path}`, {
-      method: "POST",
-      headers: { "X-Api-Key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return `The Arr refresh returned HTTP ${res.status}. The new file is already in place.`;
-    return null;
-  } catch {
-    return "The Arr could not be reached after Keep. The new file is already in place.";
-  }
-}
+

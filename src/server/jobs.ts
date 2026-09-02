@@ -11,7 +11,7 @@ import { clearStagedBackup, promote, promotedPath, recoverStagedReplace, type Pr
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
 import { profileAssignmentEligible } from "./types.ts";
 import { isoInspectionLooksStale } from "./inspect.ts";
-import { refreshArr } from "./notify.ts";
+import { refreshAndRenameArr } from "./arr.ts";
 
 export type JobServiceOptions = {
   store: Store;
@@ -21,6 +21,7 @@ export type JobServiceOptions = {
   tools: { ffmpeg: string; ffprobe: string; mkvmerge: string };
   decrypt: (packed: string) => string;
   fetch: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
   reinspectChangedItem: (itemId: string, oldPath: string) => Promise<{ ok: true } | { ok: false; warning: string }>;
   inspectOne?: (itemId: string) => Promise<{ ok: true; report: InspectionReport } | { ok: false; warning: string }>;
   promote?: (input: PromoteInput) => Promise<PromoteResult>;
@@ -564,15 +565,31 @@ export class JobService {
       this.opts.store.markKeptSize(sibling.id, sizeBytes);
     }
     const warnings: string[] = [];
+    const instance = this.opts.store.getInstance(item.instanceId);
+    if (instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
+      const renamed = await refreshAndRenameArr({
+        kind: instance.kind,
+        url: instance.url,
+        apiKey: this.opts.decrypt(instance.secret),
+        movieId: instance.kind === "radarr" ? item.arrId : undefined,
+        seriesId: instance.kind === "sonarr" ? (item.arrSeriesId ?? undefined) : undefined,
+        episodeFileId: item.arrEpisodeFileId,
+        currentPath: destPath,
+        fetch: this.opts.fetch,
+        sleep: this.opts.sleep,
+        now: this.opts.clock,
+      });
+      if (renamed.warning) warnings.push(renamed.warning);
+      if (renamed.path && renamed.path !== destPath && await fileExists(renamed.path)) {
+        for (const sibling of targets) {
+          this.opts.store.updateItemFile(sibling.id, renamed.path, sizeBytes);
+          this.opts.store.markKeptSize(sibling.id, sizeBytes);
+        }
+      }
+    }
     for (const sibling of targets) {
       const result = await this.opts.reinspectChangedItem(sibling.id, oldPath);
       if (!result.ok) warnings.push(`The new file could not be inspected: ${result.warning}`);
-    }
-    const instance = this.opts.store.getInstance(item.instanceId);
-    if (instance?.secret && (instance.kind === "radarr" || instance.kind === "sonarr")) {
-      const arrId = instance.kind === "sonarr" ? (item.arrSeriesId ?? item.arrId) : item.arrId;
-      const msg = await refreshArr(instance.kind, instance.url, this.opts.decrypt(instance.secret), arrId, this.opts.fetch);
-      if (msg) warnings.push(msg);
     }
     return { warning: warnings.length > 0 ? warnings.join(" ") : null };
   }

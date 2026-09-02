@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -254,6 +254,70 @@ describe("interrupted Keep recovery", () => {
     await vi.waitFor(() => expect(ctx.store.getReview("rev-1")).toBeUndefined());
     expect(readFileSync(ctx.sourcePath, "utf8")).toBe("SIDECAR!!!");
     expect(ctx.store.getJob("job-1")?.promoteError).toMatch(/HTTP 500/);
+    jobs.stop();
+    ctx.close();
+  });
+
+  it("asks Radarr to rename after Keep and stores the new library path", async () => {
+    const ctx = setup();
+    const oldPath = join(ctx.dir, "Film [WEBRip-1080p EAC3 5.1].mkv");
+    const newPath = join(ctx.dir, "Film [WEBRip-1080p AAC 2.0].mkv");
+    writeFileSync(oldPath, "ORIGINAL!");
+    ctx.store.updateItemFile(ctx.itemId, oldPath, 9);
+    ctx.store.upsertInstance({
+      id: ctx.store.listInstances()[0]?.id,
+      kind: "radarr",
+      name: "Radarr",
+      url: "http://radarr",
+      secret: "enc",
+      enabled: true,
+    });
+    writeFileSync(ctx.sidecarPath, "SIDECAR!!!");
+    ctx.store.insertReview({
+      id: "rev-1",
+      jobId: "job-1",
+      itemId: ctx.itemId,
+      displayTitle: "Film",
+      status: "pending",
+      flagged: false,
+      flagReason: null,
+      sourcePath: oldPath,
+      sidecarPath: ctx.sidecarPath,
+      ...compare(9, 6),
+      error: null,
+    });
+    const jobs = new JobService({
+      ...ctx.base,
+      decrypt: () => "k",
+      sleep: async () => undefined,
+      fetch: (async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = init?.body ? JSON.parse(String(init.body)) as { name?: string } : {};
+        if (method === "POST" && body.name === "RefreshMovie") {
+          return new Response(JSON.stringify({ id: 1, status: "completed" }), { status: 201 });
+        }
+        if (url.includes("/api/v3/rename?")) {
+          return new Response(JSON.stringify([
+            { movieId: 10, movieFileId: 55, existingPath: oldPath, newPath },
+          ]));
+        }
+        if (method === "POST" && body.name === "RenameFiles") {
+          renameSync(oldPath, newPath);
+          return new Response(JSON.stringify({ id: 2, status: "completed" }), { status: 201 });
+        }
+        if (url.endsWith("/api/v3/movie/10")) {
+          return new Response(JSON.stringify({ movieFile: { id: 55, path: newPath } }));
+        }
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
+    });
+    const keep = await jobs.keep("rev-1");
+    expect(keep).toEqual({ accepted: true });
+    await vi.waitFor(() => expect(ctx.store.getReview("rev-1")).toBeUndefined());
+    expect(existsSync(newPath)).toBe(true);
+    expect(existsSync(oldPath)).toBe(false);
+    expect(ctx.store.getItem(ctx.itemId)?.path).toBe(newPath);
     jobs.stop();
     ctx.close();
   });
