@@ -581,7 +581,7 @@ describe("public HTTP behavior", () => {
     const queuedBody = (await queued.json()) as { id: string };
     expect(ctx.store.getJob(queuedBody.id)).toMatchObject({
       writeMode: "direct",
-      plan: { origin: "bulk", writeMode: "direct" },
+      plan: { origin: "bulk", writeMode: "direct", writeModeLocked: false },
     });
     await vi.waitFor(() => expect(["failed", "succeeded"]).toContain(ctx.store.getJob(queuedBody.id)?.status));
   });

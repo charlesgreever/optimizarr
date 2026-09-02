@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planHasVideoTranscode, profileAssignmentEligible } from "./types.ts";
+import { effectiveWriteMode, planHasVideoTranscode, profileAssignmentEligible } from "./types.ts";
 import type { ExecutablePlan } from "./types.ts";
 
 function plan(over: Partial<ExecutablePlan> = {}): ExecutablePlan {
@@ -41,6 +41,14 @@ describe("executable plans", () => {
     const custom = plan({ origin: "custom", writeMode: "direct" });
     expect(custom.origin).toBe("custom");
     expect(custom.writeMode).toBe("direct");
+  });
+
+  it("follows house write mode unless the plan locked sidecar or direct write", () => {
+    expect(effectiveWriteMode(plan(), "direct")).toBe("direct");
+    expect(effectiveWriteMode(plan({ origin: "custom", writeMode: "direct" }), "sidecar")).toBe("direct");
+    expect(effectiveWriteMode(plan({ writeMode: "sidecar", writeModeLocked: false }), "direct")).toBe("direct");
+    expect(effectiveWriteMode(plan({ writeMode: "sidecar", writeModeLocked: true }), "direct")).toBe("sidecar");
+    expect(effectiveWriteMode(plan({ writeMode: "direct", writeModeLocked: true }), "sidecar")).toBe("direct");
   });
 
   it("assigns profiles only for enabled, non-exempt video transcodes", () => {

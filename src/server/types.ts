@@ -361,6 +361,8 @@ export type ExecutablePlan = {
   // Jobs saved before MP4 conversion omit this field and retain the old encode path.
   remuxInput?: boolean;
   writeMode: WriteMode;
+  /** When true, Keep this write mode even if Settings later change. Queue new Arr imports locks sidecar. */
+  writeModeLocked?: boolean;
   warning: string | null;
   reasons: string[];
   estimatedOutputBytes: number | null;
@@ -369,6 +371,13 @@ export type ExecutablePlan = {
 
 export function planHasVideoTranscode(plan: ExecutablePlan): boolean {
   return plan.video.kind !== "copy";
+}
+
+export function effectiveWriteMode(plan: ExecutablePlan, house: WriteMode): WriteMode {
+  if (plan.writeModeLocked === true) return plan.writeMode;
+  if (plan.writeModeLocked === false) return house;
+  if (plan.origin === "custom") return plan.writeMode;
+  return house;
 }
 
 export function profileAssignmentEligible(opts: {

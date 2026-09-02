@@ -9,7 +9,7 @@ import { aggressiveTargetBytes, missedOutputTarget } from "./size-budget.ts";
 import { classifyInterruptedKeep, KEEP_INTERRUPTED, SIDECAR_GONE } from "./review-recovery.ts";
 import { clearStagedBackup, promote, promotedPath, recoverStagedReplace, type PromoteInput, type PromoteResult } from "./promote.ts";
 import { assignProfile, PROFILE_NAMES } from "./arr-profiles.ts";
-import { profileAssignmentEligible } from "./types.ts";
+import { effectiveWriteMode, profileAssignmentEligible } from "./types.ts";
 import { isoInspectionLooksStale } from "./inspect.ts";
 import { refreshAndRenameArr } from "./arr.ts";
 
@@ -41,6 +41,7 @@ export class JobService {
   start(): void {
     this.opts.store.recoverInterruptedJobs();
     void this.recoverInterruptedKeeps();
+    void this.tick();
     this.timer = setInterval(() => void this.tick(), 500);
   }
 
@@ -65,8 +66,9 @@ export class JobService {
     }
     const options = typeof runNowOrOpts === "boolean" ? { runNow: runNowOrOpts } : runNowOrOpts;
     const id = randomUUID();
+    const locked = options.writeMode !== undefined;
     const writeMode = options.writeMode ?? this.opts.store.getSettings().writeMode;
-    const plan = planFromSuggestion(suggestion, writeMode);
+    const plan = { ...planFromSuggestion(suggestion, writeMode), writeModeLocked: locked };
     this.opts.store.insertJob({
       id,
       itemId,
@@ -183,8 +185,7 @@ export class JobService {
   }
 
   private applySchedule(settings: Settings): void {
-    if (!settings.offPeakEnabled) return;
-    const inWindow = insideWindow(settings.offPeakStart, settings.offPeakEnd, new Date(this.now()));
+    const inWindow = !settings.offPeakEnabled || insideWindow(settings.offPeakStart, settings.offPeakEnd, new Date(this.now()));
     for (const job of this.opts.store.listJobs()) {
       if (job.status === "queued" && !inWindow && !job.runNow) {
         this.opts.store.updateJob(job.id, { status: "held", phase: "held" });
@@ -213,7 +214,9 @@ export class JobService {
     this.opts.store.updateJob(id, { status: "running", phase: "muxing", progress: 0.05 });
     try {
       const hardware = await this.opts.hardware();
-      const plan = resolvePlan(job.plan, job.writeMode);
+      const resolved = resolvePlan(job.plan, job.writeMode);
+      const writeMode = effectiveWriteMode(resolved, settings.writeMode);
+      const plan = { ...resolved, writeMode };
       const result = await this.opts.optimizer({
         sourcePath: item.path,
         reviewDir: settings.reviewPath,

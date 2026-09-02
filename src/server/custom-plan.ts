@@ -32,7 +32,8 @@ export function validateCustomPlan(input: CustomPlanInput): CustomPlanResult {
   const listed = report.listingState === "complete";
   const iso = isIsoPath(item.path);
   const videoDraft = draft.video ?? { mode: "copy" as const };
-  const writeMode = resolveWriteMode(settings.writeMode, draft.writeMode);
+  const write = resolveWriteMode(settings.writeMode, draft.writeMode);
+  const writeMode = write.writeMode;
 
   if (!listed && draft.audio?.some((c) => c.action !== "keep")) {
     errors.push({ field: "audio", message: "Track edits are unavailable until streams can be listed." });
@@ -64,6 +65,7 @@ export function validateCustomPlan(input: CustomPlanInput): CustomPlanResult {
     container: "mkv",
     remuxInput: false,
     writeMode,
+    writeModeLocked: write.locked,
     warning: videoWarning(report, video),
     reasons: planReasons({ iso: remux, video, audio: audioOps, subtitles: subOps, writeMode, globalWrite: settings.writeMode, report }),
     estimatedOutputBytes: estimateOutputBytes(report, video),
@@ -87,9 +89,9 @@ export function estimateOutputBytes(report: InspectionReport, video: VideoIntent
   return Math.round(clamp(raw, report.sizeBytes * 0.05, report.sizeBytes * 0.98));
 }
 
-function resolveWriteMode(globalMode: WriteMode, override: CustomPlanDraft["writeMode"]): WriteMode {
-  if (override === "sidecar" || override === "direct") return override;
-  return globalMode;
+function resolveWriteMode(globalMode: WriteMode, override: CustomPlanDraft["writeMode"]): { writeMode: WriteMode; locked: boolean } {
+  if (override === "sidecar" || override === "direct") return { writeMode: override, locked: true };
+  return { writeMode: globalMode, locked: false };
 }
 
 function buildVideo(

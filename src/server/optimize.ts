@@ -131,7 +131,7 @@ export type CapacityProbe = (path: string) => Promise<number>;
 
 export function ffmpegOptimizer(options: { capacity?: CapacityProbe } = {}): Optimizer {
   return async (req) => {
-    const plan = resolvePlan(req.plan ?? req.suggestion);
+    const plan = resolvePlan(req.plan ?? req.suggestion, req.plan?.writeMode ?? "sidecar");
     await mkdir(req.reviewDir, { recursive: true });
     const plannedBytes = plan.estimatedOutputBytes ?? req.report.sizeBytes;
     await assertReviewCapacity(req.reviewDir, Math.max(req.report.sizeBytes, plannedBytes) + 256 * 1024 ** 2, options.capacity);

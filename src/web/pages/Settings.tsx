@@ -38,7 +38,7 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
     void api.saveSettings(data).then(() => {
       setMsg("Settings saved.");
       onChange();
-    });
+    }).catch((error: Error) => setMsg(error.message));
   };
 
   if (!data) return <p>Loading settings…</p>;
@@ -78,13 +78,21 @@ export function SettingsPage({ firstRun, onChange }: { firstRun: FirstRun; onCha
         <Field label="Write finished files">
           <select className={FIELD_CONTROL} value={data.writeMode ?? "sidecar"} onChange={(e) => {
             const value = e.target.value;
-            if (value === "sidecar" || value === "direct") setData({ ...data, writeMode: value });
+            if (value !== "sidecar" && value !== "direct") return;
+            const next = { ...data, writeMode: value };
+            setData(next);
+            void api.saveSettings(next).then(() => {
+              setMsg(value === "direct"
+                ? "Direct write saved. Waiting bulk jobs replace the library file after the integrity check."
+                : "Sidecar write saved. Finished copies wait in Review for Keep.");
+              onChange();
+            }).catch((error: Error) => setMsg(error.message));
           }}>
             <option value="sidecar">Sidecar for Review (default)</option>
             <option value="direct">Direct write after integrity check</option>
           </select>
         </Field>
-        <p className="help m-0">Direct write replaces the library file only after the new file passes an integrity check. Arr refresh failures stay as a warning.</p>
+        <p className="help m-0">Direct write replaces the library file only after the new file passes an integrity check. Waiting bulk jobs pick this up when they start. Queue new Arr imports still writes a sidecar. Arr refresh failures stay as a warning.</p>
         <button
           className="btn"
           type="button"

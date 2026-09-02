@@ -514,4 +514,103 @@ describe("job promotion follow-up", () => {
       store.close();
     }
   });
+
+  it("uses Direct write from Settings when a waiting bulk job starts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-house-write-"));
+    const store = new Store(join(dir, "polisharr.db"));
+    const instanceId = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const itemId = `${instanceId}:movie:10`;
+    const sourcePath = join(dir, "movie.mkv");
+    const sidecarPath = join(dir, "sidecar.mkv");
+    writeFileSync(sourcePath, "ORIGINAL");
+    store.saveSettings({
+      ...store.getSettings(),
+      reviewPath: dir,
+      writeMode: "sidecar",
+      offPeakEnabled: true,
+      offPeakStart: "00:00",
+      offPeakEnd: "00:00",
+    });
+    store.upsertItem({
+      id: itemId,
+      instanceId,
+      arrId: 10,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: sourcePath,
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    const report: InspectionReport = {
+      sourceSig: `${sourcePath}|8`,
+      sourceMethod: "ffprobe",
+      listingState: "complete",
+      durationSec: 60,
+      sizeBytes: 8,
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      width: 1920,
+      height: 1080,
+      bitDepth: 8,
+      hdr: "none",
+      audio: [],
+      subtitles: [],
+      hasChapters: false,
+      hasAttachments: false,
+    };
+    store.saveInspection(itemId, report);
+    const jobs = new JobService({
+      store,
+      optimizer: async () => {
+        writeFileSync(sidecarPath, "NEW");
+        return { sidecarPath, output: { ...report, sizeBytes: 3 } };
+      },
+      hardware: async () => ({ backend: "none", cuda: false, vaapi: false, av1: false, reason: null }),
+      tools: { ffmpeg: "ffmpeg", ffprobe: "ffprobe", mkvmerge: "mkvmerge" },
+      decrypt: () => "",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+      reinspectChangedItem: async () => ({ ok: true }),
+    });
+    const queued = jobs.enqueue(itemId, {
+      id: "s1",
+      itemId,
+      actions: ["tracks"],
+      reasons: ["Drop extra languages."],
+      warning: null,
+      category: "movie1080p",
+      estimatedSavingsBytes: null,
+      now: { codec: "hevc", quality: "HD", sizeBytes: 8, sizePerHourGb: 1 },
+      after: { codec: "hevc", quality: null, sizeBytes: null, sizePerHourGb: null },
+      dismissed: false,
+      keepAudio: [],
+      stripAudio: [],
+      keepSubs: [],
+      stripSubs: [],
+    });
+    expect("id" in queued).toBe(true);
+    if (!("id" in queued)) return;
+    expect(store.getJob(queued.id)?.status).toBe("held");
+    store.saveSettings({ ...store.getSettings(), writeMode: "direct", offPeakEnabled: false });
+    jobs.start();
+    try {
+      if (!("id" in queued)) return;
+      await vi.waitFor(() => expect(store.getJob(queued.id)?.status).toBe("succeeded"));
+      expect(readFileSync(sourcePath, "utf8")).toBe("NEW");
+      expect(store.listReviews()).toHaveLength(0);
+    } finally {
+      jobs.stop();
+      store.close();
+    }
+  });
 });

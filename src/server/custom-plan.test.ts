@@ -227,6 +227,7 @@ describe("custom plan validation", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.writeMode).toBe("direct");
+    expect(result.plan.writeModeLocked).toBe(true);
     expect(result.plan.reasons.some((r) => /directly/.test(r))).toBe(true);
   });
 });
