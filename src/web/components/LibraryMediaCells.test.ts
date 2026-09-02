@@ -77,5 +77,11 @@ describe("library media cells", () => {
     expect(html).toContain("aria-label=\"Exempt\"");
     expect(html).toContain("Exempt");
     expect(html).toContain("aria-label=\"Open\"");
+    expect(html).toContain("aria-label=\"Encode target\"");
+  });
+
+  it("does not put an encode target control on episode rows", () => {
+    const html = renderCells(row({ type: "episode", id: "ep-1" }));
+    expect(html).not.toContain("aria-label=\"Encode target\"");
   });
 });

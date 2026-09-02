@@ -118,6 +118,18 @@ export const api = {
   force: (id: string) => req(`/api/library/items/${id}/force`, { method: "POST" }),
   stereo: (id: string) => req(`/api/library/items/${id}/stereo`, { method: "POST" }),
   exempt: (id: string, exempt: boolean) => req(`/api/library/items/${id}/exempt`, { method: "POST", body: JSON.stringify({ exempt }) }),
+  setItemVideoTarget: (id: string, videoTarget: "hevc" | "av1" | null) =>
+    req<{ item: LibraryRow }>(`/api/library/items/${id}/video-target`, { method: "POST", body: JSON.stringify({ videoTarget }) }),
+  setSeriesVideoTarget: (instanceId: string, seriesId: number, videoTarget: "hevc" | "av1" | null) =>
+    req<{ videoTarget: "hevc" | "av1" | null }>(
+      `/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/video-target`,
+      { method: "POST", body: JSON.stringify({ videoTarget }) },
+    ),
+  setSeriesAudioMix: (instanceId: string, seriesId: number, audioMix: "stereo" | "surround" | null) =>
+    req<{ audioMix: "stereo" | "surround" | null }>(
+      `/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/audio-mix`,
+      { method: "POST", body: JSON.stringify({ audioMix }) },
+    ),
   optimizeShow: (instanceId: string, seriesId: number) =>
     req(`/api/library/series/${encodeURIComponent(instanceId)}/${seriesId}/optimize`, { method: "POST" }),
   exclusions: () => req<{ exclusions: Exclusion[] }>("/api/exclusions"),
@@ -144,6 +156,8 @@ export type SeriesSummary = {
   episodeCount: number;
   healthyCount: number;
   suggestionCount: number;
+  videoTarget?: "hevc" | "av1" | null;
+  audioMix?: "stereo" | "surround" | null;
 };
 
 export type FirstRun = { hasAdmin: boolean; languageConfirmed: boolean; hasReviewPath: boolean; hasArr: boolean; complete: boolean };
@@ -195,6 +209,7 @@ export type LibraryRow = {
   path: string;
   sizeBytes: number;
   sizeExempt: boolean;
+  videoTarget?: "hevc" | "av1" | null;
   inspected: boolean;
   mediaState?: "waiting" | "unreadable" | "inspected";
   hasPoster: boolean;

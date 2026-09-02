@@ -1432,6 +1432,254 @@ describe("public HTTP behavior", () => {
     });
   });
 
+  it("lets a movie encode target override the house HEVC target for AV1 suggestions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: true, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "3600" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      fetch: (async (url: string) => {
+        if (String(url).includes("/movie")) {
+          return new Response(JSON.stringify([{
+            id: 10,
+            title: "Already HEVC",
+            path: "/mnt/nas/movies/hevc.mkv",
+            sizeOnDisk: 1_000_000_000,
+            movieFile: { path: "/mnt/nas/movies/hevc.mkv", size: 1_000_000_000, quality: { quality: { name: "Bluray-1080p" } } },
+            images: [],
+          }]));
+        }
+        if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Radarr", version: "5" }));
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "radarr", name: "Radarr", url: "http://radarr:7878", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: join(dir, "review"),
+        videoTarget: "hevc",
+        suggestionDefaults: {
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: true,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      }),
+    });
+    await created.app.request("/api/library/refresh", { method: "POST", headers });
+    await created.inspectPending();
+    expect(((await (await created.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(0);
+    const itemId = created.store.listItems("movie")[0]?.id ?? "";
+    const saved = await created.app.request(`/api/library/items/${itemId}/video-target`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ videoTarget: "av1" }),
+    });
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as { item?: { videoTarget?: string } };
+    expect(body.item?.videoTarget).toBe("av1");
+    const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
+      items: Array<{ after?: { codec?: string } }>;
+    };
+    expect(suggestions.items).toHaveLength(1);
+    expect(suggestions.items[0]?.after?.codec).toBe("AV1");
+  });
+
+  it("lets a series encode target override the house target for every episode", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: true, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "1369" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac", channels: 2, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      fetch: (async (url: string) => {
+        if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Sonarr", version: "4" }));
+        return new Response("[]");
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "sonarr", name: "Sonarr", url: "http://sonarr:8989", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: join(dir, "review"),
+        videoTarget: "hevc",
+        suggestionDefaults: {
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: true,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: false,
+        },
+      }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:episode:10`,
+      instanceId,
+      arrId: 10,
+      arrSeriesId: 42,
+      arrEpisodeFileId: 10,
+      type: "episode",
+      title: "Pilot",
+      showTitle: "Show",
+      season: 1,
+      episode: 1,
+      episodeTitle: "Pilot",
+      path: "/tv/show.mkv",
+      sizeBytes: 1_000_000_000,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    await created.inspectPending();
+    expect(((await (await created.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(0);
+    const saved = await created.app.request(`/api/library/series/${instanceId}/42/video-target`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ videoTarget: "av1" }),
+    });
+    expect(saved.status).toBe(200);
+    expect(((await saved.json()) as { videoTarget?: string }).videoTarget).toBe("av1");
+    const series = (await (await created.app.request("/api/library/series", { headers })).json()) as {
+      items: Array<{ videoTarget?: string | null }>;
+    };
+    expect(series.items[0]?.videoTarget).toBe("av1");
+    const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
+      items: Array<{ after?: { codec?: string } }>;
+    };
+    expect(suggestions.items).toHaveLength(1);
+    expect(suggestions.items[0]?.after?.codec).toBe("AV1");
+  });
+
+  it("lets a series prefer stereo so 5.1 episodes get a stereo suggestion", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opt-"));
+    const env = loadEnv({ CONFIG_DIR: dir, PORT: "7373" });
+    const created = createApp({
+      env,
+      hardware: async () => ({ backend: "cuda", cuda: true, vaapi: false, av1: false, reason: null }),
+      readable: async () => true,
+      probe: async () => ({
+        format: { duration: "1369" },
+        streams: [
+          { codec_type: "video", codec_name: "hevc", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "ac3", channels: 6, tags: { language: "eng" }, index: 1 },
+        ],
+      }),
+      fetch: (async (url: string) => {
+        if (String(url).includes("system/status")) return new Response(JSON.stringify({ appName: "Sonarr", version: "4" }));
+        return new Response("[]");
+      }) as typeof fetch,
+    });
+    apps.push({ store: created.store, app: created });
+    const setupRes = await created.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    await created.app.request("/api/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "sonarr", name: "Sonarr", url: "http://sonarr:8989", apiKey: "k", enabled: true }),
+    });
+    await created.app.request("/api/settings", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        languageConfirmed: true,
+        preferredLanguage: "eng",
+        reviewPath: join(dir, "review"),
+        suggestionDefaults: {
+          transcodeToSizeCap: false,
+          transcodeBelowHevc: false,
+          removeNonPreferredSubtitles: false,
+          removeNonPreferredAudio: false,
+          addStereo: true,
+        },
+      }),
+    });
+    const instanceId = created.store.listInstances()[0]?.id ?? "";
+    created.store.upsertItem({
+      id: `${instanceId}:episode:10`,
+      instanceId,
+      arrId: 10,
+      arrSeriesId: 42,
+      arrEpisodeFileId: 10,
+      type: "episode",
+      title: "Pilot",
+      showTitle: "Kids Show",
+      season: 1,
+      episode: 1,
+      episodeTitle: "Pilot",
+      path: "/tv/kids.mkv",
+      sizeBytes: 1_000_000_000,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    await created.inspectPending();
+    expect(((await (await created.app.request("/api/suggestions", { headers })).json()) as { items: unknown[] }).items).toHaveLength(0);
+    const saved = await created.app.request(`/api/library/series/${instanceId}/42/audio-mix`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ audioMix: "stereo" }),
+    });
+    expect(saved.status).toBe(200);
+    const suggestions = (await (await created.app.request("/api/suggestions", { headers })).json()) as {
+      items: Array<{ reasons?: string[] }>;
+    };
+    expect(suggestions.items).toHaveLength(1);
+    expect(suggestions.items[0]?.reasons?.some((reason) => /stereo/i.test(reason))).toBe(true);
+  });
+
   it("rejects a do-nothing custom plan with a field error", async () => {
     const ctx = await setup();
     apps.push(ctx);

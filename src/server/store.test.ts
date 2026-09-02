@@ -461,4 +461,95 @@ describe("store schema migration", () => {
     store.setFileError("/movies/unreadable.mkv", "unreadable", "Path is unreadable.");
     expect(store.movieHealth()).toEqual({ total: 4, healthyCount: 1, suggestionCount: 1 });
   });
+
+  it("stores a movie encode target and a series encode target that new lookups inherit", () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-codec-target-")), "polisharr.db"));
+    stores.push(store);
+    const radarr = store.upsertInstance({ kind: "radarr", name: "Radarr", url: "http://radarr", secret: null, enabled: true });
+    const sonarr = store.upsertInstance({ kind: "sonarr", name: "Sonarr", url: "http://sonarr", secret: null, enabled: true });
+    const movieId = `${radarr}:movie:1`;
+    store.upsertItem({
+      id: movieId,
+      instanceId: radarr,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/movies/film.mkv",
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    expect(store.videoTargetForItem(store.getItem(movieId)!)).toBeNull();
+    store.setItemVideoTarget(movieId, "av1");
+    expect(store.getItem(movieId)?.videoTarget).toBe("av1");
+    store.upsertItem({
+      id: movieId,
+      instanceId: radarr,
+      arrId: 1,
+      arrSeriesId: null,
+      arrEpisodeFileId: null,
+      type: "movie",
+      title: "Film",
+      showTitle: null,
+      season: null,
+      episode: null,
+      episodeTitle: null,
+      path: "/movies/film.mkv",
+      sizeBytes: 9,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    expect(store.getItem(movieId)?.videoTarget).toBe("av1");
+    store.setItemVideoTarget(movieId, null);
+    expect(store.getItem(movieId)?.videoTarget).toBeNull();
+
+    const episodeId = `${sonarr}:episode:10`;
+    store.upsertItem({
+      id: episodeId,
+      instanceId: sonarr,
+      arrId: 10,
+      arrSeriesId: 42,
+      arrEpisodeFileId: 10,
+      type: "episode",
+      title: "Pilot",
+      showTitle: "Show",
+      season: 1,
+      episode: 1,
+      episodeTitle: "Pilot",
+      path: "/tv/show.mkv",
+      sizeBytes: 8,
+      quality: "HD",
+      resolution: "1080",
+      profile: "HD",
+      tags: [],
+      posterRemoteUrl: null,
+      sizeExempt: false,
+    });
+    expect(store.videoTargetForItem(store.getItem(episodeId)!)).toBeNull();
+    store.setSeriesVideoTarget(sonarr, 42, "hevc");
+    expect(store.getSeriesVideoTarget(sonarr, 42)).toBe("hevc");
+    expect(store.videoTargetForItem(store.getItem(episodeId)!)).toBe("hevc");
+    expect(store.seriesPage(0, 10).rows[0]?.videoTarget).toBe("hevc");
+    store.setSeriesAudioMix(sonarr, 42, "stereo");
+    store.setSeriesVideoTarget(sonarr, 42, null);
+    expect(store.videoTargetForItem(store.getItem(episodeId)!)).toBeNull();
+    expect(store.audioMixForItem(store.getItem(episodeId)!)).toBe("stereo");
+    expect(store.seriesPage(0, 10).rows[0]?.audioMix).toBe("stereo");
+    store.setSeriesAudioMix(sonarr, 42, null);
+    expect(store.audioMixForItem(store.getItem(episodeId)!)).toBeNull();
+  });
 });

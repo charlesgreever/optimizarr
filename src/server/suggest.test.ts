@@ -119,6 +119,47 @@ describe("suggestion engine", () => {
     expect(suggestion?.after.sizePerHourGb).toBeNull();
   });
 
+  it("suggests stereo for 5.1 when the series prefers stereo, and skips Atmos when it prefers surround", () => {
+    const fivePointOne = report({
+      sizePerHourGb: 1,
+      videoCodec: "hevc",
+      audio: [{ index: 1, language: "eng", channels: 6, codec: "ac3", title: "", untagged: false, commentary: false }],
+      subtitles: [],
+    });
+    const house = buildSuggestion({
+      item: movie,
+      report: fivePointOne,
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+    });
+    const kids = buildSuggestion({
+      item: movie,
+      report: fivePointOne,
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+      audioMix: "stereo",
+    });
+    const surround = buildSuggestion({
+      item: movie,
+      report: report({ sizePerHourGb: 1, videoCodec: "hevc" }),
+      settings: DEFAULT_SETTINGS,
+      sizeExempt: true,
+      excluded: false,
+      videoTarget: "hevc",
+      av1Available: false,
+      audioMix: "surround",
+    });
+    expect(house?.actions ?? []).not.toContain("add_stereo");
+    expect(kids?.actions).toEqual(["add_stereo"]);
+    expect(surround?.actions ?? []).not.toContain("add_stereo");
+  });
+
   it("keeps non-preferred audio when automatic audio cleanup is disabled", () => {
     const suggestion = buildSuggestion({
       item: movie,

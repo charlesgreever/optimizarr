@@ -16,6 +16,8 @@ export function MoviesPage() {
   const [total, setTotal] = useState(0);
   const [healthyCount, setHealthyCount] = useState(0);
   const [suggestionCount, setSuggestionCount] = useState(0);
+  const [houseVideoTarget, setHouseVideoTarget] = useState<"hevc" | "av1">("hevc");
+  const [av1Available, setAv1Available] = useState(false);
   const loadingRef = useRef(false);
   const activeSortRef = useRef(sort);
   const currentSortRef = useRef(sort);
@@ -109,6 +111,13 @@ export function MoviesPage() {
     }
   };
   useEffect(() => {
+    void api.settings().then((settings) => {
+      setHouseVideoTarget(settings.videoTarget === "av1" ? "av1" : "hevc");
+    }).catch(() => undefined);
+    void api.hardware().then((hardware) => setAv1Available(Boolean(hardware.av1))).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     currentSortRef.current = sort;
     if (loadingRef.current) {
       pendingSortResetRef.current = activeSortRef.current !== sort;
@@ -122,7 +131,7 @@ export function MoviesPage() {
       <PageHead title="Movies">
         <RefreshLibrary onDone={() => void load(true)} />
       </PageHead>
-      <Help>Each row is one movie. Open a title for custom work. Queue still uses the automatic suggestion. Exempt keeps a large file off the size cap so Polisharr only offers language cleanup and stereo. The header counts every movie, not just this page.</Help>
+      <Help>Each row is one movie. Encode target chooses HEVC or AV1 for automatic Suggestions on that movie. House default follows Settings. Open a title for custom work. Queue still uses the automatic suggestion. Exempt keeps a large file off the size cap so Polisharr only offers language cleanup and stereo. The header counts every movie, not just this page.</Help>
       {total > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted">
           <span>{total} movies</span>
@@ -164,7 +173,12 @@ export function MoviesPage() {
                     </Link>
                     <div className="mt-0.5 text-xs text-muted">{item.instanceName}</div>
                   </td>
-                  <LibraryMediaCells item={item} onDone={() => void refreshLoaded()} />
+                  <LibraryMediaCells
+                    item={item}
+                    onDone={() => void refreshLoaded()}
+                    houseVideoTarget={houseVideoTarget}
+                    av1Available={av1Available}
+                  />
                 </tr>
               ))}
             </tbody>

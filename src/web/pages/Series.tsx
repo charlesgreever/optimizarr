@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, type LibraryRow, type SeriesSummary } from "../api";
 import { Help, PageHead } from "../components/Shell";
 import { RefreshLibrary } from "../components/RefreshLibrary";
+import { AudioMixSelect } from "../components/AudioMixSelect";
+import { EncodeTargetSelect } from "../components/EncodeTargetSelect";
 import { LibraryMediaCells, LibraryMediaHeaders } from "../components/LibraryMediaCells";
 import { Pill } from "../components/ui";
 import { loadRetainedPages, mergePage, needsFocusedPage } from "../library-pages";
@@ -13,6 +15,8 @@ export function SeriesPage() {
   const [msg, setMsg] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [houseVideoTarget, setHouseVideoTarget] = useState<"hevc" | "av1">("hevc");
+  const [av1Available, setAv1Available] = useState(false);
   const loadingRef = useRef(false);
   const pendingResetRef = useRef(false);
   const [searchParams] = useSearchParams();
@@ -44,6 +48,10 @@ export function SeriesPage() {
 
   useEffect(() => {
     void load(true);
+    void api.settings().then((settings) => {
+      setHouseVideoTarget(settings.videoTarget === "av1" ? "av1" : "hevc");
+    }).catch(() => undefined);
+    void api.hardware().then((hardware) => setAv1Available(Boolean(hardware.av1))).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -74,7 +82,7 @@ export function SeriesPage() {
       <PageHead title="Series">
         <RefreshLibrary onDone={refreshed} />
       </PageHead>
-      <Help>Series loads show headers first. Expand one show to load its episodes. Each header shows how many episodes are healthy and how many still have suggestions. Exempt on an episode keeps that file off the size cap so Polisharr only offers language cleanup and stereo. Optimize all episodes queues that show without expanding it.</Help>
+      <Help>Series loads show headers first. Expand one show to load its episodes. Encode target on a show chooses HEVC or AV1 for automatic Suggestions on every episode, including later imports. Preferred audio can ask for a stereo track on surround episodes, which is useful for kids TVs, or keep surround only. House default follows Settings. Each header shows how many episodes are healthy and how many still have suggestions. Exempt on an episode keeps that file off the size cap so Polisharr only offers language cleanup and stereo. Optimize all episodes queues that show without expanding it.</Help>
       {summaries.length === 0 ? (
         <div className="empty">
           <div className="space-y-3">
@@ -89,7 +97,19 @@ export function SeriesPage() {
             summary={summary}
             focusId={focusKey === summary.key ? focus : null}
             refreshVersion={refreshVersion}
+            houseVideoTarget={houseVideoTarget}
+            av1Available={av1Available}
             onMsg={setMsg}
+            onVideoTarget={(videoTarget) => {
+              setSummaries((current) => current.map((row) => (
+                row.key === summary.key ? { ...row, videoTarget } : row
+              )));
+            }}
+            onAudioMix={(audioMix) => {
+              setSummaries((current) => current.map((row) => (
+                row.key === summary.key ? { ...row, audioMix } : row
+              )));
+            }}
           />
         ))
       )}
@@ -109,12 +129,20 @@ function SeriesGroup({
   summary,
   focusId,
   refreshVersion,
+  houseVideoTarget,
+  av1Available,
   onMsg,
+  onVideoTarget,
+  onAudioMix,
 }: {
   summary: SeriesSummary;
   focusId: string | null;
   refreshVersion: number;
+  houseVideoTarget: "hevc" | "av1";
+  av1Available: boolean;
   onMsg: (msg: string) => void;
+  onVideoTarget: (videoTarget: "hevc" | "av1" | null) => void;
+  onAudioMix: (audioMix: "stereo" | "surround" | null) => void;
 }) {
   const [open, setOpen] = useState(Boolean(focusId));
   const [episodes, setEpisodes] = useState<LibraryRow[]>([]);
@@ -246,6 +274,28 @@ function SeriesGroup({
         <button className="btn-secondary" type="button" onClick={toggle}>
           {open ? "Collapse" : "Expand"}
         </button>
+        <EncodeTargetSelect
+          value={summary.videoTarget ?? null}
+          houseTarget={houseVideoTarget}
+          av1Available={av1Available}
+          onChange={(videoTarget) => {
+            void api.setSeriesVideoTarget(summary.instanceId, summary.arrSeriesId, videoTarget).then(() => {
+              onVideoTarget(videoTarget);
+              onMsg("Encode target saved.");
+              if (open) void refreshLoaded();
+            }).catch((cause: Error) => onMsg(cause.message));
+          }}
+        />
+        <AudioMixSelect
+          value={summary.audioMix ?? null}
+          onChange={(audioMix) => {
+            void api.setSeriesAudioMix(summary.instanceId, summary.arrSeriesId, audioMix).then(() => {
+              onAudioMix(audioMix);
+              onMsg("Preferred audio saved.");
+              if (open) void refreshLoaded();
+            }).catch((cause: Error) => onMsg(cause.message));
+          }}
+        />
         <button
           className="btn whitespace-nowrap"
           type="button"

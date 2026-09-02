@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { api, type LibraryRow } from "../api";
+import { EncodeTargetSelect } from "./EncodeTargetSelect";
 import { Icons } from "./icons";
 
 const iconBtn =
@@ -8,7 +9,17 @@ const iconBtn =
 const queueBtn =
   "inline-flex h-11 items-center justify-center gap-1 rounded-lg border border-brand-500 bg-brand-500 px-2.5 text-xs font-semibold text-white transition-colors hover:border-brand-600 hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-40";
 
-export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => void }) {
+export function RowActions({
+  item,
+  onDone,
+  houseVideoTarget = "hevc",
+  av1Available = false,
+}: {
+  item: LibraryRow;
+  onDone: () => void;
+  houseVideoTarget?: "hevc" | "av1";
+  av1Available?: boolean;
+}) {
   const [msg, setMsg] = useState("");
   const locked = Boolean(item.error) || !item.inspected;
   const href = item.href || (item.type === "movie" ? `/movies/${item.id}` : `/series/episodes/${item.id}`);
@@ -72,6 +83,14 @@ export function RowActions({ item, onDone }: { item: LibraryRow; onDone: () => v
           {item.sizeExempt ? "Clear exemption" : "Exempt"}
         </button>
       </div>
+      {item.type === "movie" && (
+        <EncodeTargetSelect
+          value={item.videoTarget ?? null}
+          houseTarget={houseVideoTarget}
+          av1Available={av1Available}
+          onChange={(videoTarget) => void run("Encode target saved.", () => api.setItemVideoTarget(item.id, videoTarget))}
+        />
+      )}
       {msg && <p className="text-xs text-muted">{msg}</p>}
     </div>
   );

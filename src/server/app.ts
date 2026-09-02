@@ -37,6 +37,7 @@ import { testJellyfin, testPlex } from "./notify.ts";
 import { profilePreviews, syncProfiles } from "./arr-profiles.ts";
 import { validateCustomPlan } from "./custom-plan.ts";
 import type { ArrKind, CustomPlanDraft, HardwareInfo, PlayerKind, Settings, Suggestion } from "./types.ts";
+import { parseAudioMix, parseVideoTarget } from "./types.ts";
 import { createInspectionRunner } from "./inspection-runner.ts";
 import { createLibraryReadModel } from "./library-read-model.ts";
 import { shouldQueueNewImport } from "./auto-queue.ts";
@@ -410,9 +411,10 @@ export function createApp(opts: AppOptions) {
       settings,
       sizeExempt: item.sizeExempt,
       excluded,
-      videoTarget: settings.videoTarget,
+      videoTarget: store.videoTargetForItem(item) ?? settings.videoTarget,
       av1Available: hw.av1,
       hardwareAvailable: hw.backend !== "none",
+      audioMix: store.audioMixForItem(item),
     });
     return store.saveSuggestion(itemId, suggestion) ?? null;
   }
@@ -479,7 +481,7 @@ export function createApp(opts: AppOptions) {
       sizeExempt: false,
       excluded: false,
       forceTranscode: true,
-      videoTarget: settings.videoTarget,
+      videoTarget: store.videoTargetForItem(item) ?? settings.videoTarget,
       av1Available: lastHardware.av1,
       hardwareAvailable: lastHardware.backend !== "none",
     });
@@ -506,7 +508,7 @@ export function createApp(opts: AppOptions) {
       sizeExempt: item.sizeExempt,
       excluded: false,
       forceStereo: true,
-      videoTarget: settings.videoTarget,
+      videoTarget: store.videoTargetForItem(item) ?? settings.videoTarget,
       av1Available: lastHardware.av1,
       hardwareAvailable: lastHardware.backend !== "none",
     });
@@ -521,6 +523,55 @@ export function createApp(opts: AppOptions) {
     store.setExempt(c.req.param("id"), Boolean(body.exempt));
     recomputeSuggestion(c.req.param("id"));
     return c.json({ ok: true, item: library.item(c.req.param("id"))! });
+  });
+
+  app.post("/api/library/items/:id/video-target", async (c) => {
+    const item = store.getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "That title is not in the library." }, 404);
+    if (item.type !== "movie") {
+      return c.json({ error: "Set encode target on the series header for TV." }, 400);
+    }
+    const body: unknown = await c.req.json();
+    const raw = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).videoTarget : undefined;
+    const target = raw === null || raw === "" ? null : parseVideoTarget(raw);
+    if (raw !== null && raw !== "" && !target) return c.json({ error: "Encode target must be HEVC, AV1, or house default." }, 400);
+    store.setItemVideoTarget(item.id, target);
+    recomputeSuggestion(item.id);
+    return c.json({ ok: true, item: library.item(item.id, true)! });
+  });
+
+  app.post("/api/library/series/:instanceId/:seriesId/video-target", async (c) => {
+    const seriesId = Number(c.req.param("seriesId"));
+    if (!Number.isSafeInteger(seriesId) || seriesId < 0) return c.json({ error: "That series id is invalid." }, 400);
+    const instanceId = c.req.param("instanceId");
+    const episodes = store.listItems("episode").filter(
+      (episode) => episode.instanceId === instanceId && episode.arrSeriesId === seriesId,
+    );
+    if (episodes.length === 0) return c.json({ error: "That series is not in the library." }, 404);
+    const body: unknown = await c.req.json();
+    const raw = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).videoTarget : undefined;
+    const target = raw === null || raw === "" ? null : parseVideoTarget(raw);
+    if (raw !== null && raw !== "" && !target) return c.json({ error: "Encode target must be HEVC, AV1, or house default." }, 400);
+    store.setSeriesVideoTarget(instanceId, seriesId, target);
+    for (const episode of episodes) recomputeSuggestion(episode.id);
+    return c.json({ ok: true, videoTarget: target });
+  });
+
+  app.post("/api/library/series/:instanceId/:seriesId/audio-mix", async (c) => {
+    const seriesId = Number(c.req.param("seriesId"));
+    if (!Number.isSafeInteger(seriesId) || seriesId < 0) return c.json({ error: "That series id is invalid." }, 400);
+    const instanceId = c.req.param("instanceId");
+    const episodes = store.listItems("episode").filter(
+      (episode) => episode.instanceId === instanceId && episode.arrSeriesId === seriesId,
+    );
+    if (episodes.length === 0) return c.json({ error: "That series is not in the library." }, 404);
+    const body: unknown = await c.req.json();
+    const raw = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).audioMix : undefined;
+    const mix = raw === null || raw === "" ? null : parseAudioMix(raw);
+    if (raw !== null && raw !== "" && !mix) return c.json({ error: "Audio mix must be stereo, surround, or house default." }, 400);
+    store.setSeriesAudioMix(instanceId, seriesId, mix);
+    for (const episode of episodes) recomputeSuggestion(episode.id);
+    return c.json({ ok: true, audioMix: mix });
   });
 
   app.get("/api/library/items/:id", async (c) => {

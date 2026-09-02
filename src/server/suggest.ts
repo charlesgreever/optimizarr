@@ -1,4 +1,5 @@
 import type {
+  AudioMix,
   InspectionReport,
   LibraryItem,
   Settings,
@@ -29,6 +30,7 @@ export type SuggestInput = {
   videoTarget: VideoTarget;
   av1Available: boolean;
   hardwareAvailable?: boolean;
+  audioMix?: AudioMix | null;
 };
 
 export function sizeCategory(item: LibraryItem, report: InspectionReport): SizeCategory {
@@ -66,8 +68,14 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
   const stripSubs = report.subtitles.filter((t) => !keepSubs.includes(t));
   const extraTracks = stripAudio.length + stripSubs.length > 0;
   const alreadyStereo = report.audio.some((t) => t.channels <= 2 && (t.language === lang || t.language === "und"));
-  const layoutNeedsStereo = report.audio.some((t) => t.channels > 6 || /atmos|truehd|eac3/i.test(`${t.codec} ${t.title}`));
-  const addStereo = (input.forceStereo || (settings.suggestionDefaults.addStereo && layoutNeedsStereo)) && !alreadyStereo;
+  const addStereo = shouldSuggestStereo({
+    audio: report.audio,
+    lang,
+    addStereoDefault: settings.suggestionDefaults.addStereo,
+    audioMix: input.audioMix,
+    forceStereo: input.forceStereo,
+    alreadyStereo,
+  });
   const extraAudioBitrateBps = addStereo ? typicalAudioBitrateBps({ codec: "aac", channels: 2 }) : 0;
   const hours = report.durationSec > 0 ? report.durationSec / 3600 : 0;
   const scoredBytes = hours > 0 && report.sizePerHourGb > 0
@@ -195,6 +203,24 @@ export function buildSuggestion(input: SuggestInput): Suggestion | null {
     stripSubs: stripSubs.map((t) => t.index),
     mustEncode: transcode ? Boolean(input.forceTranscode || transcodeForCodec) : undefined,
   };
+}
+
+export function shouldSuggestStereo(opts: {
+  audio: InspectionReport["audio"];
+  lang: string;
+  addStereoDefault: boolean;
+  audioMix?: AudioMix | null;
+  forceStereo?: boolean;
+  alreadyStereo: boolean;
+}): boolean {
+  if (opts.alreadyStereo) return false;
+  if (opts.forceStereo) return true;
+  if (opts.audioMix === "surround") return false;
+  const hasSurround = opts.audio.some((track) => track.channels > 2);
+  if (opts.audioMix === "stereo") return hasSurround;
+  return opts.addStereoDefault && opts.audio.some(
+    (track) => track.channels > 6 || /atmos|truehd|eac3/i.test(`${track.codec} ${track.title}`),
+  );
 }
 
 export function codecIsAtLeastHevc(codec: string): boolean {

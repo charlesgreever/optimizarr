@@ -16,6 +16,16 @@ export type ReviewStatus = "pending" | "keeping" | "discarding";
 export type SizeCategory = "movie1080p" | "movie4kSdr" | "movie4kHdr" | "tv1080p" | "tv4k";
 export type SuggestionAction = "transcode" | "remux" | "tracks" | "add_stereo" | "search_language";
 export type VideoTarget = "hevc" | "av1";
+
+export function parseVideoTarget(value: unknown): VideoTarget | null {
+  return value === "hevc" || value === "av1" ? value : null;
+}
+
+export type AudioMix = "stereo" | "surround";
+
+export function parseAudioMix(value: unknown): AudioMix | null {
+  return value === "stereo" || value === "surround" ? value : null;
+}
 export type HardwareBackend = "cuda" | "vaapi" | "none";
 export type ActivityOutcome = "kept" | "discarded" | "flagged" | "failed" | "cancelled" | "searched";
 export type ExclusionKind = "path" | "profile" | "tag" | "title";
@@ -206,6 +216,7 @@ export type LibraryItem = {
   posterRemoteUrl: string | null;
   hasPoster: boolean;
   sizeExempt: boolean;
+  videoTarget?: VideoTarget | null;
   firstSeenAt?: number;
   fileChangedAt?: number;
   keptSizeBytes?: number;

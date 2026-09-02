@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, formatSize, type ExecutablePlan, type InspectionReport, type LibraryRow } from "../api";
 import { Help, PageHead } from "../components/Shell";
+import { EncodeTargetSelect } from "../components/EncodeTargetSelect";
 import { TitleFacts } from "../components/TitleFacts";
 import { Pill } from "../components/ui";
 import {
@@ -27,6 +28,7 @@ export function TitlePage() {
   const [item, setItem] = useState<LibraryRow | null>(null);
   const [av1, setAv1] = useState(false);
   const [writeDefault, setWriteDefault] = useState("sidecar");
+  const [houseVideoTarget, setHouseVideoTarget] = useState<"hevc" | "av1">("hevc");
   const [preferredLanguage, setPreferredLanguage] = useState("eng");
   const [msg, setMsg] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
@@ -77,6 +79,7 @@ export function TitlePage() {
       setItem(r.item);
       setAv1(r.hardware.av1);
       setWriteDefault(r.settings.writeMode);
+      setHouseVideoTarget(r.settings.videoTarget === "av1" ? "av1" : "hevc");
       if (r.settings.preferredLanguage) setPreferredLanguage(r.settings.preferredLanguage);
       setLanguageIdAvailable(Boolean(r.languageId?.available));
       setPgsOcrAvailable(Boolean(r.pgsOcr?.available));
@@ -253,6 +256,22 @@ export function TitlePage() {
         <p className="help">Streams could not be listed yet. You can still remux this disc image to Matroska, or pick a size or quality encode.</p>
       )}
       <TitleFacts item={item} />
+      {item.type === "movie" && (
+        <div className="glass max-w-xs p-4">
+          <EncodeTargetSelect
+            value={item.videoTarget ?? null}
+            houseTarget={houseVideoTarget}
+            av1Available={av1}
+            onChange={(videoTarget) => {
+              void api.setItemVideoTarget(item.id, videoTarget).then((result) => {
+                setItem(result.item);
+                setMsg("Encode target saved.");
+              }).catch((error: Error) => setMsg(error.message));
+            }}
+          />
+          <p className="help m-0 mt-2">Automatic Suggestions for this movie use this codec. House default follows Settings. The custom plan Codec below is only for one queued job.</p>
+        </div>
+      )}
 
       {item.suggestion && (
         <Section title="Automatic suggestion">

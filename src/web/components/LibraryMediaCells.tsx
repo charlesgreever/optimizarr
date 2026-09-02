@@ -17,7 +17,17 @@ export function LibraryMediaHeaders({ onQuality, onSize }: { onQuality?: () => v
   );
 }
 
-export function LibraryMediaCells({ item, onDone }: { item: LibraryRow; onDone: () => void }) {
+export function LibraryMediaCells({
+  item,
+  onDone,
+  houseVideoTarget,
+  av1Available,
+}: {
+  item: LibraryRow;
+  onDone: () => void;
+  houseVideoTarget?: "hevc" | "av1";
+  av1Available?: boolean;
+}) {
   const view = libraryRowView(item);
   return (
     <>
@@ -29,7 +39,14 @@ export function LibraryMediaCells({ item, onDone }: { item: LibraryRow; onDone: 
       <td><PillList items={view.audioTracks} empty={view.audio} /></td>
       <td><PillList items={view.subtitleTracks} empty={view.subtitles} /></td>
       <td><PlanStatus lines={view.planLines} /></td>
-      <td><RowActions item={item} onDone={onDone} /></td>
+      <td>
+        <RowActions
+          item={item}
+          onDone={onDone}
+          houseVideoTarget={houseVideoTarget}
+          av1Available={av1Available}
+        />
+      </td>
     </>
   );
 }

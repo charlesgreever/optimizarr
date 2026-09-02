@@ -219,7 +219,7 @@ export class JobService {
         suggestion: isExecutablePlan(job.plan) ? undefined : job.plan,
         plan,
         report,
-        target: settings.videoTarget,
+        target: this.opts.store.videoTargetForItem(item) ?? settings.videoTarget,
         backend: hardware.backend,
         vaapiDevice: hardware.vaapiDevice,
         ffmpeg: this.opts.tools.ffmpeg,

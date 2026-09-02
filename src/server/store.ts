@@ -15,7 +15,9 @@ import type {
   ReviewStatus,
   Settings,
   Suggestion,
+  VideoTarget,
 } from "./types.ts";
+import { parseAudioMix, parseVideoTarget, type AudioMix } from "./types.ts";
 import { normalizeInspection } from "./inspect.ts";
 import { displayTitle, displayTitleForFile, tokenize } from "./titles.ts";
 import { parseStoredSettings } from "./settings.ts";
@@ -41,6 +43,8 @@ export type SeriesSummaryRecord = {
   episodeCount: number;
   healthyCount: number;
   suggestionCount: number;
+  videoTarget: VideoTarget | null;
+  audioMix: AudioMix | null;
 };
 
 export type StoredInstance = {
@@ -174,6 +178,13 @@ export class Store {
         failed INTEGER NOT NULL DEFAULT 0
       );
       INSERT OR IGNORE INTO inspect_state (id, walking, pending, inspected, failed) VALUES (1, 0, 0, 0, 0);
+      CREATE TABLE IF NOT EXISTS series_preferences (
+        instance_id TEXT NOT NULL,
+        arr_series_id INTEGER NOT NULL,
+        video_target TEXT,
+        audio_mix TEXT,
+        PRIMARY KEY (instance_id, arr_series_id)
+      );
     `);
     this.ensureColumn("jobs", "position", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("jobs", "phase", "TEXT NOT NULL DEFAULT 'queued'");
@@ -193,7 +204,22 @@ export class Store {
     this.ensureColumn("library_items", "first_seen_at", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("library_items", "file_changed_at", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("library_items", "kept_size_bytes", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("library_items", "video_target", "TEXT");
+    this.ensureColumn("series_preferences", "audio_mix", "TEXT");
+    this.migrateSeriesVideoTargets();
     this.db.prepare("DELETE FROM settings WHERE key = 'github_token'").run();
+  }
+
+  private migrateSeriesVideoTargets(): void {
+    const legacy = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'series_video_targets'",
+    ).get() as { name: string } | undefined;
+    if (!legacy) return;
+    this.db.exec(`
+      INSERT OR IGNORE INTO series_preferences (instance_id, arr_series_id, video_target)
+      SELECT instance_id, arr_series_id, video_target FROM series_video_targets;
+      DROP TABLE series_video_targets;
+    `);
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -305,6 +331,7 @@ export class Store {
   deleteInstance(id: string): void {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM library_roots WHERE instance_id = ?").run(id);
+      this.db.prepare("DELETE FROM series_preferences WHERE instance_id = ?").run(id);
       this.db.prepare("DELETE FROM instances WHERE id = ?").run(id);
     })();
   }
@@ -486,11 +513,14 @@ export class Store {
               SUM(CASE WHEN EXISTS (SELECT 1 FROM inspections ins WHERE ins.item_id = i.id)
                     AND NOT EXISTS (SELECT 1 FROM suggestions s WHERE s.item_id = i.id AND s.dismissed = 0)
                     AND NOT EXISTS (SELECT 1 FROM file_errors err WHERE err.path = i.path)
-                  THEN 1 ELSE 0 END) AS healthy_count
+                  THEN 1 ELSE 0 END) AS healthy_count,
+              svt.video_target AS video_target,
+              svt.audio_mix AS audio_mix
        FROM library_items i
        JOIN instances inst ON inst.id = i.instance_id
+       LEFT JOIN series_preferences svt ON svt.instance_id = i.instance_id AND svt.arr_series_id = i.arr_series_id
        WHERE i.type = 'episode' AND i.arr_series_id IS NOT NULL
-       GROUP BY i.instance_id, inst.name, i.arr_series_id, i.show_title
+       GROUP BY i.instance_id, inst.name, i.arr_series_id, i.show_title, svt.video_target, svt.audio_mix
        ORDER BY LOWER(i.show_title), i.instance_id, i.arr_series_id
        LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
@@ -510,6 +540,8 @@ export class Store {
         episodeCount: Number(row.episode_count),
         healthyCount: Number(row.healthy_count),
         suggestionCount: Number(row.suggestion_count),
+        videoTarget: parseVideoTarget(row.video_target),
+        audioMix: parseAudioMix(row.audio_mix),
       })),
       total,
     };
@@ -517,6 +549,69 @@ export class Store {
 
   setExempt(id: string, exempt: boolean): void {
     this.db.prepare("UPDATE library_items SET size_exempt = ? WHERE id = ?").run(exempt ? 1 : 0, id);
+  }
+
+  setItemVideoTarget(id: string, target: VideoTarget | null): void {
+    this.db.prepare("UPDATE library_items SET video_target = ? WHERE id = ?").run(target, id);
+  }
+
+  getSeriesPreference(instanceId: string, arrSeriesId: number): { videoTarget: VideoTarget | null; audioMix: AudioMix | null } {
+    const row = this.db.prepare(
+      "SELECT video_target, audio_mix FROM series_preferences WHERE instance_id = ? AND arr_series_id = ?",
+    ).get(instanceId, arrSeriesId) as { video_target: string | null; audio_mix: string | null } | undefined;
+    return {
+      videoTarget: parseVideoTarget(row?.video_target),
+      audioMix: parseAudioMix(row?.audio_mix),
+    };
+  }
+
+  getSeriesVideoTarget(instanceId: string, arrSeriesId: number): VideoTarget | null {
+    return this.getSeriesPreference(instanceId, arrSeriesId).videoTarget;
+  }
+
+  setSeriesVideoTarget(instanceId: string, arrSeriesId: number, target: VideoTarget | null): void {
+    this.upsertSeriesPreference(instanceId, arrSeriesId, { videoTarget: target });
+  }
+
+  getSeriesAudioMix(instanceId: string, arrSeriesId: number): AudioMix | null {
+    return this.getSeriesPreference(instanceId, arrSeriesId).audioMix;
+  }
+
+  setSeriesAudioMix(instanceId: string, arrSeriesId: number, mix: AudioMix | null): void {
+    this.upsertSeriesPreference(instanceId, arrSeriesId, { audioMix: mix });
+  }
+
+  videoTargetForItem(item: LibraryItem): VideoTarget | null {
+    if (item.type === "movie") return parseVideoTarget(item.videoTarget);
+    if (item.type === "episode" && item.arrSeriesId != null) {
+      return this.getSeriesVideoTarget(item.instanceId, item.arrSeriesId);
+    }
+    return null;
+  }
+
+  audioMixForItem(item: LibraryItem): AudioMix | null {
+    if (item.type === "episode" && item.arrSeriesId != null) {
+      return this.getSeriesAudioMix(item.instanceId, item.arrSeriesId);
+    }
+    return null;
+  }
+
+  private upsertSeriesPreference(
+    instanceId: string,
+    arrSeriesId: number,
+    patch: { videoTarget?: VideoTarget | null; audioMix?: AudioMix | null },
+  ): void {
+    const current = this.getSeriesPreference(instanceId, arrSeriesId);
+    const videoTarget = patch.videoTarget !== undefined ? patch.videoTarget : current.videoTarget;
+    const audioMix = patch.audioMix !== undefined ? patch.audioMix : current.audioMix;
+    if (!videoTarget && !audioMix) {
+      this.db.prepare("DELETE FROM series_preferences WHERE instance_id = ? AND arr_series_id = ?").run(instanceId, arrSeriesId);
+      return;
+    }
+    this.db.prepare(
+      `INSERT INTO series_preferences (instance_id, arr_series_id, video_target, audio_mix) VALUES (?, ?, ?, ?)
+       ON CONFLICT(instance_id, arr_series_id) DO UPDATE SET video_target = excluded.video_target, audio_mix = excluded.audio_mix`,
+    ).run(instanceId, arrSeriesId, videoTarget, audioMix);
   }
 
   updateItemFile(id: string, path: string, sizeBytes: number): void {
@@ -1066,6 +1161,7 @@ function mapItem(row: Record<string, unknown>): LibraryItem {
     posterRemoteUrl: row.poster_remote == null ? null : String(row.poster_remote),
     hasPoster: Boolean(row.poster_bytes || row.poster_remote),
     sizeExempt: Number(row.size_exempt) === 1,
+    videoTarget: parseVideoTarget(row.video_target),
     firstSeenAt: Number(row.first_seen_at ?? 0),
     fileChangedAt: Number(row.file_changed_at ?? 0),
     keptSizeBytes: Number(row.kept_size_bytes ?? 0),
