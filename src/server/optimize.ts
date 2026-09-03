@@ -636,6 +636,18 @@ export function formatToolError(bin: string, error: { message?: string; stderr?:
   return `${bin} failed. ${useful}`;
 }
 
+// NVDEC on Turing+ (including Ada) actually decodes these. MPEG-4 Part 2 and friends stay on the CPU so the encode still runs.
+const NVDEC_CODECS = new Set(["av1", "h264", "hevc", "mjpeg", "mpeg1video", "mpeg2video", "vc1", "vp8", "vp9"]);
+
+function usesNvdec(backend: OptimizeRequest["backend"], codec: string): boolean {
+  return backend === "cuda" && NVDEC_CODECS.has(codec.toLowerCase());
+}
+
+function cudaVideoFilter(downscale: boolean, tenBit: boolean): string {
+  const format = tenBit ? "p010" : "nv12";
+  return downscale ? `scale_cuda=w=1920:h=1080:format=${format}` : `scale_cuda=format=${format}`;
+}
+
 export function encodeArgs(source: string, dest: string, req: OptimizeRequest): string[] {
   const plan = req.plan ?? (req.suggestion ? planFromSuggestion(req.suggestion) : undefined);
   const video = plan?.video;
@@ -645,10 +657,14 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     : req.backend === "vaapi" ? "hevc_vaapi" : "hevc_nvenc";
   const tenBit = (video && video.kind !== "copy" ? video.bitDepth : req.report.bitDepth) >= 10;
   const downscale = video?.kind !== "copy" && Boolean(video?.downscale1080p);
+  const nvdec = usesNvdec(req.backend, req.report.videoCodec);
   const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-y"];
   if (req.backend === "vaapi") {
     const device = req.vaapiDevice || "/dev/dri/renderD128";
     args.push("-init_hw_device", `vaapi=va:${device}`, "-filter_hw_device", "va");
+  } else if (nvdec) {
+    // hwaccel flags must precede -i or ffmpeg still decodes on the CPU.
+    args.push("-hwaccel", "cuda", "-hwaccel_output_format", "cuda");
   }
   args.push("-i", source, "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?");
   if (req.backend === "vaapi") {
@@ -656,6 +672,8 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
     const filters = [`format=${format}`, "hwupload=extra_hw_frames=64"];
     if (downscale) filters.push("scale_vaapi=w=1920:h=1080");
     args.push("-vf", filters.join(","));
+  } else if (nvdec) {
+    args.push("-vf", cudaVideoFilter(downscale, tenBit));
   } else if (downscale) {
     args.push("-vf", "scale=1920:1080");
   }
@@ -667,7 +685,7 @@ export function encodeArgs(source: string, dest: string, req: OptimizeRequest): 
   } else {
     args.push(...sizeModeRateControl(req.backend, String(nvencBitrate(req, video))));
   }
-  if (req.backend !== "vaapi") args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");
+  if (req.backend !== "vaapi" && !nvdec) args.push("-pix_fmt", tenBit ? "p010le" : "yuv420p");
   args.push("-c:a", "copy", ...subtitleEncodeArgs(req.report), dest);
   return args;
 }

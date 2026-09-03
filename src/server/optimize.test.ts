@@ -469,7 +469,12 @@ describe("ffmpeg encode arguments", () => {
     expect(args).toContain("pipe:1");
     expect(args).toContain("hevc_nvenc");
     expect(args).toContain("main10");
-    expect(args).toContain("p010le");
+    expect(args.indexOf("-hwaccel")).toBeLessThan(args.indexOf("-i"));
+    expect(args[args.indexOf("-hwaccel") + 1]).toBe("cuda");
+    expect(args[args.indexOf("-hwaccel_output_format") + 1]).toBe("cuda");
+    expect(args.join(" ")).toContain("scale_cuda=format=p010");
+    expect(args).not.toContain("p010le");
+    expect(args).not.toContain("yuv420p");
   });
 
   it("uses CBR so CUDA size-mode AV1 and HEVC share a hard bitrate cap", () => {
@@ -585,7 +590,8 @@ describe("ffmpeg encode arguments", () => {
       conservative: false,
     });
     expect(args).toContain("av1_nvenc");
-    expect(args).toContain("p010le");
+    expect(args.join(" ")).toContain("scale_cuda=format=p010");
+    expect(args).not.toContain("p010le");
     expect(args).not.toContain("main10");
   });
 
@@ -626,7 +632,55 @@ describe("ffmpeg encode arguments", () => {
     const args = encodeArgs(source, "/tmp/out.mkv", qualityReq);
     expect(args).toContain("-cq");
     expect(args).not.toContain("-b:v");
+    expect(args).toContain("scale_cuda=w=1920:h=1080:format=p010");
+    expect(args).not.toContain("scale=1920:1080");
+  });
+
+  it("leaves decode on the CPU when NVDEC cannot handle the source codec", () => {
+    const args = encodeArgs(source, "/tmp/out.mkv", {
+      sourcePath: source,
+      reviewDir: "/tmp/review",
+      plan: {
+        origin: "bulk",
+        video: { kind: "size", codec: "hevc", targetBytes: 2 * 1024 ** 3, downscale1080p: true, bitDepth: 8 },
+        audio: [],
+        subtitles: [],
+        container: "mkv",
+        writeMode: "sidecar",
+        warning: null,
+        reasons: [],
+        estimatedOutputBytes: 2 * 1024 ** 3,
+        category: "movie1080p",
+      },
+      report: {
+        sourceSig: "p|1",
+        sourceMethod: "ffprobe",
+        listingState: "complete",
+        durationSec: 3600,
+        sizeBytes: 4_000_000_000,
+        sizePerHourGb: 4,
+        videoCodec: "mpeg4",
+        width: 1920,
+        height: 1080,
+        bitDepth: 8,
+        hdr: "none",
+        audio: [],
+        subtitles: [],
+        hasChapters: false,
+        hasAttachments: false,
+      },
+      target: "hevc",
+      backend: "cuda",
+      ffmpeg: "ffmpeg",
+      ffprobe: "ffprobe",
+      mkvmerge: "mkvmerge",
+      conservative: false,
+    });
+    expect(args).toContain("hevc_nvenc");
+    expect(args).not.toContain("-hwaccel");
     expect(args).toContain("scale=1920:1080");
+    expect(args).toContain("yuv420p");
+    expect(args.join(" ")).not.toContain("scale_cuda");
   });
 
   it("does not aim a codec transcode larger than the source", () => {
