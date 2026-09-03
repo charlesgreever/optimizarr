@@ -82,6 +82,23 @@ describe("size budget", () => {
     })).toThrow(/Kept audio is about 4\.2 GB/);
   });
 
+  it("encodes a small HEVC episode to AV1 instead of blaming 0 GB of audio", () => {
+    const durationSec = 22 * 60;
+    const targetBytes = Math.round(0.2 * 1024 ** 3);
+    const bitrate = videoBitrateForTarget({
+      targetBytes,
+      durationSec,
+      audioBitrateBps: typicalAudioBitrateBps({ codec: "aac", channels: 2 }),
+      codec: "av1",
+    });
+    expect(bitrate).toBeGreaterThanOrEqual(800_000);
+    expect(audioFillsSizeCap({
+      targetBytes,
+      durationSec,
+      audioBitrateBps: typicalAudioBitrateBps({ codec: "aac", channels: 2 }),
+    })).toBe(false);
+  });
+
   it("scores remaining size after extra-language audio is dropped, not the original blob", () => {
     const extra = Array.from({ length: 8 }, () => ({ codec: "ac3", channels: 6, title: "" }));
     const remaining = remainingSizeAfterTrackPlan({

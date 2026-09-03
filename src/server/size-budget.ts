@@ -93,7 +93,7 @@ export function audioFillsSizeCap(input: {
   const audioBytes = bytesForBitrate(input.audioBitrateBps, input.durationSec);
   const usable = Math.max(0, input.targetBytes * (1 - ENCODER_SLACK) - audioBytes - MUX_OVERHEAD_BYTES);
   const bitrate = Math.round((usable * 8) / input.durationSec);
-  return bitrate < MIN_VIDEO_BPS;
+  return bitrate < MIN_VIDEO_BPS && audioBytes >= bytesForBitrate(MIN_VIDEO_BPS, input.durationSec);
 }
 
 export function raisedTargetBytes(input: {
@@ -122,11 +122,14 @@ export function videoBitrateForTarget(input: {
     );
   }
   if (bitrate < MIN_VIDEO_BPS) {
-    const audioGb = audioBytes / 1024 ** 3;
-    const targetGb = input.targetBytes / 1024 ** 3;
-    throw new Error(
-      `Kept audio is about ${audioGb.toFixed(1)} GB; a ${targetGb.toFixed(1)} GB target leaves too little room for video. Exempt this title or drop extra lossless tracks.`,
-    );
+    if (audioBytes >= bytesForBitrate(MIN_VIDEO_BPS, input.durationSec)) {
+      const audioGb = audioBytes / 1024 ** 3;
+      const targetGb = input.targetBytes / 1024 ** 3;
+      throw new Error(
+        `Kept audio is about ${audioGb.toFixed(1)} GB; a ${targetGb.toFixed(1)} GB target leaves too little room for video. Exempt this title or drop extra lossless tracks.`,
+      );
+    }
+    bitrate = MIN_VIDEO_BPS;
   }
   if (input.codec === "av1") bitrate = Math.max(MIN_VIDEO_BPS, Math.round(bitrate * AV1_BITRATE_SCALE));
   return bitrate;
