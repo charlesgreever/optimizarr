@@ -146,6 +146,51 @@ describe("store schema migration", () => {
     expect((loaded?.plan as { origin?: string }).origin).toBe("custom");
   });
 
+  it("lists running and waiting jobs before finished jobs on the first Queue page", () => {
+    const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-queue-order-")), "polisharr.db"));
+    stores.push(store);
+    const plan = {
+      origin: "bulk" as const,
+      video: { kind: "copy" as const },
+      audio: [],
+      subtitles: [],
+      container: "mkv" as const,
+      writeMode: "sidecar" as const,
+      warning: null,
+      reasons: [],
+      estimatedOutputBytes: null,
+      category: "movie1080p" as const,
+    };
+    const row = (id: string, status: "succeeded" | "running" | "queued", position: number) => ({
+      id,
+      itemId: id,
+      suggestionId: null,
+      status,
+      phase: status === "running" ? "transcoding" as const : status === "queued" ? "queued" as const : "idle" as const,
+      progress: status === "running" ? 0.4 : 0,
+      error: null,
+      warning: null,
+      runNow: false,
+      position,
+      createdAt: position,
+      writeMode: "sidecar" as const,
+      plan,
+    });
+    for (let index = 1; index <= 55; index += 1) {
+      store.insertJob(row(`job-done-${index}`, "succeeded", index));
+    }
+    store.insertJob(row("job-run", "running", 56));
+    store.insertJob(row("job-wait", "queued", 57));
+
+    const first = store.jobPage(0, 50);
+    expect(first.items[0]?.id).toBe("job-run");
+    expect(first.items[1]?.id).toBe("job-wait");
+    expect(first.items[2]?.id).toBe("job-done-1");
+    expect(first.finishedCount).toBe(55);
+    expect(first.total).toBe(57);
+    expect(store.listJobs()[0]?.id).toBe("job-done-1");
+  });
+
   it("counts running jobs in queueActive so a processing file is not hidden", () => {
     const store = new Store(join(mkdtempSync(join(tmpdir(), "opt-work-")), "polisharr.db"));
     stores.push(store);

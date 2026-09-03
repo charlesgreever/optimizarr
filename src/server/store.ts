@@ -24,7 +24,7 @@ import { parseStoredSettings } from "./settings.ts";
 import type { SuggestionFilters } from "./suggestion-filters.ts";
 import { suggestionTrackComparison } from "./tracks.ts";
 
-export type Page<T> = { items: T[]; nextOffset: number | null; total: number; pendingCount?: number };
+export type Page<T> = { items: T[]; nextOffset: number | null; total: number; pendingCount?: number; finishedCount?: number };
 
 export type LibrarySnapshot = {
   item: LibraryItem;
@@ -889,20 +889,34 @@ export class Store {
 
   jobPage(offset: number, limit: number): Page<Job & { plan: JobPlan }> {
     const total = Number((this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE queue_visible = 1").get() as { n: number }).n);
+    const finishedCount = Number((this.db.prepare(
+      "SELECT COUNT(*) AS n FROM jobs WHERE queue_visible = 1 AND status IN ('succeeded','failed','cancelled')",
+    ).get() as { n: number }).n);
     const rows = this.db.prepare(
       `SELECT j.*, i.type AS item_type, i.title AS item_title, i.show_title AS item_show_title,
               i.season AS item_season, i.episode AS item_episode, i.episode_title AS item_episode_title
        FROM jobs j LEFT JOIN library_items i ON i.id = j.item_id
-       WHERE j.queue_visible = 1 ORDER BY j.position ASC LIMIT ? OFFSET ?`,
+       WHERE j.queue_visible = 1
+       ORDER BY CASE j.status
+         WHEN 'running' THEN 0
+         WHEN 'queued' THEN 1
+         WHEN 'held' THEN 1
+         WHEN 'paused' THEN 1
+         ELSE 2
+       END ASC, j.position ASC
+       LIMIT ? OFFSET ?`,
     ).all(limit, offset) as Record<string, unknown>[];
-    return page(rows.map((row) => {
-      const itemId = String(row.item_id);
-      return {
-        ...mapJob(row),
-        displayTitle: this.fileDisplayTitle(itemId) ?? joinedDisplayTitle(row, itemId),
-        href: row.item_type == null ? undefined : itemHref(row.item_type, itemId),
-      };
-    }), total, offset, limit);
+    return {
+      ...page(rows.map((row) => {
+        const itemId = String(row.item_id);
+        return {
+          ...mapJob(row),
+          displayTitle: this.fileDisplayTitle(itemId) ?? joinedDisplayTitle(row, itemId),
+          href: row.item_type == null ? undefined : itemHref(row.item_type, itemId),
+        };
+      }), total, offset, limit),
+      finishedCount,
+    };
   }
 
   getJob(id: string): (Job & { plan: JobPlan }) | undefined {

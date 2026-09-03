@@ -25,6 +25,7 @@ This tree is a greenfield rewrite. Do not import the previous application code.
 - Series headers show episode total, how many are healthy, and how many still have suggestions. Movies shows the same three counts for the whole Radarr library, not just the loaded page.
 - Lets a movie or a whole show pick HEVC or AV1 for automatic Suggestions without changing the house Encode Target. A series header can Prefer stereo (replace surround with stereo only, including 5.1 kids shows) or Keep surround.
 - Suggestion, Errors, and Queue titles open the same detail page as Movies and Series
+- Queue pins running jobs in Working now, then waiting jobs, then finished jobs, so a long batch does not hide the encode in progress
 - Size-mode encode reserves room for copied audio. A file within 5% of its GB-per-hour cap counts as meeting it.
 - Muxes tracks with MKVtoolnix and encodes video with the GPU you pass in. mkvmerge and ffmpeg run with a UTF-8 locale so titles such as 烧烤 are not truncated.
 - Writes a sidecar for Review by default, or replaces the library file after an integrity check when **Write finished files** is Direct write. Waiting bulk jobs use that setting when they start. Queue new Arr imports still writes a sidecar. Keep then asks Radarr or Sonarr to refresh media info and rename the library file so tokens such as `EAC3 5.1` or `H264` match the new audio and video.

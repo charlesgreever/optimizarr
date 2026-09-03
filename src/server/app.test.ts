@@ -431,6 +431,7 @@ describe("public HTTP behavior", () => {
       expect(first.items, path).toHaveLength(2);
       expect(first, path).toMatchObject({ nextOffset: 2, total: 3 });
       if (path === "review") expect(first).toMatchObject({ pendingCount: 3 });
+      if (path === "jobs") expect(first).toMatchObject({ finishedCount: 0 });
 
       const second = (await (await ctx.app.app.request(`/api/${path}?offset=2&limit=2`, { headers })).json()) as {
         items: Array<{ id?: string; path?: string }>;
@@ -584,6 +585,82 @@ describe("public HTTP behavior", () => {
       plan: { origin: "bulk", writeMode: "direct", writeModeLocked: false },
     });
     await vi.waitFor(() => expect(["failed", "succeeded"]).toContain(ctx.store.getJob(queuedBody.id)?.status));
+  });
+
+  it("returns running Queue jobs before finished jobs and reports finishedCount", async () => {
+    const ctx = await setup();
+    apps.push(ctx);
+    ctx.app.jobs.stop();
+    const setupRes = await ctx.app.app.request("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ username: "ada", password: "secret12" }),
+    });
+    const headers = { cookie: cookie(setupRes) };
+    const plan = {
+      origin: "bulk" as const,
+      video: { kind: "copy" as const },
+      audio: [],
+      subtitles: [],
+      container: "mkv" as const,
+      writeMode: "sidecar" as const,
+      warning: null,
+      reasons: [],
+      estimatedOutputBytes: null,
+      category: "movie1080p" as const,
+    };
+    for (let index = 1; index <= 55; index += 1) {
+      ctx.store.insertJob({
+        id: `job-done-${index}`,
+        itemId: `item-${index}`,
+        suggestionId: null,
+        status: "succeeded",
+        phase: "idle",
+        progress: 1,
+        error: null,
+        warning: null,
+        runNow: false,
+        position: index,
+        createdAt: index,
+        plan,
+      });
+    }
+    ctx.store.insertJob({
+      id: "job-run",
+      itemId: "item-run",
+      suggestionId: null,
+      status: "running",
+      phase: "transcoding",
+      progress: 0.4,
+      error: null,
+      warning: null,
+      runNow: false,
+      position: 56,
+      createdAt: 56,
+      plan,
+    });
+    ctx.store.insertJob({
+      id: "job-wait",
+      itemId: "item-wait",
+      suggestionId: null,
+      status: "queued",
+      phase: "queued",
+      progress: 0,
+      error: null,
+      warning: null,
+      runNow: false,
+      position: 57,
+      createdAt: 57,
+      plan,
+    });
+    const page = (await (await ctx.app.app.request("/api/jobs?limit=50", { headers })).json()) as {
+      items: Array<{ id: string }>;
+      finishedCount: number;
+      total: number;
+    };
+    expect(page.items[0]?.id).toBe("job-run");
+    expect(page.items[1]?.id).toBe("job-wait");
+    expect(page.finishedCount).toBe(55);
+    expect(page.total).toBe(57);
   });
 
   it("cancels all active jobs and removes Queue rows without deleting History, Review, or media", async () => {

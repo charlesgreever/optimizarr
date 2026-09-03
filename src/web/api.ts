@@ -143,6 +143,7 @@ export type LibraryPage<T> = {
   nextOffset: number | null;
   total: number;
   pendingCount?: number;
+  finishedCount?: number;
   healthyCount?: number;
   suggestionCount?: number;
 };
